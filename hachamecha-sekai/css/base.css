@@ -1,0 +1,160 @@
+/* ==========================================================================
+   base.css - リセット・トークン・iOS PWA安全領域・誤操作防止
+   ========================================================================== */
+
+:root {
+  --bg-void: #0d0a1a;
+  --bg-deep: #141028;
+  --bg-panel: #1c1636;
+  --bg-card: #241c45;
+  --bg-card-alt: #2b2152;
+  --border-dim: rgba(168, 146, 255, 0.22);
+  --border-bright: rgba(255, 255, 255, 0.34);
+
+  --text-main: #f4f1ff;
+  --text-sub: #b6add9;
+  --text-mute: #8076a8;
+
+  --accent-pink: #ff3898;
+  --accent-cyan: #2ee6ff;
+  --accent-gold: #ffd633;
+  --accent-lime: #52f29b;
+  --accent-danger: #ff4d6d;
+
+  /* 属性カラー */
+  --attr-fire: #ff5a4f;
+  --attr-water: #29b6f6;
+  --attr-wind: #34d399;
+  --attr-light: #ffd54f;
+  --attr-dark: #c084fc;
+  --attr-null: #f472b6;
+
+  /* レアリティカラー */
+  --rar-n: #9aa0b8;
+  --rar-r: #38bdf8;
+  --rar-sr: #c084fc;
+  --rar-ssr: #fbbf24;
+  --rar-chaos: #ff3898;
+
+  /* Safe Area */
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+
+  --font-main: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+  position: fixed;
+  inset: 0;
+  background-color: var(--bg-void);
+  color: var(--text-main);
+  font-family: var(--font-main);
+  font-size: 13px;
+  line-height: 1.3;
+  touch-action: manipulation;
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input, textarea, select {
+  font-family: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  outline: none;
+  touch-action: manipulation;
+}
+
+button {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  transition: transform 0.08s ease, filter 0.12s ease, opacity 0.12s ease;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+/* iOS入力自動ズーム抑止のため16px固定 */
+input, textarea {
+  font-size: 16px;
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 属性クラスユーティリティ */
+.attr-fire  { --attr-col: var(--attr-fire); }
+.attr-water { --attr-col: var(--attr-water); }
+.attr-wind  { --attr-col: var(--attr-wind); }
+.attr-light { --attr-col: var(--attr-light); }
+.attr-dark  { --attr-col: var(--attr-dark); }
+.attr-null  { --attr-col: var(--attr-null); }
+
+.rar-N     { --rar-col: var(--rar-n); }
+.rar-R     { --rar-col: var(--rar-r); }
+.rar-SR    { --rar-col: var(--rar-sr); }
+.rar-SSR   { --rar-col: var(--rar-ssr); }
+.rar-CHAOS { --rar-col: var(--rar-chaos); }
+
+/* スクロール許可領域のみ明示適用 */
+.scroll-box {
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(168, 146, 255, 0.35) transparent;
+}
+
+.scroll-box::-webkit-scrollbar {
+  width: 4px;
+}
+
+.scroll-box::-webkit-scrollbar-thumb {
+  background: rgba(168, 146, 255, 0.35);
+  border-radius: 99px;
+}

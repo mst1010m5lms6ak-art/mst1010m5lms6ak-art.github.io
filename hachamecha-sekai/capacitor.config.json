@@ -1,0 +1,15 @@
+{
+  "appId": "io.hachamecha.sekai",
+  "appName": "はちゃめちゃ世界",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#0d0a1a",
+    "allowsLinkPreview": false,
+    "scrollEnabled": false
+  },
+  "server": {
+    "androidScheme": "https",
+    "iosScheme": "capacitor"
+  }
+}

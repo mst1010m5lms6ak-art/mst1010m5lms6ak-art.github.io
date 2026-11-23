@@ -1,0 +1,1050 @@
+/* ==========================================================================
+   components.css - 戦闘HUD・固定1行ログ・DPS・カード・ボタン・D&D
+   ========================================================================== */
+
+/* 共通バッジ・ボタン */
+.res-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.res-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.res-gold { color: var(--accent-gold); }
+.res-shard { color: var(--accent-cyan); }
+.res-core { color: var(--accent-pink); }
+
+.btn {
+  height: 36px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 800;
+  background: var(--bg-card);
+  border: 1px solid var(--border-dim);
+  color: var(--text-main);
+  white-space: nowrap;
+}
+
+.btn-sm {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.btn-lg {
+  height: 44px;
+  font-size: 14px;
+  border-radius: var(--radius-md);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #ff3898 0%, #9b30ff 100%);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #fff;
+  box-shadow: 0 3px 14px rgba(255, 56, 152, 0.36);
+}
+
+.btn-cyan {
+  background: linear-gradient(135deg, #0ea5e9 0%, #2ee6ff 100%);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #081224;
+}
+
+.btn-gold {
+  background: linear-gradient(135deg, #f59e0b 0%, #ffd633 100%);
+  border-color: rgba(255, 255, 255, 0.4);
+  color: #1c1204;
+}
+
+.btn-danger {
+  background: rgba(255, 77, 109, 0.22);
+  border-color: rgba(255, 77, 109, 0.65);
+  color: #ff99ac;
+}
+
+.btn-toggle.on {
+  background: rgba(46, 230, 255, 0.22);
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+.btn-toggle.on-pink {
+  background: rgba(255, 56, 152, 0.24);
+  border-color: var(--accent-pink);
+  color: #ff8dc7;
+}
+
+/* 属性・種族・ロールタグ */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tag-attr {
+  background: color-mix(in srgb, var(--attr-col, #888) 26%, #141028);
+  border: 1px solid var(--attr-col, #888);
+  color: var(--attr-col, #fff);
+}
+
+.tag-race {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--text-main);
+}
+
+.tag-role {
+  background: rgba(168, 146, 255, 0.16);
+  border: 1px solid rgba(168, 146, 255, 0.4);
+  color: #dcd4ff;
+}
+
+.tag-rar {
+  background: color-mix(in srgb, var(--rar-col, #999) 24%, #141028);
+  border: 1px solid var(--rar-col, #999);
+  color: var(--rar-col, #fff);
+}
+
+/* キャラ幾何学紋章（キャライラスト不使用） */
+.unit-crest {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--attr-col, #fff) 35%, #191334), #120d26);
+  border: 1.5px solid var(--attr-col, #aaa);
+  box-shadow: inset 0 0 8px color-mix(in srgb, var(--attr-col, #fff) 30%, transparent);
+  position: relative;
+  overflow: hidden;
+}
+
+.unit-crest .crest-role {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.unit-crest .crest-attr {
+  font-size: 8px;
+  font-weight: 900;
+  color: var(--attr-col, #fff);
+  line-height: 1;
+}
+
+.unit-crest.lg {
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
+}
+
+.unit-crest.lg .crest-role { font-size: 20px; }
+.unit-crest.lg .crest-attr { font-size: 10px; }
+
+/* 汎用パネル */
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-md);
+  padding: 6px 8px;
+  min-width: 0;
+}
+
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+
+.row-gap {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+/* ==========================================================================
+   戦闘画面 - 上部表示エリア
+   ========================================================================== */
+.battle-upper-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+}
+
+/* 行動順タイムライン */
+.order-bar {
+  flex: 0 0 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+  background: rgba(12, 9, 28, 0.86);
+  border: 1px solid var(--border-dim);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.order-label {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 800;
+  color: var(--accent-gold);
+  padding-right: 2px;
+}
+
+.order-chip {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 18px;
+  padding: 0 3px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 9px;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  border: 1px solid var(--attr-col, #888);
+  background: rgba(26, 20, 52, 0.9);
+}
+
+.order-chip > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.order-chip.ally {
+  box-shadow: inset 0 0 0 1px rgba(46, 230, 255, 0.35);
+}
+
+.order-chip.enemy {
+  border-style: dashed;
+  background: rgba(58, 16, 36, 0.9);
+}
+
+.order-chip.next-up {
+  transform: scale(1.04);
+  background: color-mix(in srgb, var(--attr-col, #ff3898) 38%, #1a1236);
+  color: #fff;
+}
+
+/* 戦闘メインビュー（Canvas / DPS / 拡張ログ切替） */
+.arena-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-dim);
+  background: #0b0818;
+  overflow: hidden;
+}
+
+#battle-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.arena-hud-top {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  text-shadow: 0 1px 3px #000;
+}
+
+.chaos-gauge-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(12, 8, 26, 0.78);
+  border: 1px solid rgba(255, 56, 152, 0.5);
+  border-radius: 99px;
+  padding: 2px 6px;
+}
+
+.chaos-bar {
+  width: 58px;
+  height: 6px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.chaos-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-cyan), var(--accent-pink), var(--accent-gold));
+  transition: width 0.12s linear;
+}
+
+.anomaly-banner {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 26px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(255, 56, 152, 0.88), rgba(139, 92, 246, 0.88));
+  border: 1px solid var(--accent-gold);
+  font-size: 10px;
+  font-weight: 900;
+  text-align: center;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 周回ライブ集計バー（自動周回中のみ表示） */
+.repeat-live-bar {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 4px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(14, 10, 32, 0.88);
+  border: 1px solid var(--accent-cyan);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* オーバーレイ型DPSメーター・詳細ログ（不透明背景で背後キャンバスが透けない設計） */
+.arena-overlay {
+  position: absolute;
+  inset: 0;
+  background: #100c22;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+  z-index: 4;
+}
+
+.dps-head {
+  flex: 0 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--accent-cyan);
+}
+
+.dps-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.dps-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dps-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  height: 16px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.dps-bar-bg {
+  height: 8px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.dps-bar-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--attr-col, var(--accent-pink)), #fff);
+  transition: width 0.15s ease;
+}
+
+/* 固定1行戦闘ログ（絶対2行にならない固定行高設計） */
+.live-log-box {
+  flex: 0 0 68px;
+  height: 68px;
+  background: rgba(11, 8, 24, 0.92);
+  border: 1px solid var(--border-dim);
+  border-radius: 6px;
+  padding: 1px 6px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+}
+
+.log-row {
+  flex: 0 0 22px;
+  height: 22px;
+  line-height: 22px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  overflow: hidden;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.log-row:last-child {
+  border-bottom: none;
+}
+
+.log-actor {
+  flex: 0 1 82px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 800;
+}
+
+.log-arrow {
+  flex: 0 0 auto;
+  color: var(--accent-cyan);
+  opacity: 0.75;
+  font-size: 8px;
+}
+
+.log-target {
+  flex: 0 1 84px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-sub);
+}
+
+.log-skill {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-mute);
+  font-size: 10px;
+}
+
+.log-val {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.log-val.dmg { color: #ff7b7b; }
+.log-val.crit { color: var(--accent-gold); }
+.log-val.heal { color: var(--accent-lime); }
+.log-val.buff { color: var(--accent-cyan); }
+.log-val.chaos { color: var(--accent-pink); }
+
+/* ==========================================================================
+   戦闘画面 - 下部操作エリア
+   ========================================================================== */
+.target-strip {
+  flex: 0 0 32px;
+  height: 32px;
+  display: flex;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.target-chip {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-dim);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  touch-action: none;
+}
+
+.target-chip.focused {
+  border-color: var(--accent-pink);
+  background: rgba(255, 56, 152, 0.18);
+}
+
+.target-chip.drop-over {
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 12px rgba(255, 214, 51, 0.65);
+}
+
+.target-chip.dead {
+  opacity: 0.32;
+}
+
+.mini-hp-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.mini-hp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ff4d6d, #ff9966);
+}
+
+.mini-hp-fill.ally {
+  background: linear-gradient(90deg, #22c55e, #52f29b);
+}
+
+.party-tactical-row {
+  flex: 0 0 54px;
+  height: 54px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.ally-pad {
+  min-width: 0;
+  height: 100%;
+  padding: 4px 5px;
+  border-radius: 8px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-dim);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: stretch;
+  text-align: left;
+  touch-action: none;
+}
+
+.ally-pad.selected {
+  border-color: var(--accent-cyan);
+  background: rgba(46, 230, 255, 0.14);
+}
+
+.ally-pad.drop-over {
+  border-color: var(--accent-lime);
+  box-shadow: 0 0 12px rgba(82, 242, 155, 0.6);
+}
+
+.ally-pad.dead {
+  opacity: 0.35;
+  filter: grayscale(0.8);
+}
+
+.skill-deck {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr) 62px;
+  gap: 5px;
+}
+
+.skill-card {
+  height: 100%;
+  padding: 6px 6px 5px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--bg-card-alt), var(--bg-card));
+  border: 1.5px solid var(--border-dim);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
+  gap: 4px;
+  text-align: left;
+  position: relative;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.skill-card-desc {
+  font-size: 9.5px;
+  line-height: 1.32;
+  color: var(--text-sub);
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.clamp-2 {
+  white-space: normal;
+  line-height: 1.32;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.world-grid {
+  flex: 0 0 26px;
+  height: 26px;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 3px;
+}
+
+.world-grid .pill-btn {
+  padding: 0 2px;
+  width: 100%;
+  font-size: 9.5px;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.skill-card.ready {
+  border-color: color-mix(in srgb, var(--attr-col, var(--accent-cyan)) 75%, #fff);
+}
+
+.skill-card.queued {
+  border-color: var(--accent-gold);
+  box-shadow: inset 0 0 12px rgba(255, 214, 51, 0.3);
+}
+
+.skill-card.on-cd {
+  opacity: 0.55;
+}
+
+.chaos-orb-btn {
+  height: 100%;
+  border-radius: 10px;
+  flex-direction: column;
+  background: linear-gradient(180deg, #32164c, #1a0d2e);
+  border: 1.5px solid var(--border-dim);
+  font-size: 10px;
+  font-weight: 900;
+  padding: 4px;
+  touch-action: none;
+}
+
+.chaos-orb-btn.charged {
+  background: linear-gradient(135deg, #ff3898, #ffd633);
+  border-color: #fff;
+  color: #160926;
+  box-shadow: 0 0 16px rgba(255, 56, 152, 0.7);
+  animation: pulseOrb 1s ease-in-out infinite;
+}
+
+@keyframes pulseOrb {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+
+.battle-util-row {
+  flex: 0 0 34px;
+  height: 34px;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+}
+
+.dps-tab-row {
+  flex: 0 0 30px;
+  height: 30px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+/* ==========================================================================
+   ステージ選択・編成・育成・装備・記録
+   ========================================================================== */
+.mode-tabs {
+  flex: 0 0 30px;
+  height: 30px;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 4px;
+}
+
+.pill-bar {
+  flex: 0 0 26px;
+  height: 26px;
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.pill-bar::-webkit-scrollbar { display: none; }
+
+.pill-btn {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-dim);
+  color: var(--text-sub);
+}
+
+.pill-btn.active {
+  background: rgba(255, 56, 152, 0.28);
+  border-color: var(--accent-pink);
+  color: #fff;
+}
+
+/* ステージリスト */
+.stage-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-right: 2px;
+}
+
+.stage-card {
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-dim);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  text-align: left;
+  flex-shrink: 0;
+}
+
+.stage-card.selected {
+  border-color: var(--accent-cyan);
+  background: rgba(46, 230, 255, 0.14);
+}
+
+.stage-card.locked {
+  opacity: 0.42;
+}
+
+/* 編成 4スロット（ドラッグ＆ドロップ対応） */
+.party-drop-grid {
+  flex: 0 0 64px;
+  height: 64px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+}
+
+.party-slot {
+  height: 100%;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px dashed rgba(168, 146, 255, 0.35);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  position: relative;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.party-slot.filled {
+  border-style: solid;
+  border-color: var(--attr-col, var(--border-bright));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--attr-col, #666) 20%, #1f173c), #16112c);
+}
+
+.party-slot.selected {
+  box-shadow: 0 0 0 2px var(--accent-gold);
+}
+
+.party-slot.drop-over {
+  border-color: var(--accent-gold);
+  background: rgba(255, 214, 51, 0.2);
+}
+
+.slot-idx {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 9px;
+  font-weight: 900;
+  color: var(--text-mute);
+}
+
+/* キャラ一覧グリッド */
+.roster-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  align-content: start;
+  gap: 5px;
+  padding-right: 2px;
+}
+
+.unit-chip {
+  height: 52px;
+  padding: 5px 6px;
+  border-radius: 8px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  overflow: hidden;
+  touch-action: pan-y;
+}
+
+.unit-chip.draggable {
+  touch-action: none;
+}
+
+.unit-chip.selected {
+  border-color: var(--accent-cyan);
+  background: rgba(46, 230, 255, 0.14);
+}
+
+.unit-chip.in-party {
+  border-color: var(--accent-gold);
+}
+
+.unit-chip.locked {
+  opacity: 0.56;
+  border-style: dashed;
+}
+
+/* 装備グリッド＆D&Dスロット */
+.gear-drop-row {
+  flex: 0 0 54px;
+  height: 54px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr) 60px;
+  gap: 4px;
+}
+
+.gear-slot-box {
+  height: 100%;
+  border-radius: 8px;
+  background: var(--bg-card);
+  border: 1.5px dashed var(--border-dim);
+  padding: 4px 5px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 2px;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.gear-slot-box.filled {
+  border-style: solid;
+  border-color: var(--rar-col, var(--border-bright));
+}
+
+.gear-slot-box.drop-over {
+  border-color: var(--accent-gold);
+  background: rgba(255, 214, 51, 0.22);
+}
+
+.gear-sell-drop {
+  border-color: rgba(255, 77, 109, 0.55);
+  background: rgba(255, 77, 109, 0.12);
+  color: #ff99ac;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.gear-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  align-content: start;
+  gap: 5px;
+  padding-right: 2px;
+}
+
+.gear-card {
+  height: 54px;
+  padding: 5px 7px;
+  border-radius: 8px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--rar-col, var(--border-dim));
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: stretch;
+  text-align: left;
+  overflow: hidden;
+}
+
+.gear-card.selected {
+  box-shadow: 0 0 0 2px #fff;
+  background: var(--bg-card-alt);
+}
+
+/* ステータスグリッド */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.stat-cell {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 3px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.stat-cell .k { color: var(--text-sub); font-size: 10px; }
+.stat-cell .v { font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* シナジーバッジ群 */
+.synergy-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  overflow: hidden;
+  max-height: 44px;
+}
+
+.synergy-chip {
+  padding: 2px 6px;
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 800;
+  background: rgba(82, 242, 155, 0.16);
+  border: 1px solid rgba(82, 242, 155, 0.55);
+  color: var(--accent-lime);
+  white-space: nowrap;
+}
+
+/* 結果画面カード */
+.result-banner {
+  padding: 8px 10px;
+  border-radius: 10px;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+.result-banner.win {
+  background: linear-gradient(135deg, rgba(255, 214, 51, 0.28), rgba(255, 56, 152, 0.28));
+  border: 1.5px solid var(--accent-gold);
+  color: var(--accent-gold);
+}
+
+.result-banner.lose {
+  background: rgba(255, 77, 109, 0.22);
+  border: 1.5px solid var(--accent-danger);
+  color: #ff99ac;
+}
+
+.result-banner.repeat {
+  background: linear-gradient(135deg, rgba(46, 230, 255, 0.26), rgba(155, 48, 255, 0.28));
+  border: 1.5px solid var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 5px;
+}
+
+.summary-cell {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-dim);
+  border-radius: 8px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.summary-cell .sk { font-size: 10px; color: var(--text-sub); }
+.summary-cell .sv { font-size: 13px; font-weight: 900; font-variant-numeric: tabular-nums; }
+
+/* スキル表示行（上部プレビュー用） */
+.skill-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.skill-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 10.5px;
+  min-width: 0;
+}

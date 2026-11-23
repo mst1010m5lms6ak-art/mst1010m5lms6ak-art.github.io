@@ -19,10 +19,10 @@
     ctx.closePath();
   }
 
-  function drawUnitToken(ctx, u, isFocused, isSelected, canvasH) {
+  function drawUnitToken(ctx, u, canvasH) {
     const attrCol = HS.CONST.ATTR_MAP[u.attr]?.color || '#ffffff';
     const roleIcon = HS.CONST.ROLE_MAP[u.role]?.short || '★';
-    const scaleH = HS.UTIL.clamp((canvasH || 200) / 215, 0.72, 1.08);
+    const scaleH = HS.UTIL.clamp((canvasH || 220) / 215, 0.78, 1.12);
     const r = Math.round((u.isBoss ? 22 : 16) * scaleH);
 
     const lunge = u.actAnim * (u.side === 'ally' ? 14 : -14);
@@ -33,21 +33,10 @@
     ctx.save();
     if (!u.alive) ctx.globalAlpha = 0.22;
 
-    // ターゲット・選択リング
-    if (u.alive && (isFocused || isSelected)) {
-      ctx.beginPath();
-      ctx.arc(x, y, r + 5, 0, Math.PI * 2);
-      ctx.strokeStyle = isFocused ? '#ff3898' : '#2ee6ff';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([4, 3]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-
     // 挑発オーラ
     if (u.alive && u.buffs?.taunt) {
       ctx.beginPath();
-      ctx.arc(x, y, r + 8, 0, Math.PI * 2);
+      ctx.arc(x, y, r + 7, 0, Math.PI * 2);
       ctx.strokeStyle = '#ffd633';
       ctx.lineWidth = 2;
       ctx.stroke();
@@ -203,10 +192,10 @@
 
     // ユニット描画
     for (const a of eng.allies) {
-      drawUnitToken(ctx, a, false, a.cid === eng.selectedAllyId, h);
+      drawUnitToken(ctx, a, h);
     }
     for (const e of eng.enemies) {
-      drawUnitToken(ctx, e, e.cid === eng.focusedEnemyId, false, h);
+      drawUnitToken(ctx, e, h);
     }
 
     // 戦闘エフェクト描画
@@ -261,6 +250,34 @@
       ctx.strokeText(pop.text, pop.x, pop.y);
       ctx.fillStyle = pop.color;
       ctx.fillText(pop.text, pop.x, pop.y);
+      ctx.restore();
+    }
+
+    // WAVEカットインバナー
+    if (eng.phase === 'wave_wait' || eng.waveBannerTimer > 0) {
+      const alpha = eng.phase === 'wave_wait' ? 0.92 : HS.UTIL.clamp(eng.waveBannerTimer / 0.4, 0, 1);
+      const label = eng.phase === 'wave_wait'
+        ? `NEXT WAVE  ${eng.wave + 1} / ${eng.maxWaves}`
+        : eng.wave === eng.maxWaves
+          ? `FINAL WAVE  ${eng.wave} / ${eng.maxWaves}`
+          : `WAVE  ${eng.wave} / ${eng.maxWaves}`;
+      const accent = eng.wave === eng.maxWaves && eng.phase !== 'wave_wait' ? '#ff3898' : '#2ee6ff';
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      const bw = Math.min(w - 28, 210);
+      const bh = 30;
+      const bx = (w - bw) / 2;
+      const by = (h - bh) / 2;
+      ctx.fillStyle = 'rgba(13, 9, 30, 0.88)';
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 1.8;
+      ctx.strokeRect(bx, by, bw, bh);
+      ctx.font = '900 13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(label, w / 2, by + bh / 2 + 0.5);
       ctx.restore();
     }
 

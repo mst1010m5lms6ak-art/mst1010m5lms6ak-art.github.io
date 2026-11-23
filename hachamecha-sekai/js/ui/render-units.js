@@ -25,10 +25,7 @@
     return `
       <div class="panel attr-${u.attr}" style="flex:1 1 auto;min-height:0;border-color:var(--attr-col);display:flex;flex-direction:column;gap:4px;overflow:hidden">
         <div class="row-gap">
-          <div class="unit-crest lg">
-            <span class="crest-role">${r.icon}</span>
-            <span class="crest-attr">${a.name}</span>
-          </div>
+          ${HS.CONST.renderUnitCrest(u, 'lg')}
           <div style="min-width:0;flex:1">
             <div class="row-between">
               <span class="ellipsis" style="font-size:14px;font-weight:900">${HS.UTIL.escHtml(u.name)} <span style="font-size:10px;color:var(--text-sub)">${HS.UTIL.escHtml(u.title)}</span></span>
@@ -96,15 +93,11 @@
 
     const listHtml = list.map((x) => {
       const xs = st.units[x.id];
-      const a = HS.CONST.ATTR_MAP[x.attr];
       const r = HS.CONST.ROLE_MAP[x.role];
       return `
         <button class="unit-chip attr-${x.attr} ${x.id === u.id ? 'selected' : ''} ${xs.unlocked ? '' : 'locked'}"
                 data-action="select-unit" data-val="${x.id}">
-          <div class="unit-crest">
-            <span class="crest-role">${r.icon}</span>
-            <span class="crest-attr">${a.name}</span>
-          </div>
+          ${HS.CONST.renderUnitCrest(x)}
           <div style="min-width:0;flex:1">
             <div class="row-between">
               <span class="ellipsis" style="font-size:11px;font-weight:900">${HS.UTIL.escHtml(x.name)}</span>

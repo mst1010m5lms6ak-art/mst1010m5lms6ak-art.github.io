@@ -107,14 +107,14 @@
   gap: 6px;
 }
 
-/* ボトムナビゲーション */
+/* ボトムナビゲーション（6タブ均等配置） */
 #bottom-nav {
   flex: 0 0 54px;
   height: 54px;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 4px;
-  padding: 4px 6px 6px;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 3px;
+  padding: 4px 5px 6px;
   background: rgba(11, 8, 24, 0.96);
   border-top: 1px solid var(--border-dim);
   position: relative;
@@ -130,12 +130,23 @@
   border: 1px solid transparent;
   font-size: 10px;
   font-weight: 700;
-  padding: 2px;
+  padding: 2px 1px;
 }
 
 .nav-btn .nav-ico {
-  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
   line-height: 1;
+  flex-shrink: 0;
+}
+
+.nav-btn .nav-ico .ico-svg {
+  width: 17px;
+  height: 17px;
+  vertical-align: 0;
 }
 
 .nav-btn.active {
@@ -204,7 +215,7 @@
 .sheet-body {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 8px 12px;
+  padding: 8px 8px 8px 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;

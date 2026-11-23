@@ -1,10 +1,12 @@
 /* ==========================================================================
-   stages.js - 冒険20ステージ・属性ボス6体・無限カオス塔・敵構成
+   stages.js - 冒険20ステージ・属性ボス6体・異界塔(1〜100F)・5WAVE生成・敵図鑑
    ========================================================================== */
 (function (global) {
   'use strict';
 
   const HS = (global.HS = global.HS || {});
+  const TOTAL_WAVES = 5;
+  const TOWER_MAX_FLOOR = 100;
 
   const WORLDS = [
     { id: 1, name: '崩壊商店街',       attr: 'fire' },
@@ -265,44 +267,162 @@
   ];
 
   function buildTowerStage(floor) {
-    const f = Math.max(1, Math.floor(floor || 1));
-    const scale = Math.pow(1.135, f - 1);
+    const f = Math.max(1, Math.min(TOWER_MAX_FLOOR, Math.floor(floor || 1)));
+    const scale = Math.pow(1.042, f - 1) * (1 + (f - 1) * 0.006);
     const attrs = ['fire', 'water', 'wind', 'light', 'dark', 'null'];
     const mainAttr = attrs[(f - 1) % attrs.length];
+    const isFinalFloor = f === TOWER_MAX_FLOOR;
     const isBossFloor = f % 5 === 0;
     const baseHp = Math.round(720 * scale);
     const baseAtk = Math.round(68 * scale);
     const baseDef = Math.round(26 * scale);
-    const baseSpd = Math.min(185, 96 + Math.floor(f * 1.6));
+    const baseSpd = Math.min(185, 96 + Math.floor(f * 0.9));
 
-    const enemies = isBossFloor
+    const enemies = isFinalFloor
       ? [
-          mkEnemy(`塔守護機F${f}`, attrs[(f + 1) % 6], 'tank', Math.round(baseHp * 1.15), Math.round(baseAtk * 0.9), Math.round(baseDef * 1.25), baseSpd - 6),
-          mkEnemy(`カオス塔主・${f}層`, mainAttr, 'dealer', Math.round(baseHp * 2.45), Math.round(baseAtk * 1.32), Math.round(baseDef * 1.18), baseSpd + 6, true),
-          mkEnemy(`塔癒精F${f}`, attrs[(f + 3) % 6], 'healer', Math.round(baseHp * 0.95), Math.round(baseAtk * 0.92), baseDef, baseSpd + 2)
+          mkEnemy('異界の守護機', 'light', 'tank', Math.round(baseHp * 1.25), Math.round(baseAtk * 0.95), Math.round(baseDef * 1.3), baseSpd - 4),
+          mkEnemy('異界覇主・終焉の門番', 'null', 'dealer', Math.round(baseHp * 2.85), Math.round(baseAtk * 1.4), Math.round(baseDef * 1.25), baseSpd + 8, true),
+          mkEnemy('異界の癒精', 'dark', 'healer', Math.round(baseHp * 1.05), Math.round(baseAtk * 0.96), baseDef, baseSpd + 4)
         ]
-      : [
-          mkEnemy(`塔番兵${f}-A`, mainAttr, 'tank', Math.round(baseHp * 1.2), Math.round(baseAtk * 0.92), Math.round(baseDef * 1.2), baseSpd - 4),
-          mkEnemy(`混沌兵${f}-B`, attrs[(f + 2) % 6], 'dealer', Math.round(baseHp * 0.98), Math.round(baseAtk * 1.18), baseDef, baseSpd + 4),
-          mkEnemy(`変異体${f}-C`, attrs[(f + 4) % 6], 'supporter', Math.round(baseHp * 0.92), baseAtk, baseDef, baseSpd + 8)
-        ];
+      : isBossFloor
+        ? [
+            mkEnemy('異界の守護機', attrs[(f + 1) % 6], 'tank', Math.round(baseHp * 1.15), Math.round(baseAtk * 0.9), Math.round(baseDef * 1.25), baseSpd - 6),
+            mkEnemy('異界塔の大層主', mainAttr, 'dealer', Math.round(baseHp * 2.45), Math.round(baseAtk * 1.32), Math.round(baseDef * 1.18), baseSpd + 6, true),
+            mkEnemy('異界の癒精', attrs[(f + 3) % 6], 'healer', Math.round(baseHp * 0.95), Math.round(baseAtk * 0.92), baseDef, baseSpd + 2)
+          ]
+        : [
+            mkEnemy('異界塔の番兵', mainAttr, 'tank', Math.round(baseHp * 1.2), Math.round(baseAtk * 0.92), Math.round(baseDef * 1.2), baseSpd - 4),
+            mkEnemy('異界の混沌兵', attrs[(f + 2) % 6], 'dealer', Math.round(baseHp * 0.98), Math.round(baseAtk * 1.18), baseDef, baseSpd + 4),
+            mkEnemy('異界の変異体', attrs[(f + 4) % 6], 'supporter', Math.round(baseHp * 0.92), baseAtk, baseDef, baseSpd + 8)
+          ];
 
     return {
       id: `tower-${f}`,
       mode: 'tower',
       floor: f,
       code: `${f}F`,
-      name: isBossFloor ? `無限カオス塔 ${f}階【大層主】` : `無限カオス塔 ${f}階`,
+      name: isFinalFloor ? `異界塔 ${f}階【異界覇主】` : isBossFloor ? `異界塔 ${f}階【大層主】` : `異界塔 ${f}階`,
+      oneTimeOnly: true,
       recPower: Math.round(2200 * scale),
       attr: mainAttr,
-      gold: Math.round((360 + f * 90) * Math.pow(1.09, f - 1)),
-      exp: Math.round((210 + f * 55) * Math.pow(1.09, f - 1)),
-      shards: Math.min(50, 5 + Math.floor(f * 0.8)),
-      coreChance: isBossFloor ? 1.0 : Math.min(0.95, 0.25 + f * 0.02),
-      coreCount: isBossFloor ? Math.min(12, 2 + Math.floor(f / 5)) : 1,
-      rarityBias: 0.9 + f * 0.14,
+      gold: Math.round((650 + f * 180) * Math.pow(1.032, f - 1)),
+      exp: Math.round((380 + f * 95) * Math.pow(1.032, f - 1)),
+      shards: isFinalFloor ? 80 : isBossFloor ? Math.min(60, 12 + Math.floor(f * 0.55)) : Math.min(35, 6 + Math.floor(f * 0.35)),
+      coreChance: isBossFloor ? 1.0 : Math.min(1.0, 0.35 + f * 0.01),
+      coreCount: isFinalFloor ? 20 : isBossFloor ? Math.min(12, 2 + Math.floor(f / 10)) : 1,
+      rarityBias: 1.0 + f * 0.065,
       enemies
     };
+  }
+
+  function scaleEnemy(template, hpMult, atkMult, defMult, spdDelta, forceNormal) {
+    return {
+      name: template.name,
+      attr: template.attr,
+      role: template.role,
+      hp: Math.max(40, Math.round(template.hp * hpMult)),
+      atk: Math.max(8, Math.round(template.atk * atkMult)),
+      def: Math.max(4, Math.round(template.def * defMult)),
+      spd: Math.max(60, Math.round(template.spd + (spdDelta || 0))),
+      isBoss: forceNormal ? false : !!template.isBoss
+    };
+  }
+
+  function hashSeed(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return Math.abs(h);
+  }
+
+  /**
+   * 任意のステージから全5WAVE分の敵編成を生成する
+   * WAVE 1〜4: 前哨〜終盤戦 / WAVE 5: 本ステージの主力・ボス編成
+   */
+  function buildStageWaves(stage) {
+    const waveConfigs = [
+      { count: 2, hpM: 0.34, atkM: 0.78, defM: 0.82, spdD: -4 },
+      { count: 2, hpM: 0.42, atkM: 0.84, defM: 0.86, spdD: -2 },
+      { count: 3, hpM: 0.50, atkM: 0.90, defM: 0.92, spdD: 0 },
+      { count: 3, hpM: 0.58, atkM: 0.95, defM: 0.96, spdD: 2 }
+    ];
+
+    // WAVE 1〜4用の雑魚・前衛候補プールを構築
+    let pool = stage.enemies.filter((e) => !e.isBoss);
+    if (stage.mode === 'story') {
+      const worldNonBoss = STORY_STAGES
+        .filter((s) => s.world === stage.world)
+        .flatMap((s) => s.enemies.filter((e) => !e.isBoss));
+      // ステージ固有の非ボス敵を優先しつつ同ワールドの敵も混ぜる（ステータスは当該ステージ水準へ正規化）
+      const avgHp = stage.enemies.reduce((sum, e) => sum + (e.isBoss ? e.hp * 0.48 : e.hp), 0) / stage.enemies.length;
+      const avgAtk = stage.enemies.reduce((sum, e) => sum + e.atk, 0) / stage.enemies.length;
+      const avgDef = stage.enemies.reduce((sum, e) => sum + e.def, 0) / stage.enemies.length;
+      const avgSpd = stage.enemies.reduce((sum, e) => sum + e.spd, 0) / stage.enemies.length;
+      const seenNames = new Set(pool.map((e) => e.name));
+      for (const e of worldNonBoss) {
+        if (!seenNames.has(e.name)) {
+          seenNames.add(e.name);
+          pool.push(mkEnemy(e.name, e.attr, e.role, Math.round(avgHp), Math.round(avgAtk), Math.round(avgDef), Math.round(avgSpd), false));
+        }
+      }
+    } else if (stage.mode === 'boss') {
+      const ref = pool[0] || stage.enemies[0];
+      const baseHp = ref.isBoss ? Math.round(ref.hp * 0.32) : ref.hp;
+      const baseAtk = ref.isBoss ? Math.round(ref.atk * 0.72) : ref.atk;
+      const baseDef = ref.isBoss ? Math.round(ref.def * 0.78) : ref.def;
+      const baseSpd = ref.spd;
+      const sameAttr = STORY_STAGES
+        .flatMap((s) => s.enemies)
+        .filter((e) => !e.isBoss && e.attr === stage.attr);
+      const seenNames = new Set(pool.map((e) => e.name));
+      for (const e of sameAttr.slice(0, 4)) {
+        if (!seenNames.has(e.name)) {
+          seenNames.add(e.name);
+          pool.push(mkEnemy(e.name, e.attr, e.role, baseHp, baseAtk, baseDef, baseSpd, false));
+        }
+      }
+    } else if (stage.mode === 'tower') {
+      const f = stage.floor || 1;
+      const scale = Math.pow(1.042, f - 1) * (1 + (f - 1) * 0.006);
+      const attrs = ['fire', 'water', 'wind', 'light', 'dark', 'null'];
+      const baseHp = Math.round(720 * scale);
+      const baseAtk = Math.round(68 * scale);
+      const baseDef = Math.round(26 * scale);
+      const baseSpd = Math.min(185, 96 + Math.floor(f * 0.9));
+      pool = [
+        mkEnemy('異界塔の番兵', attrs[(f - 1) % 6], 'tank', Math.round(baseHp * 1.1), Math.round(baseAtk * 0.92), Math.round(baseDef * 1.15), baseSpd - 4),
+        mkEnemy('異界の混沌兵', attrs[(f + 1) % 6], 'dealer', Math.round(baseHp * 0.95), Math.round(baseAtk * 1.12), baseDef, baseSpd + 3),
+        mkEnemy('異界の変異体', attrs[(f + 3) % 6], 'supporter', Math.round(baseHp * 0.9), baseAtk, baseDef, baseSpd + 6),
+        mkEnemy('異界の守護機', attrs[(f + 2) % 6], 'tank', Math.round(baseHp * 1.12), Math.round(baseAtk * 0.9), Math.round(baseDef * 1.2), baseSpd - 5),
+        mkEnemy('異界の癒精', attrs[(f + 4) % 6], 'healer', Math.round(baseHp * 0.88), Math.round(baseAtk * 0.9), baseDef, baseSpd + 2)
+      ];
+    }
+
+    if (!pool.length) pool = stage.enemies.slice();
+
+    const seed = hashSeed(stage.id);
+    const waves = [];
+
+    for (let w = 0; w < TOTAL_WAVES - 1; w++) {
+      const cfg = waveConfigs[w];
+      const list = [];
+      for (let i = 0; i < cfg.count; i++) {
+        const tmpl = pool[(seed + w * 2 + i) % pool.length];
+        list.push(scaleEnemy(tmpl, cfg.hpM, cfg.atkM, cfg.defM, cfg.spdD, true));
+      }
+      waves.push(list);
+    }
+
+    // WAVE 5: 本番の主力・ボス編成
+    const hasBoss = stage.enemies.some((e) => e.isBoss);
+    const finalWave = stage.enemies.map((e) =>
+      scaleEnemy(e, hasBoss ? (e.isBoss ? 0.92 : 0.62) : 0.76, 1.0, 1.0, 0, false)
+    );
+    waves.push(finalWave);
+
+    return waves;
   }
 
   const ALL_FIXED_STAGES = [...STORY_STAGES, ...BOSS_STAGES];
@@ -316,12 +436,75 @@
     return STAGE_MAP[stageId] || STORY_STAGES[0];
   }
 
+  // 敵図鑑用の全エネミーカタログを生成・キャッシュ
+  let enemyCatalogCache = null;
+  function getEnemyCatalog() {
+    if (enemyCatalogCache) return enemyCatalogCache;
+    const map = new Map();
+
+    function reg(enemy, sourceLabel) {
+      const existing = map.get(enemy.name);
+      if (!existing) {
+        map.set(enemy.name, {
+          name: enemy.name,
+          attr: enemy.attr,
+          role: enemy.role,
+          isBoss: !!enemy.isBoss,
+          hp: enemy.hp,
+          atk: enemy.atk,
+          def: enemy.def,
+          spd: enemy.spd,
+          sources: [sourceLabel]
+        });
+      } else {
+        if (enemy.isBoss) existing.isBoss = true;
+        if (enemy.hp > existing.hp) {
+          existing.hp = enemy.hp;
+          existing.atk = enemy.atk;
+          existing.def = enemy.def;
+          existing.spd = enemy.spd;
+        }
+        if (!existing.sources.includes(sourceLabel)) existing.sources.push(sourceLabel);
+      }
+    }
+
+    for (const s of STORY_STAGES) {
+      for (const e of s.enemies) reg(e, `冒険 ${s.code}`);
+    }
+    for (const s of BOSS_STAGES) {
+      for (const e of s.enemies) reg(e, `属性ボス ${s.code}`);
+    }
+    // 異界塔の代表エネミー7種
+    const towerSamples = [
+      { stage: buildTowerStage(1), label: '異界塔 1F〜99F' },
+      { stage: buildTowerStage(5), label: '異界塔 5F毎大層主' },
+      { stage: buildTowerStage(100), label: '異界塔 100F' }
+    ];
+    for (const ts of towerSamples) {
+      for (const e of ts.stage.enemies) reg(e, ts.label);
+    }
+
+    const attrMap = HS.CONST.ATTR_MAP;
+    enemyCatalogCache = [...map.values()].sort((a, b) => {
+      if (a.isBoss !== b.isBoss) return a.isBoss ? 1 : -1;
+      const ai = attrMap[a.attr]?.idx ?? 99;
+      const bi = attrMap[b.attr]?.idx ?? 99;
+      if (ai !== bi) return ai - bi;
+      return HS.CONST.toKanaSortKey(a.name).localeCompare(HS.CONST.toKanaSortKey(b.name), 'ja');
+    });
+    return enemyCatalogCache;
+  }
+
   HS.STAGES = {
+    TOTAL_WAVES,
+    TOWER_MAX_FLOOR,
     WORLDS,
     STORY_STAGES,
     BOSS_STAGES,
     STAGE_MAP,
     buildTowerStage,
-    getStage
+    buildStageWaves,
+    getStage,
+    getEnemyCatalog
   };
 })(window);

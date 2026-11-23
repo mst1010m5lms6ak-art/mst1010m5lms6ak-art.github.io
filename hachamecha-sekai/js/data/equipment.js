@@ -76,9 +76,11 @@
       affixes.push({ type: cand.type, val });
     }
 
+    const baseName = pick(sDef.names);
     const item = {
       id: `eq_${Date.now().toString(36)}_${(uidCounter++).toString(36)}_${randInt(10, 99)}`,
-      name: `${pick(PREFIXES[rarity])}${pick(sDef.names)}`,
+      name: `${pick(PREFIXES[rarity])}${baseName}`,
+      baseName,
       slot,
       rarity,
       mainStat: sDef.mainStat,
@@ -143,10 +145,19 @@
     return `${def.label}+${v}${def.unit}`;
   }
 
+  function inferBaseName(item) {
+    if (!item) return null;
+    if (item.baseName) return item.baseName;
+    const names = SLOT_BASES[item.slot]?.names || [];
+    return names.find((n) => (item.name || '').endsWith(n)) || names[0] || null;
+  }
+
   HS.EQUIP = {
+    PREFIXES,
     SLOT_BASES,
     AFFIX_POOL,
     AFFIX_MAP,
+    inferBaseName,
     generateEquipment,
     calcEquipScore,
     getEnhanceCost,

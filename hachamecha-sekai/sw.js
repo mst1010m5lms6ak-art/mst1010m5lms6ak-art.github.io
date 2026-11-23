@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hachamecha-sekai-v1.0.2';
+const CACHE_NAME = 'hachamecha-sekai-v1.1.0';
 const PRECACHE_ASSETS = [
   './',
   './index.html',
@@ -24,6 +24,7 @@ const PRECACHE_ASSETS = [
   './js/ui/render-party.js',
   './js/ui/render-units.js',
   './js/ui/render-gear.js',
+  './js/ui/render-codex.js',
   './js/ui/render-world.js',
   './js/main.js'
 ];

@@ -1,5 +1,5 @@
 /* ==========================================================================
-   render-gear.js - 装備画面（D&D装着/売却・強化・ロック・自動売却フィルタ設定）
+   render-gear.js - 装備画面（横スクロールキャラ選択・D&D装着・強化・保護・レアリティ一括売却）
    ========================================================================== */
 (function (global) {
   'use strict';
@@ -75,13 +75,11 @@
     }
 
     const stats = HS.STATE.getUnitStats(targetUid, false);
-    const a = HS.CONST.ATTR_MAP[targetU.attr];
-    const r = HS.CONST.ROLE_MAP[targetU.role];
 
     return `
       <div class="panel attr-${targetU.attr}" style="border-color:var(--attr-col);display:flex;align-items:center;justify-content:space-between;gap:6px">
         <div class="row-gap">
-          <div class="unit-crest"><span class="crest-role">${r.icon}</span><span class="crest-attr">${a.name}</span></div>
+          ${HS.CONST.renderUnitCrest(targetU)}
           <div style="min-width:0">
             <div class="ellipsis" style="font-size:12px;font-weight:900">${HS.UTIL.escHtml(targetU.name)} の装備</div>
             <div class="num" style="font-size:10px;color:var(--text-sub)">HP ${HS.UTIL.fmtNum(stats.hp)} / ATK ${HS.UTIL.fmtNum(stats.atk)} / SPD ${stats.spd}</div>
@@ -91,20 +89,32 @@
       </div>
       ${itemHtml}
       <div class="row-between" style="font-size:10px;color:var(--text-sub);padding:0 2px">
-        <span>自動売却ルール: <strong style="color:${st.autoSell.enabled ? 'var(--accent-cyan)' : 'var(--text-mute)'}">${st.autoSell.enabled ? `${st.autoSell.maxRarity}以下を自動売却` : 'OFF'}</strong></span>
-        <span>長押し/⠿ドラッグで枠へ装着・売却</span>
+        <span>横スクロールで対象キャラを切替</span>
+        <span>長押し/⠿ドラッグで枠へ装着</span>
       </div>`;
   }
 
   function renderLower() {
     const st = HS.STATE.data;
     const targetUid = ensureGearTarget();
-    const targetU = HS.UNITS_MAP[targetUid];
     const targetUs = st.units[targetUid];
     const eqMap = HS.STATE.getEquipMap();
     const fltSlot = HS.STATE.ui.gearFilterSlot;
+    const unlockedUnits = getUnlockedUnits();
 
     const item = st.equipment.find((e) => e.id === HS.STATE.ui.selectedGearId) || st.equipment[0] || null;
+
+    // 横スクロール式キャラ選択バー
+    const unitStripHtml = unlockedUnits.map((u) => {
+      const sel = u.id === targetUid;
+      const inParty = st.party.includes(u.id);
+      return `
+        <button class="gear-unit-pill attr-${u.attr} ${sel ? 'selected' : ''} ${inParty ? 'in-party' : ''}"
+                data-action="select-gear-unit" data-val="${u.id}">
+          ${HS.CONST.renderUnitCrest(u, 'xs')}
+          <span class="ellipsis gear-unit-name">${HS.UTIL.escHtml(u.name)}</span>
+        </button>`;
+    }).join('');
 
     const slotsHtml = HS.CONST.EQUIP_SLOTS.map((sl) => {
       const eqId = targetUs.equips[sl.id];
@@ -113,7 +123,7 @@
         return `
           <button class="gear-slot-box" data-action="gear-filter" data-val="${sl.id}"
                   data-drop-kind="gear-slot" data-drop-value="${sl.id}">
-            <span style="font-size:13px">${sl.icon}</span>
+            <span class="gear-slot-ico">${HS.CONST.renderSlotIcon(sl.id)}</span>
             <span style="font-size:9.5px;color:var(--text-mute)">${sl.name}空</span>
           </button>`;
       }
@@ -132,15 +142,15 @@
 
     const gridHtml = filtered.map((e) => {
       const sel = item && item.id === e.id;
-      const slIcon = HS.CONST.EQUIP_SLOTS.find((x) => x.id === e.slot)?.icon || '';
+      const slIco = HS.CONST.renderSlotIcon(e.slot, 'gear-card-ico');
       const owner = e.equippedBy ? HS.UNITS_MAP[e.equippedBy]?.name : '';
       return `
         <div class="gear-card rar-${e.rarity} ${sel ? 'selected' : ''}"
              data-action="select-gear" data-val="${e.id}"
              data-drag-kind="gear-item" data-drag-value="${e.id}" data-drag-label="${HS.UTIL.escHtml(e.name)}"
-             data-drag-accept="gear-slot,gear-sell">
+             data-drag-accept="gear-slot">
           <div class="row-between">
-            <span style="font-size:9.5px;font-weight:900;color:var(--rar-col)">${slIcon} ${e.rarity}${e.enhance > 0 ? `+${e.enhance}` : ''}</span>
+            <span class="row-gap" style="font-size:9.5px;font-weight:900;color:var(--rar-col);gap:3px">${slIco}<span>${e.rarity}${e.enhance > 0 ? `+${e.enhance}` : ''}</span></span>
             <div class="row-gap">
               <span class="num" style="font-size:9.5px;color:var(--accent-gold)">${e.score}</span>
               <span data-drag-handle="1" style="font-size:12px;color:var(--text-mute);touch-action:none">⠿</span>
@@ -154,42 +164,73 @@
     const enhCost = item ? HS.EQUIP.getEnhanceCost(item) : null;
 
     return `
-      <div class="row-gap" style="flex:0 0 28px">
-        <button class="btn btn-sm" data-action="gear-target-step" data-val="-1">◀</button>
-        <button class="btn btn-sm" style="flex:1.2" data-action="gear-target-step" data-val="1">${HS.UTIL.escHtml(targetU.name)} ▶</button>
-        <button class="btn btn-sm btn-cyan" data-action="gear-auto-equip" data-val="${targetUid}">最適</button>
-        <button class="btn btn-sm" data-action="open-autosell">自動売却</button>
-        <button class="btn btn-sm btn-danger" data-action="gear-bulk-sell">一括売</button>
-      </div>
+      <div class="gear-unit-strip h-scroll-box" id="gear-unit-strip">${unitStripHtml}</div>
 
-      <div class="gear-drop-row">
-        ${slotsHtml}
-        <div class="gear-slot-box gear-sell-drop" data-drop-kind="gear-sell" data-drop-value="sell">
-          <span>🗑</span>
-          <span>売却</span>
-        </div>
-      </div>
+      <div class="gear-drop-row">${slotsHtml}</div>
 
       <div class="row-gap" style="flex:0 0 28px">
-        <button class="btn btn-sm btn-primary" style="flex:1.1" data-action="gear-equip" data-val="${item ? item.id : ''}" ${item ? '' : 'disabled'}>装備する</button>
-        <button class="btn btn-sm btn-gold" style="flex:1.2" data-action="gear-enhance" data-val="${item ? item.id : ''}" ${item ? '' : 'disabled'}>
+        <button class="btn btn-sm btn-primary" style="flex:1.05" data-action="gear-equip" data-val="${item ? item.id : ''}" ${item ? '' : 'disabled'}>装備</button>
+        <button class="btn btn-sm btn-gold" style="flex:1.25" data-action="gear-enhance" data-val="${item ? item.id : ''}" ${item ? '' : 'disabled'}>
           強化${enhCost ? `(${HS.UTIL.fmtNum(enhCost.gold)}G)` : ''}
         </button>
         <button class="btn btn-sm" style="flex:0.75" data-action="gear-lock" data-val="${item ? item.id : ''}" ${item ? '' : 'disabled'}>
           ${item?.locked ? '🔓解除' : '🔒保護'}
         </button>
-        <button class="btn btn-sm btn-danger" style="flex:0.7" data-action="gear-sell" data-val="${item ? item.id : ''}" ${item ? '' : 'disabled'}>売却</button>
+        <button class="btn btn-sm btn-cyan" style="flex:0.7" data-action="gear-auto-equip" data-val="${targetUid}">最適</button>
+        <button class="btn btn-sm btn-danger" style="flex:0.85" data-action="open-bulksell">一括売</button>
       </div>
 
       <div class="pill-bar">
         <button class="pill-btn ${fltSlot === 'all' ? 'active' : ''}" data-action="gear-filter" data-val="all">全て</button>
         ${HS.CONST.EQUIP_SLOTS.map((sl) => `
-          <button class="pill-btn ${fltSlot === sl.id ? 'active' : ''}" data-action="gear-filter" data-val="${sl.id}">${sl.icon} ${sl.name}</button>`).join('')}
+          <button class="pill-btn ${fltSlot === sl.id ? 'active' : ''}" data-action="gear-filter" data-val="${sl.id}">${HS.CONST.renderSlotIcon(sl.id)} ${sl.name}</button>`).join('')}
       </div>
 
       <div class="gear-grid scroll-box">${gridHtml}</div>`;
   }
 
+  // レアリティ指定 一括売却シート（装備タブ専用）
+  function buildBulkSellSheet() {
+    const selected = HS.STATE.ui.bulkSellRarities || ['N'];
+    const rarities = ['N', 'R', 'SR', 'SSR'];
+    const preview = HS.STATE.previewBulkSellByRarities(selected);
+
+    return {
+      title: 'レアリティ別 一括売却',
+      body: `
+        <div class="panel" style="display:flex;flex-direction:column;gap:8px;font-size:11.5px">
+          <div style="font-weight:800">売却対象レアリティを選択してください</div>
+          <div style="font-size:10.5px;color:var(--text-sub)">
+            未装備・ロック解除状態の該当装備をまとめて売却します。装備中・🔒保護中・CHAOSレアは安全のため除外されます。
+          </div>
+          <div class="summary-grid">
+            <div class="summary-cell"><span class="sk">売却対象数</span><span class="sv">${preview.count} 件</span></div>
+            <div class="summary-cell"><span class="sk">獲得ゴールド</span><span class="sv res-gold">+${HS.UTIL.fmtNum(preview.gold)}G</span></div>
+            <div class="summary-cell"><span class="sk">獲得強化魔粉</span><span class="sv res-core">+${HS.UTIL.fmtNum(preview.dust)}</span></div>
+            <div class="summary-cell"><span class="sk">選択レア</span><span class="sv">${selected.length ? selected.join('・') : '未選択'}</span></div>
+          </div>
+        </div>`,
+      foot: `
+        <div class="sheet-foot-row">
+          ${rarities.map((r) => {
+            const on = selected.includes(r);
+            return `<button class="btn btn-sm rar-${r} ${on ? 'btn-gold' : ''}" data-action="bulksell-toggle-rar" data-val="${r}">${on ? '✓ ' : ''}${r}</button>`;
+          }).join('')}
+        </div>
+        <div class="sheet-foot-row">
+          <button class="btn btn-sm" data-action="bulksell-preset" data-val="N">Nのみ</button>
+          <button class="btn btn-sm" data-action="bulksell-preset" data-val="R">R以下</button>
+          <button class="btn btn-sm" data-action="bulksell-preset" data-val="SR">SR以下</button>
+          <button class="btn btn-sm" data-action="bulksell-preset" data-val="SSR">SSR以下</button>
+        </div>
+        <div class="sheet-foot-row">
+          <button class="btn" data-action="close-sheet">閉じる</button>
+          <button class="btn btn-danger" data-action="exec-bulksell" ${preview.count > 0 ? '' : 'disabled'}>${preview.count}件を一括売却する</button>
+        </div>`
+    };
+  }
+
+  // 自動売却フィルタ設定シート（出撃画面からのみ開く）
   function buildAutoSellSheet() {
     const rule = HS.STATE.data.autoSell;
     const rarities = ['N', 'R', 'SR', 'SSR'];
@@ -222,5 +263,5 @@
     };
   }
 
-  HS.UI_GEAR = { renderUpper, renderLower, buildAutoSellSheet };
+  HS.UI_GEAR = { renderUpper, renderLower, buildBulkSellSheet, buildAutoSellSheet };
 })(window);

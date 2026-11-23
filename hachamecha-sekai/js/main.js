@@ -7,11 +7,12 @@
   const HS = (global.HS = global.HS || {});
 
   const NAV_ITEMS = [
-    { id: 'battle', label: '出撃', icon: '⚔' },
-    { id: 'party',  label: '編成', icon: '◈' },
-    { id: 'units',  label: '育成', icon: '✦' },
-    { id: 'gear',   label: '装備', icon: '🛡' },
-    { id: 'world',  label: '記録', icon: '◎' }
+    { id: 'battle', label: '出撃' },
+    { id: 'party',  label: '編成' },
+    { id: 'units',  label: '育成' },
+    { id: 'gear',   label: '装備' },
+    { id: 'codex',  label: '図鑑' },
+    { id: 'world',  label: '記録' }
   ];
 
   let activeSheet = null; // { kind, data }
@@ -51,7 +52,7 @@
       return `
         <button class="nav-btn ${cur === n.id ? 'active' : ''} ${locked ? 'locked' : ''}"
                 data-action="nav-tab" data-val="${n.id}">
-          <span class="nav-ico">${n.icon}</span>
+          <span class="nav-ico">${HS.CONST.renderNavIcon(n.id)}</span>
           <span>${n.label}</span>
         </button>`;
     }).join('');
@@ -66,6 +67,13 @@
     const lower = document.getElementById('lower-content');
     const tab = HS.STATE.ui.tab;
 
+    // 同一タブ再描画時のスクロール位置を保持（特に装備の横スクロール選択）
+    const prevStrip = document.getElementById('gear-unit-strip');
+    const prevStripLeft = prevStrip ? prevStrip.scrollLeft : null;
+    const prevVScroll = lower ? lower.querySelector('.scroll-box') : null;
+    const prevVTop = prevVScroll ? prevVScroll.scrollTop : null;
+    const prevTab = lower ? lower.dataset.renderedTab : null;
+
     if (tab === 'battle') {
       upper.innerHTML = HS.UI_BATTLE.renderUpper();
       lower.innerHTML = HS.UI_BATTLE.renderLower();
@@ -78,9 +86,25 @@
     } else if (tab === 'gear') {
       upper.innerHTML = HS.UI_GEAR.renderUpper();
       lower.innerHTML = HS.UI_GEAR.renderLower();
+    } else if (tab === 'codex') {
+      upper.innerHTML = HS.UI_CODEX.renderUpper();
+      lower.innerHTML = HS.UI_CODEX.renderLower();
     } else {
       upper.innerHTML = HS.UI_WORLD.renderUpper();
       lower.innerHTML = HS.UI_WORLD.renderLower();
+    }
+
+    if (lower) lower.dataset.renderedTab = tab;
+
+    if (prevTab === tab) {
+      if (prevStripLeft !== null) {
+        const nextStrip = document.getElementById('gear-unit-strip');
+        if (nextStrip) nextStrip.scrollLeft = prevStripLeft;
+      }
+      if (prevVTop !== null) {
+        const nextVScroll = lower ? lower.querySelector('.scroll-box') : null;
+        if (nextVScroll) nextVScroll.scrollTop = prevVTop;
+      }
     }
   }
 
@@ -112,6 +136,8 @@
       content = HS.UI_BATTLE.buildRepeatResultHtml(activeSheet.data, HS.STATE.ui.dpsMetric);
     } else if (activeSheet.kind === 'autosell') {
       content = HS.UI_GEAR.buildAutoSellSheet();
+    } else if (activeSheet.kind === 'bulksell') {
+      content = HS.UI_GEAR.buildBulkSellSheet();
     } else if (activeSheet.kind === 'exweapon') {
       content = HS.UI_UNITS.buildExWeaponSheet(activeSheet.data);
     } else if (activeSheet.kind === 'save') {
@@ -177,36 +203,6 @@
       }
       return;
     }
-    if (dragKind === 'gear-item' && dropKind === 'gear-sell') {
-      const res = HS.STATE.sellEquipment(dragValue);
-      if (res.ok) {
-        HS.AUDIO.play('drop');
-        showToast(`売却 +${HS.UTIL.fmtNum(res.gold)}G / 魔粉+${res.dust}`);
-        renderAll();
-      } else {
-        showToast(res.msg, true);
-      }
-      return;
-    }
-    if (dragKind === 'battle-skill' && (dropKind === 'enemy-target' || dropKind === 'ally-target')) {
-      const [cid, sIdx] = dragValue.split(':');
-      if (HS.COMBAT.queueAllySkill(cid, Number(sIdx), dropValue)) {
-        if (dropKind === 'enemy-target') HS.COMBAT.setFocusEnemy(dropValue);
-        showToast('対象指定で技を予約しました');
-        HS.UI_BATTLE.updateLiveHud();
-      } else {
-        showToast('クールタイム中です', true);
-      }
-      return;
-    }
-    if (dragKind === 'chaos-orb') {
-      if (HS.COMBAT.triggerChaosAnomaly(true)) {
-        showToast('はちゃめちゃ異変 発動！');
-        HS.UI_BATTLE.updateLiveHud();
-      } else {
-        showToast('混沌ゲージ100%で発動できます', true);
-      }
-    }
   }
 
   // ==================== クリック・タップイベント統合 ====================
@@ -246,11 +242,15 @@
         renderAll();
         break;
 
-      case 'tower-floor':
+      case 'tower-floor': {
         HS.AUDIO.play('tap');
-        st.selectedStageId = `tower-${Number(val)}`;
+        const maxF = Math.min(HS.STAGES.TOWER_MAX_FLOOR, st.towerFloor);
+        const f = Math.max(1, Math.min(maxF, Number(val) || 1));
+        st.selectedStageId = `tower-${f}`;
+        HS.STATE.scheduleSave();
         renderAll();
         break;
+      }
 
       case 'select-stage':
         HS.AUDIO.play('tap');
@@ -273,62 +273,17 @@
           return;
         }
         HS.AUDIO.play('buff');
-        HS.STATE.ui.battleUpperView = 'arena';
         HS.COMBAT.startBattle(stage.id, st.settings.autoRepeat);
         renderAll();
         break;
       }
 
-      // ---- 戦闘中 ----
-      case 'focus-enemy':
-        HS.COMBAT.setFocusEnemy(val);
-        HS.UI_BATTLE.updateLiveHud();
-        break;
-
-      case 'select-ally':
-        HS.COMBAT.setSelectedAlly(val);
-        renderAll();
-        break;
-
-      case 'cast-skill': {
-        const [cid, idx] = val.split(':');
-        if (HS.COMBAT.queueAllySkill(cid, Number(idx), null)) {
-          HS.UI_BATTLE.updateLiveHud();
-        } else {
-          showToast('クールタイム中です', true);
-        }
-        break;
-      }
-
-      case 'trigger-chaos':
-        if (HS.COMBAT.triggerChaosAnomaly(true)) {
-          HS.UI_BATTLE.updateLiveHud();
-        } else {
-          showToast('混沌ゲージ100%で発動可能', true);
-        }
-        break;
-
+      // ---- 戦闘中（フルオート・倍速・DPS・ログフィルタ・周回・撤退） ----
       case 'cycle-speed': {
         const idx = HS.CONST.SPEED_STEPS.indexOf(st.settings.speed);
         st.settings.speed = HS.CONST.SPEED_STEPS[(idx + 1) % HS.CONST.SPEED_STEPS.length];
         HS.AUDIO.play('tap');
         HS.STATE.scheduleSave();
-        renderAll();
-        break;
-      }
-
-      case 'toggle-auto':
-        st.settings.autoBattle = !st.settings.autoBattle;
-        HS.AUDIO.play('tap');
-        HS.STATE.scheduleSave();
-        renderAll();
-        break;
-
-      case 'cycle-upper-view': {
-        const seq = ['arena', 'dps', 'log'];
-        const next = seq[(seq.indexOf(HS.STATE.ui.battleUpperView) + 1) % seq.length];
-        HS.STATE.ui.battleUpperView = next;
-        HS.AUDIO.play('tap');
         renderAll();
         break;
       }
@@ -360,7 +315,7 @@
             keptGear: [], autoSoldCount: 0, autoSoldGold: 0, autoSoldDust: 0,
             unlockedUnits: [], unitMetrics: {}
           };
-          showToast('この戦闘後から無限自動周回を継続します');
+          showToast('この戦闘後から周回を継続します');
           renderAll();
         }
         break;
@@ -525,15 +480,11 @@
       }
 
       // ---- 装備 ----
-      case 'gear-target-step': {
-        const list = HS.UNITS.filter((u) => st.units[u.id]?.unlocked);
-        const curIdx = Math.max(0, list.findIndex((u) => u.id === HS.STATE.ui.gearTargetUnitId));
-        const nextIdx = (curIdx + Number(val) + list.length) % list.length;
-        HS.STATE.ui.gearTargetUnitId = list[nextIdx].id;
+      case 'select-gear-unit':
+        HS.STATE.ui.gearTargetUnitId = val;
         HS.AUDIO.play('tap');
         renderAll();
         break;
-      }
 
       case 'select-gear':
         HS.STATE.ui.selectedGearId = val;
@@ -594,26 +545,40 @@
         break;
       }
 
-      case 'gear-sell': {
-        const res = HS.STATE.sellEquipment(val);
-        if (res.ok) {
-          HS.AUDIO.play('drop');
-          showToast(`売却 +${HS.UTIL.fmtNum(res.gold)}G / 魔粉+${res.dust}`);
-          renderAll();
-        } else {
-          showToast(res.msg, true);
-        }
+      case 'open-bulksell':
+        HS.AUDIO.play('tap');
+        openSheet('bulksell');
+        break;
+
+      case 'bulksell-toggle-rar': {
+        const arr = HS.STATE.ui.bulkSellRarities || [];
+        const i = arr.indexOf(val);
+        if (i >= 0) arr.splice(i, 1);
+        else arr.push(val);
+        HS.STATE.ui.bulkSellRarities = arr;
+        HS.AUDIO.play('tap');
+        renderSheet();
         break;
       }
 
-      case 'gear-bulk-sell': {
-        const res = HS.STATE.bulkSellByRule();
+      case 'bulksell-preset': {
+        const order = ['N', 'R', 'SR', 'SSR'];
+        const idx = order.indexOf(val);
+        HS.STATE.ui.bulkSellRarities = idx >= 0 ? order.slice(0, idx + 1) : ['N'];
+        HS.AUDIO.play('tap');
+        renderSheet();
+        break;
+      }
+
+      case 'exec-bulksell': {
+        const res = HS.STATE.bulkSellByRarities(HS.STATE.ui.bulkSellRarities);
         if (res.count > 0) {
           HS.AUDIO.play('drop');
           showToast(`${res.count}件を一括売却 (+${HS.UTIL.fmtNum(res.gold)}G / 魔粉+${res.dust})`);
+          closeSheet();
           renderAll();
         } else {
-          showToast('売却条件に該当する装備がありません');
+          showToast('売却条件に該当する装備がありません', true);
         }
         break;
       }
@@ -644,6 +609,28 @@
         HS.STATE.scheduleSave();
         HS.AUDIO.play('tap');
         renderSheet();
+        break;
+
+      // ---- 図鑑 ----
+      case 'codex-tab':
+        HS.STATE.ui.codexTab = val;
+        HS.STATE.ui.codexFilter = 'all';
+        HS.STATE.ui.codexSelectedId = null;
+        HS.AUDIO.play('tap');
+        renderAll();
+        break;
+
+      case 'codex-filter':
+        HS.STATE.ui.codexFilter = val;
+        HS.STATE.ui.codexSelectedId = null;
+        HS.AUDIO.play('tap');
+        renderAll();
+        break;
+
+      case 'codex-select':
+        HS.STATE.ui.codexSelectedId = val;
+        HS.AUDIO.play('tap');
+        renderAll();
         break;
 
       // ---- 記録・設定 ----

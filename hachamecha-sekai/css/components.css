@@ -123,34 +123,47 @@
   color: var(--rar-col, #fff);
 }
 
-/* キャラ幾何学紋章（キャライラスト不使用） */
+/* 統一サイズ幾何学SVGアイコン */
+.ico-svg {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.12em;
+  flex-shrink: 0;
+  fill: currentColor;
+}
+
+/* キャラ幾何学紋章（キャライラスト不使用・属性色背景＋中央ロールアイコンのみ） */
 .unit-crest {
   width: 30px;
   height: 30px;
   border-radius: 8px;
   flex-shrink: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--attr-col, #fff) 35%, #191334), #120d26);
+    linear-gradient(135deg, color-mix(in srgb, var(--attr-col, #fff) 44%, #191334), #120d26);
   border: 1.5px solid var(--attr-col, #aaa);
-  box-shadow: inset 0 0 8px color-mix(in srgb, var(--attr-col, #fff) 30%, transparent);
+  box-shadow: inset 0 0 8px color-mix(in srgb, var(--attr-col, #fff) 34%, transparent);
   position: relative;
   overflow: hidden;
 }
 
 .unit-crest .crest-role {
-  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
   line-height: 1;
+  color: #ffffff;
+  filter: drop-shadow(0 0 3px var(--attr-col, rgba(255, 255, 255, 0.5)));
 }
 
-.unit-crest .crest-attr {
-  font-size: 8px;
-  font-weight: 900;
-  color: var(--attr-col, #fff);
-  line-height: 1;
+.unit-crest .crest-role .ico-svg {
+  width: 1em;
+  height: 1em;
+  vertical-align: 0;
 }
 
 .unit-crest.lg {
@@ -159,8 +172,29 @@
   border-radius: 11px;
 }
 
-.unit-crest.lg .crest-role { font-size: 20px; }
-.unit-crest.lg .crest-attr { font-size: 10px; }
+.unit-crest.lg .crest-role {
+  font-size: 25px;
+}
+
+.unit-crest.sm {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+
+.unit-crest.sm .crest-role {
+  font-size: 14px;
+}
+
+.unit-crest.xs {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+}
+
+.unit-crest.xs .crest-role {
+  font-size: 12px;
+}
 
 /* 汎用パネル */
 .panel {
@@ -290,6 +324,18 @@
   text-shadow: 0 1px 3px #000;
 }
 
+.wave-badge {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 99px;
+  background: rgba(46, 230, 255, 0.22);
+  border: 1px solid var(--accent-cyan);
+  color: var(--accent-cyan);
+  font-size: 9.5px;
+  font-weight: 900;
+  text-shadow: none;
+}
+
 .chaos-gauge-wrap {
   display: flex;
   align-items: center;
@@ -351,39 +397,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* オーバーレイ型DPSメーター・詳細ログ（不透明背景で背後キャンバスが透けない設計） */
-.arena-overlay {
-  position: absolute;
-  inset: 0;
-  background: #100c22;
-  padding: 6px 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  overflow: hidden;
-  z-index: 4;
-}
-
-.dps-head {
-  flex: 0 0 20px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 11px;
-  font-weight: 800;
-  color: var(--accent-cyan);
-}
-
-.dps-list {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-evenly;
-  gap: 4px;
-  overflow: hidden;
-}
-
+/* DPS行＆ライブDPSパネル（戦場・DPS・ログ一目同時表示用） */
 .dps-row {
   display: flex;
   flex-direction: column;
@@ -402,8 +416,21 @@
   white-space: nowrap;
 }
 
+.dps-unit-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 800;
+}
+
+.dps-role-ico {
+  width: 12px;
+  height: 12px;
+  vertical-align: 0;
+}
+
 .dps-bar-bg {
-  height: 8px;
+  height: 7px;
   border-radius: 99px;
   background: rgba(255, 255, 255, 0.08);
   overflow: hidden;
@@ -416,14 +443,63 @@
   transition: width 0.15s ease;
 }
 
+.dps-row.compact {
+  gap: 1px;
+}
+
+.dps-row.compact .dps-row-top {
+  font-size: 10px;
+  height: 14px;
+  line-height: 14px;
+}
+
+.dps-row.compact .dps-bar-bg {
+  height: 4px;
+}
+
+.live-dps-box {
+  flex: 0 0 98px;
+  height: 98px;
+  background: rgba(14, 10, 32, 0.9);
+  border: 1px solid var(--border-dim);
+  border-radius: 8px;
+  padding: 4px 7px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.log-panel-head {
+  flex: 0 0 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.log-filter-pills {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.log-flt-btn {
+  height: 20px;
+  padding: 0 7px;
+  font-size: 9.5px;
+}
+
 /* 固定1行戦闘ログ（絶対2行にならない固定行高設計） */
 .live-log-box {
-  flex: 0 0 68px;
-  height: 68px;
+  flex: 1 1 auto;
+  min-height: 68px;
   background: rgba(11, 8, 24, 0.92);
   border: 1px solid var(--border-dim);
   border-radius: 6px;
-  padding: 1px 6px;
+  padding: 2px 6px;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -493,137 +569,8 @@
 .log-val.chaos { color: var(--accent-pink); }
 
 /* ==========================================================================
-   戦闘画面 - 下部操作エリア
+   戦闘画面 - 下部操作エリア（フルオートコントロール＆DPSタブ）
    ========================================================================== */
-.target-strip {
-  flex: 0 0 32px;
-  height: 32px;
-  display: flex;
-  gap: 4px;
-  overflow: hidden;
-}
-
-.target-chip {
-  flex: 1 1 0;
-  min-width: 0;
-  height: 100%;
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: var(--bg-card);
-  border: 1.5px solid var(--border-dim);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 2px;
-  touch-action: none;
-}
-
-.target-chip.focused {
-  border-color: var(--accent-pink);
-  background: rgba(255, 56, 152, 0.18);
-}
-
-.target-chip.drop-over {
-  border-color: var(--accent-gold);
-  box-shadow: 0 0 12px rgba(255, 214, 51, 0.65);
-}
-
-.target-chip.dead {
-  opacity: 0.32;
-}
-
-.mini-hp-track {
-  width: 100%;
-  height: 4px;
-  border-radius: 99px;
-  background: rgba(255, 255, 255, 0.12);
-  overflow: hidden;
-}
-
-.mini-hp-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #ff4d6d, #ff9966);
-}
-
-.mini-hp-fill.ally {
-  background: linear-gradient(90deg, #22c55e, #52f29b);
-}
-
-.party-tactical-row {
-  flex: 0 0 54px;
-  height: 54px;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-}
-
-.ally-pad {
-  min-width: 0;
-  height: 100%;
-  padding: 4px 5px;
-  border-radius: 8px;
-  background: var(--bg-card);
-  border: 1.5px solid var(--border-dim);
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  align-items: stretch;
-  text-align: left;
-  touch-action: none;
-}
-
-.ally-pad.selected {
-  border-color: var(--accent-cyan);
-  background: rgba(46, 230, 255, 0.14);
-}
-
-.ally-pad.drop-over {
-  border-color: var(--accent-lime);
-  box-shadow: 0 0 12px rgba(82, 242, 155, 0.6);
-}
-
-.ally-pad.dead {
-  opacity: 0.35;
-  filter: grayscale(0.8);
-}
-
-.skill-deck {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr) 62px;
-  gap: 5px;
-}
-
-.skill-card {
-  height: 100%;
-  padding: 6px 6px 5px;
-  border-radius: 10px;
-  background: linear-gradient(180deg, var(--bg-card-alt), var(--bg-card));
-  border: 1.5px solid var(--border-dim);
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  align-items: stretch;
-  gap: 4px;
-  text-align: left;
-  position: relative;
-  overflow: hidden;
-  touch-action: none;
-}
-
-.skill-card-desc {
-  font-size: 9.5px;
-  line-height: 1.32;
-  color: var(--text-sub);
-  white-space: normal;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  word-break: break-word;
-}
-
 .clamp-2 {
   white-space: normal;
   line-height: 1.32;
@@ -649,58 +596,24 @@
   overflow: hidden;
 }
 
-.skill-card.ready {
-  border-color: color-mix(in srgb, var(--attr-col, var(--accent-cyan)) 75%, #fff);
-}
-
-.skill-card.queued {
-  border-color: var(--accent-gold);
-  box-shadow: inset 0 0 12px rgba(255, 214, 51, 0.3);
-}
-
-.skill-card.on-cd {
-  opacity: 0.55;
-}
-
-.chaos-orb-btn {
-  height: 100%;
-  border-radius: 10px;
-  flex-direction: column;
-  background: linear-gradient(180deg, #32164c, #1a0d2e);
-  border: 1.5px solid var(--border-dim);
-  font-size: 10px;
-  font-weight: 900;
-  padding: 4px;
-  touch-action: none;
-}
-
-.chaos-orb-btn.charged {
-  background: linear-gradient(135deg, #ff3898, #ffd633);
-  border-color: #fff;
-  color: #160926;
-  box-shadow: 0 0 16px rgba(255, 56, 152, 0.7);
-  animation: pulseOrb 1s ease-in-out infinite;
-}
-
-@keyframes pulseOrb {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.04); }
-}
-
 .battle-util-row {
-  flex: 0 0 34px;
-  height: 34px;
+  flex: 0 0 32px;
+  height: 32px;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 4px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
 }
 
 .dps-tab-row {
-  flex: 0 0 30px;
-  height: 30px;
+  flex: 0 0 26px;
+  height: 26px;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 4px;
+}
+
+.dps-tab-row .btn-sm {
+  height: 26px;
 }
 
 /* ==========================================================================
@@ -719,6 +632,7 @@
   flex: 0 0 26px;
   height: 26px;
   display: flex;
+  align-items: center;
   gap: 4px;
   overflow-x: auto;
   overflow-y: hidden;
@@ -752,7 +666,6 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
-  padding-right: 2px;
 }
 
 .stage-card {
@@ -827,6 +740,14 @@
   color: var(--text-mute);
 }
 
+.slot-role-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+}
+
 /* キャラ一覧グリッド */
 .roster-grid {
   flex: 1 1 auto;
@@ -835,7 +756,6 @@
   grid-template-columns: repeat(2, 1fr);
   align-content: start;
   gap: 5px;
-  padding-right: 2px;
 }
 
 .unit-chip {
@@ -870,13 +790,49 @@
   border-style: dashed;
 }
 
-/* 装備グリッド＆D&Dスロット */
+/* 装備横スクロールキャラ選択・3スロットD&D・一覧グリッド */
+.gear-unit-strip {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.gear-unit-pill {
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 8px 0 4px;
+  border-radius: 8px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-dim);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 112px;
+}
+
+.gear-unit-pill.in-party {
+  border-color: color-mix(in srgb, var(--accent-gold) 58%, var(--border-dim));
+}
+
+.gear-unit-pill.selected {
+  border-color: var(--accent-cyan);
+  background: rgba(46, 230, 255, 0.16);
+  box-shadow: inset 0 0 8px rgba(46, 230, 255, 0.24);
+}
+
+.gear-unit-name {
+  font-size: 10.5px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
 .gear-drop-row {
-  flex: 0 0 54px;
-  height: 54px;
+  flex: 0 0 52px;
+  height: 52px;
   display: grid;
-  grid-template-columns: repeat(3, 1fr) 60px;
-  gap: 4px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
 }
 
 .gear-slot-box {
@@ -894,6 +850,14 @@
   touch-action: none;
 }
 
+.gear-slot-ico {
+  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-sub);
+}
+
 .gear-slot-box.filled {
   border-style: solid;
   border-color: var(--rar-col, var(--border-bright));
@@ -904,14 +868,6 @@
   background: rgba(255, 214, 51, 0.22);
 }
 
-.gear-sell-drop {
-  border-color: rgba(255, 77, 109, 0.55);
-  background: rgba(255, 77, 109, 0.12);
-  color: #ff99ac;
-  font-size: 10px;
-  font-weight: 800;
-}
-
 .gear-grid {
   flex: 1 1 auto;
   min-height: 0;
@@ -919,7 +875,57 @@
   grid-template-columns: repeat(2, 1fr);
   align-content: start;
   gap: 5px;
-  padding-right: 2px;
+}
+
+.gear-card-ico {
+  width: 11px;
+  height: 11px;
+  vertical-align: 0;
+}
+
+/* 図鑑タブ専用リスト */
+.codex-head-bar {
+  flex: 0 0 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  padding: 0 2px;
+}
+
+.codex-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.codex-row {
+  width: 100%;
+  min-height: 36px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.codex-row.selected {
+  border-color: var(--accent-cyan);
+  background: rgba(46, 230, 255, 0.14);
+}
+
+.codex-row.locked {
+  opacity: 0.56;
+  border-style: dashed;
 }
 
 .gear-card {

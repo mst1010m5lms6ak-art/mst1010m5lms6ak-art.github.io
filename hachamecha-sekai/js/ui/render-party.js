@@ -33,10 +33,7 @@
 
       <div class="panel attr-${u.attr}" style="flex:1 1 auto;min-height:0;border-color:var(--attr-col);display:flex;flex-direction:column;gap:5px;overflow:hidden">
         <div class="row-gap">
-          <div class="unit-crest lg">
-            <span class="crest-role">${r.icon}</span>
-            <span class="crest-attr">${a.name}</span>
-          </div>
+          ${HS.CONST.renderUnitCrest(u, 'lg')}
           <div style="min-width:0;flex:1">
             <div class="row-between">
               <span class="ellipsis" style="font-size:14px;font-weight:900">${HS.UTIL.escHtml(u.name)} <span class="num" style="font-size:11px;color:var(--accent-gold)">Lv.${us.level}</span></span>
@@ -97,7 +94,7 @@
                 data-drag-accept="party-slot,party-remove" data-drag-immediate="1"
                 data-drop-kind="party-slot" data-drop-value="${idx}">
           <span class="slot-idx">${idx === 0 ? '前' : idx + 1}</span>
-          <span style="font-size:14px;line-height:1">${r.icon}</span>
+          <span class="slot-role-ico" style="color:${a.color}">${HS.CONST.renderRoleIcon(u.role)}</span>
           <span class="ellipsis" style="font-size:10.5px;font-weight:900;max-width:100%">${HS.UTIL.escHtml(u.name)}</span>
           <span style="font-size:9px;color:${a.color};font-weight:800">${a.name}・Lv.${st.units[uid].level}</span>
         </button>`;
@@ -112,7 +109,6 @@
 
     const rosterHtml = roster.map((u) => {
       const us = st.units[u.id];
-      const a = HS.CONST.ATTR_MAP[u.attr];
       const r = HS.CONST.ROLE_MAP[u.role];
       const inPartyIdx = st.party.indexOf(u.id);
       return `
@@ -120,10 +116,7 @@
              data-action="assign-party-unit" data-val="${u.id}"
              data-drag-kind="roster-unit" data-drag-value="${u.id}" data-drag-label="${HS.UTIL.escHtml(u.name)}"
              data-drag-accept="party-slot">
-          <div class="unit-crest">
-            <span class="crest-role">${r.icon}</span>
-            <span class="crest-attr">${a.name}</span>
-          </div>
+          ${HS.CONST.renderUnitCrest(u)}
           <div style="min-width:0;flex:1">
             <div class="row-between">
               <span class="ellipsis" style="font-size:11px;font-weight:900">${HS.UTIL.escHtml(u.name)}</span>

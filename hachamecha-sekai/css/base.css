@@ -140,21 +140,55 @@ input, textarea {
 .rar-SSR   { --rar-col: var(--rar-ssr); }
 .rar-CHAOS { --rar-col: var(--rar-chaos); }
 
-/* スクロール許可領域のみ明示適用 */
+/* スクロール許可領域のみ明示適用（スクロールバーとカード枠の重なりを防ぐ余白確保） */
 .scroll-box {
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+  padding-right: 6px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(168, 146, 255, 0.35) transparent;
+  scrollbar-color: rgba(168, 146, 255, 0.42) transparent;
 }
 
 .scroll-box::-webkit-scrollbar {
-  width: 4px;
+  width: 5px;
+}
+
+.scroll-box::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 2px 0;
 }
 
 .scroll-box::-webkit-scrollbar-thumb {
-  background: rgba(168, 146, 255, 0.35);
+  background: rgba(168, 146, 255, 0.42);
+  border-radius: 99px;
+  border: 1px solid transparent;
+  background-clip: content-box;
+}
+
+/* 横スクロール許可領域（下端余白を確保して枠とスクロールバーが被らない設計） */
+.h-scroll-box {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(168, 146, 255, 0.42) transparent;
+}
+
+.h-scroll-box::-webkit-scrollbar {
+  height: 4px;
+}
+
+.h-scroll-box::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 0 2px;
+}
+
+.h-scroll-box::-webkit-scrollbar-thumb {
+  background: rgba(168, 146, 255, 0.42);
   border-radius: 99px;
 }

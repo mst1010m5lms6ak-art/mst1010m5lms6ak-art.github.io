@@ -29,8 +29,23 @@
       HS.EQUIP.generateEquipment(1600, 1.3)
     ];
 
+    const codex = {
+      enemiesSeen: {},
+      anomaliesSeen: {},
+      gearBasesSeen: {},
+      gearRaritiesSeen: {}
+    };
+    for (const item of initGear) {
+      const base = HS.EQUIP.inferBaseName(item);
+      if (base) {
+        const key = `${item.slot}:${base}`;
+        codex.gearBasesSeen[key] = (codex.gearBasesSeen[key] || 0) + 1;
+      }
+      codex.gearRaritiesSeen[item.rarity] = (codex.gearRaritiesSeen[item.rarity] || 0) + 1;
+    }
+
     return {
-      version: 1,
+      version: 2,
       savedAt: Date.now(),
       lastActiveAt: Date.now(),
       resources: {
@@ -66,7 +81,8 @@
         totalAnomalies: 0,
         totalAutoSold: 0,
         maxSingleHit: 0
-      }
+      },
+      codex
     };
   }
 
@@ -77,11 +93,18 @@
     const merged = {
       ...base,
       ...loaded,
+      version: 2,
       resources: { ...base.resources, ...(loaded.resources || {}) },
-      settings: { ...base.settings, ...(loaded.settings || {}) },
+      settings: { ...base.settings, ...(loaded.settings || {}), autoBattle: true },
       autoSell: { ...base.autoSell, ...(loaded.autoSell || {}) },
       stats: { ...base.stats, ...(loaded.stats || {}) },
-      clearedStages: { ...(loaded.clearedStages || {}) }
+      clearedStages: { ...(loaded.clearedStages || {}) },
+      codex: {
+        enemiesSeen: { ...(loaded.codex?.enemiesSeen || {}) },
+        anomaliesSeen: { ...(loaded.codex?.anomaliesSeen || {}) },
+        gearBasesSeen: { ...(loaded.codex?.gearBasesSeen || {}) },
+        gearRaritiesSeen: { ...(loaded.codex?.gearRaritiesSeen || {}) }
+      }
     };
 
     // 3倍速上限を厳守
@@ -89,7 +112,28 @@
       merged.settings.speed = 1;
     }
 
-    // 全20ユニットの整合性補完
+    // 異界塔100F上限・旧セーブ踏破済み階層の整合補完
+    const maxF = HS.STAGES.TOWER_MAX_FLOOR || 100;
+    const rawFloor = Math.floor(Number(loaded.towerFloor) || 1);
+    if (rawFloor > maxF) {
+      merged.towerFloor = maxF;
+      for (let f = 1; f <= maxF; f++) {
+        if (!merged.clearedStages[`tower-${f}`]) merged.clearedStages[`tower-${f}`] = 1;
+      }
+    } else {
+      merged.towerFloor = Math.max(1, Math.min(maxF, rawFloor));
+      for (let f = 1; f < merged.towerFloor; f++) {
+        if (!merged.clearedStages[`tower-${f}`]) merged.clearedStages[`tower-${f}`] = 1;
+      }
+    }
+    if (merged.selectedStageId && merged.selectedStageId.startsWith('tower-')) {
+      const selF = Number(merged.selectedStageId.split('-')[1]) || 1;
+      if (selF > merged.towerFloor || selF > maxF) {
+        merged.selectedStageId = `tower-${merged.towerFloor}`;
+      }
+    }
+
+    // 全ユニットの整合性補完
     const mergedUnits = {};
     for (const u of HS.UNITS) {
       const prev = loaded.units && loaded.units[u.id];
@@ -108,13 +152,34 @@
     }
     merged.units = mergedUnits;
 
-    // 装備マップ検証
+    // 装備マップ検証＆図鑑バックフィル
     merged.equipment = Array.isArray(loaded.equipment) ? loaded.equipment : base.equipment;
     const eqIds = new Set(merged.equipment.map((e) => e.id));
+    for (const item of merged.equipment) {
+      const baseName = HS.EQUIP.inferBaseName(item);
+      if (baseName) {
+        if (!item.baseName) item.baseName = baseName;
+        const k = `${item.slot}:${baseName}`;
+        if (!merged.codex.gearBasesSeen[k]) merged.codex.gearBasesSeen[k] = 1;
+      }
+      if (item.rarity && !merged.codex.gearRaritiesSeen[item.rarity]) {
+        merged.codex.gearRaritiesSeen[item.rarity] = 1;
+      }
+    }
     for (const uid of Object.keys(merged.units)) {
       const eq = merged.units[uid].equips;
       for (const s of ['weapon', 'armor', 'accessory']) {
         if (eq[s] && !eqIds.has(eq[s])) eq[s] = null;
+      }
+    }
+
+    // 踏破済みステージの敵を図鑑へバックフィル
+    for (const st of [...HS.STAGES.STORY_STAGES, ...HS.STAGES.BOSS_STAGES]) {
+      if (!merged.clearedStages[st.id]) continue;
+      for (const en of st.enemies) {
+        if (!merged.codex.enemiesSeen[en.name]) {
+          merged.codex.enemiesSeen[en.name] = { seen: 1, defeated: 1 };
+        }
       }
     }
 
@@ -140,7 +205,6 @@
     data: null,
     ui: {
       tab: 'battle',
-      battleUpperView: 'arena', // 'arena' | 'dps' | 'log'
       dpsMetric: 'dmgDealt',    // 'dmgDealt' | 'dmgTaken' | 'healDone' | 'healRecv'
       selectedPartySlot: 0,
       selectedUnitId: 'kagura',
@@ -149,7 +213,11 @@
       partyFilterAttr: 'all',
       unitFilterAttr: 'all',
       gearFilterSlot: 'all',
-      worldSubTab: 'drift',     // 'drift' | 'codex' | 'system'
+      bulkSellRarities: ['N'],
+      codexTab: 'unit',         // 'unit' | 'enemy' | 'gear' | 'ability' | 'anomaly'
+      codexFilter: 'all',
+      codexSelectedId: null,
+      worldSubTab: 'drift',     // 'drift' | 'system'
       logFilter: 'all'
     }
   };
@@ -208,7 +276,10 @@
   }
 
   function isStageUnlocked(stage) {
-    if (stage.mode === 'tower') return true;
+    if (stage.mode === 'tower') {
+      const f = stage.floor || 1;
+      return f >= 1 && f <= STATE.data.towerFloor && f <= HS.STAGES.TOWER_MAX_FLOOR;
+    }
     if (stage.mode === 'boss') {
       const idx = HS.STAGES.BOSS_STAGES.findIndex((s) => s.id === stage.id);
       if (idx <= 0) return !!STATE.data.clearedStages['w1-4'];
@@ -219,6 +290,51 @@
     if (idx <= 0) return true;
     const prev = HS.STAGES.STORY_STAGES[idx - 1];
     return !!STATE.data.clearedStages[prev.id];
+  }
+
+  function isTowerClearedAll() {
+    return !!STATE.data.clearedStages[`tower-${HS.STAGES.TOWER_MAX_FLOOR}`];
+  }
+
+  // ================= 図鑑記録 =================
+  function ensureCodex() {
+    if (!STATE.data.codex) {
+      STATE.data.codex = { enemiesSeen: {}, anomaliesSeen: {}, gearBasesSeen: {}, gearRaritiesSeen: {} };
+    }
+    return STATE.data.codex;
+  }
+
+  function recordEnemySeen(name) {
+    if (!name) return;
+    const c = ensureCodex();
+    if (!c.enemiesSeen[name]) c.enemiesSeen[name] = { seen: 0, defeated: 0 };
+    c.enemiesSeen[name].seen += 1;
+  }
+
+  function recordEnemyDefeated(name) {
+    if (!name) return;
+    const c = ensureCodex();
+    if (!c.enemiesSeen[name]) c.enemiesSeen[name] = { seen: 1, defeated: 0 };
+    c.enemiesSeen[name].defeated += 1;
+  }
+
+  function recordAnomalySeen(anomalyId) {
+    if (!anomalyId) return;
+    const c = ensureCodex();
+    c.anomaliesSeen[anomalyId] = (c.anomaliesSeen[anomalyId] || 0) + 1;
+  }
+
+  function recordGearSeen(item) {
+    if (!item) return;
+    const c = ensureCodex();
+    const base = HS.EQUIP.inferBaseName(item);
+    if (base) {
+      const k = `${item.slot}:${base}`;
+      c.gearBasesSeen[k] = (c.gearBasesSeen[k] || 0) + 1;
+    }
+    if (item.rarity) {
+      c.gearRaritiesSeen[item.rarity] = (c.gearRaritiesSeen[item.rarity] || 0) + 1;
+    }
   }
 
   function getHighestClearedPower() {
@@ -363,6 +479,7 @@
 
   // ================= 装備・自動売却 =================
   function addEquipmentLoot(item) {
+    recordGearSeen(item);
     const rule = STATE.data.autoSell;
     const bagFull = STATE.data.equipment.length >= MAX_EQUIP_BAG;
     if (HS.EQUIP.shouldAutoSell(item, rule) || (bagFull && !item.locked)) {
@@ -469,6 +586,48 @@
     return { ok: true, gold: val.gold, dust: val.dust };
   }
 
+  function previewBulkSellByRarities(rarities) {
+    const set = new Set(rarities || []);
+    let count = 0;
+    let gold = 0;
+    let dust = 0;
+    for (const item of STATE.data.equipment) {
+      if (item.locked || item.equippedBy) continue;
+      if (!set.has(item.rarity)) continue;
+      const val = HS.EQUIP.getSellValue(item);
+      count += 1;
+      gold += val.gold;
+      dust += val.dust;
+    }
+    return { count, gold, dust };
+  }
+
+  function bulkSellByRarities(rarities) {
+    const set = new Set(rarities || []);
+    let count = 0;
+    let gold = 0;
+    let dust = 0;
+    const remain = [];
+    for (const item of STATE.data.equipment) {
+      if (!item.locked && !item.equippedBy && set.has(item.rarity)) {
+        const val = HS.EQUIP.getSellValue(item);
+        count += 1;
+        gold += val.gold;
+        dust += val.dust;
+      } else {
+        remain.push(item);
+      }
+    }
+    STATE.data.equipment = remain;
+    STATE.data.resources.gold += gold;
+    STATE.data.resources.dust += dust;
+    if (!remain.some((e) => e.id === STATE.ui.selectedGearId)) {
+      STATE.ui.selectedGearId = remain[0]?.id || null;
+    }
+    scheduleSave();
+    return { count, gold, dust };
+  }
+
   function bulkSellByRule() {
     const rule = { ...STATE.data.autoSell, enabled: true };
     let count = 0;
@@ -544,6 +703,11 @@
     getUnitStats,
     getPartyTotalPower,
     isStageUnlocked,
+    isTowerClearedAll,
+    recordEnemySeen,
+    recordEnemyDefeated,
+    recordAnomalySeen,
+    recordGearSeen,
     getHighestClearedPower,
     setPartySlot,
     swapPartySlots,
@@ -562,6 +726,8 @@
     enhanceEquipment,
     toggleEquipLock,
     sellEquipment,
+    previewBulkSellByRarities,
+    bulkSellByRarities,
     bulkSellByRule,
     getPendingOfflineRewards,
     claimOfflineRewards

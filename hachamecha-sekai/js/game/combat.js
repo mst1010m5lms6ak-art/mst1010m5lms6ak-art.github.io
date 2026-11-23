@@ -1,5 +1,5 @@
 /* ==========================================================================
-   combat.js - ATB行動順・はちゃめちゃ異変・4指標DPS・1行ログ・3倍速・無限周回
+   combat.js - フルオート5WAVE・ATB行動順・はちゃめちゃ異変・4指標DPS・1行ログ・3倍速・周回
    ========================================================================== */
 (function (global) {
   'use strict';
@@ -9,12 +9,15 @@
   const MAX_LOGS = 80;
 
   const engine = {
-    phase: 'idle', // 'idle' | 'fighting' | 'repeat_wait' | 'ended'
+    phase: 'idle', // 'idle' | 'fighting' | 'wave_wait' | 'repeat_wait' | 'ended'
     stage: null,
+    wave: 1,
+    maxWaves: 5,
+    waves: [],
+    waveWaitTimer: 0,
+    waveBannerTimer: 0,
     allies: [],
     enemies: [],
-    focusedEnemyId: null,
-    selectedAllyId: null,
     elapsed: 0,
     chaos: 0,
     anomaly: null, // { def, timer, tickAccum }
@@ -35,7 +38,7 @@
   };
 
   function isActive() {
-    return engine.phase === 'fighting' || engine.phase === 'repeat_wait';
+    return engine.phase === 'fighting' || engine.phase === 'wave_wait' || engine.phase === 'repeat_wait';
   }
 
   function isRepeating() {
@@ -131,8 +134,6 @@
         attrBonus: st.attrBonus,
         gauge: HS.UTIL.rand(8, 22) + (syn.startSp || 0),
         cds: [0, 0, 0],
-        queuedSkillIdx: null,
-        queuedTargetCid: null,
         buffs: {}, // { atkUp: turns, defUp: turns, spdUp: turns, taunt: turns }
         debuffs: {},
         frenzyStacks: 0,
@@ -153,50 +154,61 @@
       for (const a of allies) a.shield += Math.round(a.maxHp * 0.18);
     }
 
-    const enemies = stage.enemies.map((e, idx) => ({
-      uid: `e_${idx}`,
-      cid: `e_${idx}`,
-      side: 'enemy',
-      slotIdx: idx,
-      name: e.name,
-      attr: e.attr,
-      role: e.role,
-      isBoss: !!e.isBoss,
-      maxHp: e.hp,
-      hp: e.hp,
-      shield: e.role === 'tank' ? Math.round(e.hp * 0.14) : 0,
-      atk: e.atk,
-      def: e.def,
-      spd: e.spd,
-      crit: e.isBoss ? 0.16 : 0.08,
-      cdmg: 1.45,
-      healPct: 0,
-      dmgRed: e.role === 'tank' ? 0.12 : 0,
-      lifesteal: 0,
-      gauge: HS.UTIL.rand(4, 18),
-      cds: [0, 1, 2],
-      buffs: {},
-      debuffs: {},
-      alive: true,
-      hitAnim: 0,
-      actAnim: 0,
-      x: 0,
-      y: 0
-    }));
+    return allies;
+  }
 
-    return { allies, enemies };
+  function buildEnemyCombatants(enemyDefs, waveNum) {
+    return (enemyDefs || []).map((e, idx) => {
+      HS.STATE.recordEnemySeen(e.name);
+      return {
+        uid: `e_w${waveNum}_${idx}`,
+        cid: `e_w${waveNum}_${idx}`,
+        side: 'enemy',
+        slotIdx: idx,
+        name: e.name,
+        attr: e.attr,
+        role: e.role,
+        isBoss: !!e.isBoss,
+        maxHp: e.hp,
+        hp: e.hp,
+        shield: e.role === 'tank' ? Math.round(e.hp * 0.14) : 0,
+        atk: e.atk,
+        def: e.def,
+        spd: e.spd,
+        crit: e.isBoss ? 0.16 : 0.08,
+        cdmg: 1.45,
+        healPct: 0,
+        dmgRed: e.role === 'tank' ? 0.12 : 0,
+        lifesteal: 0,
+        gauge: HS.UTIL.rand(4, 18),
+        cds: [0, 1, 2],
+        buffs: {},
+        debuffs: {},
+        alive: true,
+        hitAnim: 0,
+        actAnim: 0,
+        x: 0,
+        y: 0
+      };
+    });
   }
 
   function startBattle(stageId, useRepeat) {
     const stage = HS.STAGES.getStage(stageId, HS.STATE.data.towerFloor);
-    const { allies, enemies } = buildCombatants(stage);
+    const allies = buildCombatants(stage);
     if (!allies.length) return false;
 
+    const waves = HS.STAGES.buildStageWaves(stage);
+    const enemies = buildEnemyCombatants(waves[0], 1);
+
     engine.stage = stage;
+    engine.waves = waves;
+    engine.wave = 1;
+    engine.maxWaves = waves.length;
+    engine.waveWaitTimer = 0;
+    engine.waveBannerTimer = 1.05;
     engine.allies = allies;
     engine.enemies = enemies;
-    engine.focusedEnemyId = enemies[0]?.cid || null;
-    engine.selectedAllyId = allies[0]?.cid || null;
     engine.elapsed = 0;
     engine.chaos = 0;
     engine.anomaly = null;
@@ -232,9 +244,33 @@
       engine.repeatSession = null;
     }
 
-    addLog('戦闘開始', stage.name, stage.code, `${enemies.length}体出現`, 'chaos', stage.attr);
+    addLog('戦闘開始', stage.name, `WAVE 1/${engine.maxWaves}`, `${enemies.length}体出現`, 'chaos', stage.attr);
     if (engine.callbacks.onStateChange) engine.callbacks.onStateChange();
     return true;
+  }
+
+  function advanceToNextWave() {
+    engine.wave += 1;
+    // WAVE突破ボーナス：生存味方のHP12%回復＆行動ゲージ小整列
+    for (const a of engine.allies) {
+      if (!a.alive) continue;
+      const heal = Math.max(1, Math.round(a.maxHp * 0.12));
+      const actual = Math.min(a.maxHp - a.hp, heal);
+      a.hp += actual;
+      if (actual > 0) pushPopup(a, `+${HS.UTIL.fmtNum(actual)}`, '#52f29b', false);
+      a.gauge = Math.min(85, a.gauge + 12);
+    }
+
+    const nextDefs = engine.waves[engine.wave - 1] || [];
+    engine.enemies = buildEnemyCombatants(nextDefs, engine.wave);
+    engine.phase = 'fighting';
+    engine.waveBannerTimer = 1.15;
+    engine.flash = { color: engine.wave === engine.maxWaves ? '#ff3898' : '#2ee6ff', alpha: 0.28 };
+    HS.AUDIO.play('buff');
+
+    const waveTag = engine.wave === engine.maxWaves ? `FINAL ${engine.wave}/${engine.maxWaves}` : `WAVE ${engine.wave}/${engine.maxWaves}`;
+    addLog('WAVE進行', waveTag, engine.stage?.code || '', `${engine.enemies.length}体出現`, 'chaos', engine.stage?.attr || 'null');
+    if (engine.callbacks.onStateChange) engine.callbacks.onStateChange();
   }
 
   function stopRepeatAndShowSummary() {
@@ -323,7 +359,7 @@
     engine.chaos = Math.min(100, engine.chaos + amount * bonus);
   }
 
-  function triggerChaosAnomaly(manual) {
+  function triggerChaosAnomaly() {
     if (engine.phase !== 'fighting' || engine.chaos < 100 || engine.anomaly) return false;
     const def = HS.UTIL.pick(HS.CONST.CHAOS_ANOMALIES);
     const hasMikotoEx = engine.allies.some((a) => a.alive && a.exPassive === 'chaos_master');
@@ -336,6 +372,7 @@
     engine.shake = 12;
     engine.flash = { color: def.color, alpha: 0.45 };
     HS.STATE.data.stats.totalAnomalies += 1;
+    HS.STATE.recordAnomalySeen(def.id);
     HS.AUDIO.play('chaos');
 
     // ゼロワン専用武器: 異変発動時に全体障壁＆回復
@@ -347,21 +384,30 @@
       }
     }
 
-    addLog('異変発生', manual ? '手動発動' : '混沌暴走', def.name, `${engine.anomaly.timer.toFixed(0)}秒`, 'chaos', 'null');
+    addLog('異変発生', '混沌暴走', def.name, `${engine.anomaly.timer.toFixed(0)}秒`, 'chaos', 'null');
     return true;
   }
 
-  function pickEnemyTarget(preferredCid) {
+  function pickEnemyTarget(attacker) {
     const alive = engine.enemies.filter((e) => e.alive);
     if (!alive.length) return null;
-    if (preferredCid) {
-      const exact = alive.find((e) => e.cid === preferredCid);
-      if (exact) return exact;
+    // フルオート賢いターゲティング：有利属性・瀕死敵をやや優先
+    let best = alive[0];
+    let bestScore = -Infinity;
+    for (const e of alive) {
+      let sc = 1.0 - (e.hp / e.maxHp) * 0.35;
+      if (attacker) {
+        const rel = HS.CONST.getAttrMultiplier(attacker.attr, e.attr);
+        if (rel.relation === 'weak') sc += 0.4;
+        else if (rel.relation === 'resist') sc -= 0.25;
+      }
+      if (e.role === 'healer') sc += 0.18;
+      if (sc > bestScore) {
+        bestScore = sc;
+        best = e;
+      }
     }
-    const focused = alive.find((e) => e.cid === engine.focusedEnemyId);
-    if (focused) return focused;
-    engine.focusedEnemyId = alive[0].cid;
-    return alive[0];
+    return best;
   }
 
   function pickAllyTargetForEnemy() {
@@ -498,7 +544,10 @@
         attacker.hp = Math.max(0, attacker.hp - refDmg);
         if (target.metrics) target.metrics.dmgDealt += refDmg;
         pushPopup(attacker, `反撃-${refDmg}`, '#ff7a45', false);
-        if (attacker.hp <= 0) attacker.alive = false;
+        if (attacker.hp <= 0) {
+          attacker.alive = false;
+          if (attacker.side === 'enemy') HS.STATE.recordEnemyDefeated(attacker.name);
+        }
       }
     }
 
@@ -553,6 +602,7 @@
 
     if (target.hp <= 0) {
       target.alive = false;
+      if (target.side === 'enemy') HS.STATE.recordEnemyDefeated(target.name);
       addLog(attacker.name, target.name, '撃破', 'K.O.', 'chaos', atkAttr);
       if (attacker.exPassive === 'abyss_echo') attacker.gauge = Math.min(100, attacker.gauge + 50);
     }
@@ -574,18 +624,11 @@
   }
 
   function chooseAllySkillIndex(ally) {
-    if (ally.queuedSkillIdx !== null && ally.cds[ally.queuedSkillIdx] <= 0) {
-      const idx = ally.queuedSkillIdx;
-      ally.queuedSkillIdx = null;
-      return idx;
-    }
-    const auto = HS.STATE.data.settings.autoBattle;
-    if (!auto) return 0; // 手動時は通常技でテンポ維持、技2・3はタップ/D&Dで任意発動
-
-    // AI判断: ヒーラーはHPが減っていたら優先回復
+    // 完全フルオートAI判断
     if (ally.role === 'healer') {
-      const lowRatio = Math.min(...engine.allies.filter((a) => a.alive).map((a) => a.hp / a.maxHp));
-      if (lowRatio < 0.72) {
+      const aliveA = engine.allies.filter((a) => a.alive);
+      const lowRatio = aliveA.length ? Math.min(...aliveA.map((a) => a.hp / a.maxHp)) : 1;
+      if (lowRatio < 0.76) {
         if (ally.cds[2] <= 0) return 2;
         if (ally.cds[1] <= 0) return 1;
       }
@@ -612,8 +655,6 @@
 
     const sIdx = chooseAllySkillIndex(ally);
     const sk = ally.skills[sIdx];
-    const prefTarget = ally.queuedTargetCid;
-    ally.queuedTargetCid = null;
     ally.cds[sIdx] = engine.anomaly && engine.anomaly.def.id === 'chrono' ? Math.max(0, sk.cd - 1) : sk.cd;
 
     const aliveEnemies = engine.enemies.filter((e) => e.alive);
@@ -625,7 +666,7 @@
 
     // スキル種別実行
     if (sk.type === 'dmg') {
-      const t = pickEnemyTarget(prefTarget);
+      const t = pickEnemyTarget(ally);
       if (t) {
         applyDamage(ally, t, sk.mult, sk.name, { lifestealBonus: sk.lifestealBonus });
         if (sk.debuff && t.alive) t.debuffs[sk.debuff] = 2;
@@ -641,7 +682,7 @@
       for (let h = 0; h < hits; h++) {
         const pool = engine.enemies.filter((e) => e.alive);
         if (!pool.length) break;
-        const t = h === 0 && prefTarget ? pickEnemyTarget(prefTarget) : HS.UTIL.pick(pool);
+        const t = HS.UTIL.pick(pool);
         const rndAttr = ally.uid === 'mechako' ? HS.UTIL.pick(['fire', 'water', 'wind', 'light', 'dark']) : null;
         applyDamage(ally, t, sk.mult, sk.name, { bonusCrit: 0.12, overrideAttr: rndAttr });
       }
@@ -663,8 +704,7 @@
         for (const e of aliveEnemies) applyDamage(ally, e, 0.9, '光子衝撃');
       }
     } else if (sk.type === 'heal') {
-      const t = (prefTarget && aliveAllies.find((a) => a.cid === prefTarget)) ||
-        [...aliveAllies].sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
+      const t = [...aliveAllies].sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
       if (t) {
         applyHeal(ally, t, ally.atk * sk.mult, sk.name);
         if (sk.shieldPct) t.shield += Math.round(ally.maxHp * sk.shieldPct * shieldScale);
@@ -783,6 +823,9 @@
       stageId: stage.id,
       stageCode: stage.code,
       stageName: stage.name,
+      reachedWave: engine.wave,
+      maxWaves: engine.maxWaves,
+      towerAlreadyClaimed: false,
       elapsed: engine.elapsed,
       gold: 0,
       exp: 0,
@@ -803,61 +846,74 @@
       }))
     };
 
+    let towerClearedJustNow = false;
     if (won) {
       HS.AUDIO.play('win');
       const isFirst = !HS.STATE.data.clearedStages[stage.id];
+      const isTower = stage.mode === 'tower';
+      const canReward = !isTower || isFirst;
+
       HS.STATE.data.clearedStages[stage.id] = (HS.STATE.data.clearedStages[stage.id] || 0) + 1;
-      if (stage.mode === 'tower' && stage.floor >= HS.STATE.data.towerFloor) {
+      if (isTower && stage.floor >= HS.STATE.data.towerFloor && stage.floor < HS.STAGES.TOWER_MAX_FLOOR) {
         HS.STATE.data.towerFloor = stage.floor + 1;
+        towerClearedJustNow = true;
       }
 
-      loot.gold = stage.gold + (isFirst ? Math.round(stage.gold * 0.5) : 0);
-      loot.exp = stage.exp;
-      loot.shards = stage.shards + (isFirst ? 5 : 0);
-      loot.cores = Math.random() < (stage.coreChance || 0.2) ? (stage.coreCount || 1) : 0;
+      if (!canReward) {
+        loot.towerAlreadyClaimed = true;
+      } else {
+        loot.gold = stage.gold + (!isTower && isFirst ? Math.round(stage.gold * 0.5) : 0);
+        loot.exp = stage.exp;
+        loot.shards = stage.shards + (!isTower && isFirst ? 5 : 0);
+        loot.cores = Math.random() < (stage.coreChance || 0.2) ? (stage.coreCount || 1) : 0;
 
-      HS.STATE.data.resources.gold += loot.gold;
-      HS.STATE.data.resources.expCrystal += loot.exp;
-      HS.STATE.data.resources.shards += loot.shards;
-      HS.STATE.data.resources.cores += loot.cores;
+        HS.STATE.data.resources.gold += loot.gold;
+        HS.STATE.data.resources.expCrystal += loot.exp;
+        HS.STATE.data.resources.shards += loot.shards;
+        HS.STATE.data.resources.cores += loot.cores;
 
-      // 出撃メンバーにも直接少量経験値付与→自動レベルアップチェック
-      for (const a of engine.allies) {
-        const us = HS.STATE.data.units[a.uid];
-        if (!us) continue;
-        us.exp += Math.round(stage.exp * 0.45);
-        const maxLv = 99 + us.awakening * 10;
-        let up = 0;
-        while (us.level < maxLv) {
-          const need = Math.round(90 * Math.pow(1.15, us.level - 1));
-          if (us.exp >= need) {
-            us.exp -= need;
-            us.level += 1;
-            up += 1;
-          } else break;
+        // 出撃メンバーにも直接少量経験値付与→自動レベルアップチェック
+        for (const a of engine.allies) {
+          const us = HS.STATE.data.units[a.uid];
+          if (!us) continue;
+          us.exp += Math.round(stage.exp * 0.45);
+          const maxLv = 99 + us.awakening * 10;
+          let up = 0;
+          while (us.level < maxLv) {
+            const need = Math.round(90 * Math.pow(1.15, us.level - 1));
+            if (us.exp >= need) {
+              us.exp -= need;
+              us.level += 1;
+              up += 1;
+            } else break;
+          }
+          if (up > 0) loot.levelUps.push({ name: a.name, level: us.level, up });
         }
-        if (up > 0) loot.levelUps.push({ name: a.name, level: us.level, up });
-      }
 
-      // ステージ初回クリアによるキャラ解放（ガチャ無し！）
-      if (stage.unlockUnit && HS.STATE.data.units[stage.unlockUnit] && !HS.STATE.data.units[stage.unlockUnit].unlocked) {
-        HS.STATE.data.units[stage.unlockUnit].unlocked = true;
-        loot.unlockedUnit = HS.UNITS_MAP[stage.unlockUnit];
-      }
-
-      // ハクスラ装備ドロップ (1〜2個)
-      const dropCount = stage.mode === 'boss' || (stage.mode === 'tower' && stage.floor % 5 === 0) ? 2 : 1;
-      for (let i = 0; i < dropCount; i++) {
-        const gear = HS.EQUIP.generateEquipment(stage.recPower, stage.rarityBias || (0.6 + (stage.world || 1) * 0.35));
-        const res = HS.STATE.addEquipmentLoot(gear);
-        loot.gearDrops.push(res);
-        if (res.autoSold) {
-          loot.autoSoldCount += 1;
-          loot.autoSoldGold += res.gold;
-          loot.autoSoldDust += res.dust;
+        // ステージ初回クリアによるキャラ解放（ガチャ無し！）
+        if (stage.unlockUnit && HS.STATE.data.units[stage.unlockUnit] && !HS.STATE.data.units[stage.unlockUnit].unlocked) {
+          HS.STATE.data.units[stage.unlockUnit].unlocked = true;
+          loot.unlockedUnit = HS.UNITS_MAP[stage.unlockUnit];
         }
+
+        // ハクスラ装備ドロップ (1〜3個)
+        const dropCount = isTower && stage.floor === HS.STAGES.TOWER_MAX_FLOOR
+          ? 3
+          : stage.mode === 'boss' || (isTower && stage.floor % 5 === 0)
+            ? 2
+            : 1;
+        for (let i = 0; i < dropCount; i++) {
+          const gear = HS.EQUIP.generateEquipment(stage.recPower, stage.rarityBias || (0.6 + (stage.world || 1) * 0.35));
+          const res = HS.STATE.addEquipmentLoot(gear);
+          loot.gearDrops.push(res);
+          if (res.autoSold) {
+            loot.autoSoldCount += 1;
+            loot.autoSoldGold += res.gold;
+            loot.autoSoldDust += res.dust;
+          }
+        }
+        if (loot.gearDrops.some((d) => d.kept)) HS.AUDIO.play('drop');
       }
-      if (loot.gearDrops.some((d) => d.kept)) HS.AUDIO.play('drop');
     } else {
       HS.AUDIO.play('lose');
     }
@@ -892,8 +948,9 @@
         }
       }
 
-      if (!won) {
-        // 周回中敗北 → 周回終了して専用集計リザルトへ
+      const towerFinishedAll = stage.mode === 'tower' && (stage.floor >= HS.STAGES.TOWER_MAX_FLOOR || (!towerClearedJustNow && loot.towerAlreadyClaimed));
+      if (!won || towerFinishedAll) {
+        // 周回中敗北 または 異界塔100F制覇/報酬獲得済フロア終了 → 周回集計リザルトへ
         stopRepeatAndShowSummary();
       } else {
         engine.phase = 'repeat_wait';
@@ -909,11 +966,30 @@
     if (engine.callbacks.onStateChange) engine.callbacks.onStateChange();
   }
 
+  function checkWaveOrBattleEnd() {
+    if (!engine.enemies.some((e) => e.alive)) {
+      if (engine.wave < engine.maxWaves) {
+        engine.phase = 'wave_wait';
+        engine.waveWaitTimer = 0.72;
+        if (engine.callbacks.onStateChange) engine.callbacks.onStateChange();
+      } else {
+        settleBattle(true);
+      }
+      return true;
+    }
+    if (!engine.allies.some((a) => a.alive)) {
+      settleBattle(false);
+      return true;
+    }
+    return false;
+  }
+
   function update(rawDt) {
     const dt = Math.min(0.05, rawDt || 0.016);
 
     // VFX・ポップアップ更新
     if (engine.shake > 0) engine.shake = Math.max(0, engine.shake - dt * 28);
+    if (engine.waveBannerTimer > 0) engine.waveBannerTimer = Math.max(0, engine.waveBannerTimer - dt);
     if (engine.flash) {
       engine.flash.alpha -= dt * 1.4;
       if (engine.flash.alpha <= 0) engine.flash = null;
@@ -938,21 +1014,37 @@
       if (engine.repeatWaitTimer <= 0 && engine.repeatSession) {
         let nextStageId = engine.repeatSession.stageId;
         if (nextStageId.startsWith('tower-')) {
-          nextStageId = `tower-${HS.STATE.data.towerFloor}`;
+          const curF = Number(nextStageId.split('-')[1]) || 1;
+          const nextF = Math.min(HS.STAGES.TOWER_MAX_FLOOR, Math.max(curF + 1, HS.STATE.data.towerFloor));
+          if (HS.STATE.data.clearedStages[`tower-${nextF}`]) {
+            stopRepeatAndShowSummary();
+            return;
+          }
+          nextStageId = `tower-${nextF}`;
           engine.repeatSession.stageId = nextStageId;
+          HS.STATE.data.selectedStageId = nextStageId;
         }
         startBattle(nextStageId, true);
       }
       return;
     }
 
-    if (engine.phase !== 'fighting') return;
-
     const spdMult = HS.UTIL.clamp(HS.STATE.data.settings.speed || 1, 1, 3);
     const simDt = dt * spdMult;
+
+    if (engine.phase === 'wave_wait') {
+      engine.waveWaitTimer -= simDt;
+      if (engine.waveWaitTimer <= 0) {
+        advanceToNextWave();
+      }
+      return;
+    }
+
+    if (engine.phase !== 'fighting') return;
+
     engine.elapsed += simDt;
 
-    // 異変タイマー更新
+    // 異変タイマー更新（混沌100%で即自動発動）
     if (engine.anomaly) {
       engine.anomaly.timer -= simDt;
       engine.anomaly.tickAccum += simDt;
@@ -964,6 +1056,7 @@
           if (aliveE.length && lead) {
             const target = HS.UTIL.pick(aliveE);
             applyDamage(lead, target, 0.75, '反転メテオ', { vfxType: 'meteor', isSplash: true });
+            if (checkWaveOrBattleEnd()) return;
           }
         } else if (engine.anomaly.def.id === 'parade') {
           const lead = engine.allies.find((a) => a.alive);
@@ -975,8 +1068,8 @@
         }
       }
       if (engine.anomaly.timer <= 0) engine.anomaly = null;
-    } else if (engine.chaos >= 100 && HS.STATE.data.settings.autoBattle) {
-      triggerChaosAnomaly(false);
+    } else if (engine.chaos >= 100) {
+      triggerChaosAnomaly();
     }
 
     // ATB進行
@@ -995,40 +1088,8 @@
       actor.gauge = 0;
       if (actor.side === 'ally') executeAllyTurn(actor);
       else executeEnemyTurn(actor);
-
-      // 勝敗判定
-      if (!engine.enemies.some((e) => e.alive)) {
-        settleBattle(true);
-      } else if (!engine.allies.some((a) => a.alive)) {
-        settleBattle(false);
-      }
+      checkWaveOrBattleEnd();
     }
-  }
-
-  function queueAllySkill(allyCid, skillIdx, targetCid) {
-    const ally = engine.allies.find((a) => a.cid === allyCid && a.alive);
-    if (!ally) return false;
-    if (ally.cds[skillIdx] > 0) return false;
-    ally.queuedSkillIdx = skillIdx;
-    if (targetCid) ally.queuedTargetCid = targetCid;
-    HS.AUDIO.play('tap');
-    return true;
-  }
-
-  function setFocusEnemy(enemyCid) {
-    const e = engine.enemies.find((x) => x.cid === enemyCid && x.alive);
-    if (!e) return false;
-    engine.focusedEnemyId = e.cid;
-    HS.AUDIO.play('tap');
-    return true;
-  }
-
-  function setSelectedAlly(allyCid) {
-    const a = engine.allies.find((x) => x.cid === allyCid);
-    if (!a) return false;
-    engine.selectedAllyId = a.cid;
-    HS.AUDIO.play('tap');
-    return true;
   }
 
   HS.COMBAT = {
@@ -1038,11 +1099,7 @@
     startBattle,
     stopRepeatAndShowSummary,
     retreatBattle,
-    triggerChaosAnomaly,
     getActionOrder,
-    queueAllySkill,
-    setFocusEnemy,
-    setSelectedAlly,
     update
   };
 })(window);

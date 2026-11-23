@@ -1,0 +1,12 @@
+{
+  "appId": "io.github.hachamechasekai.app",
+  "appName": "はちゃめちゃ世界",
+  "webDir": ".",
+  "bundledWebRuntime": false,
+  "ios": {
+    "contentInset": "never",
+    "allowsLinkPreview": false,
+    "scrollEnabled": false,
+    "backgroundColor": "#0b0914"
+  }
+}

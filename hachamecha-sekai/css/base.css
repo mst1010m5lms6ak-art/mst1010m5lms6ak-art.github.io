@@ -1,0 +1,149 @@
+/* Base styles, iOS Safari PWA safe-area & gesture lock, Chaos theme tokens */
+:root {
+  --bg-deep: #0b0914;
+  --bg-panel: #151126;
+  --bg-card: #1d1735;
+  --bg-card-hi: #282047;
+  --bg-glass: rgba(20, 15, 38, 0.88);
+  --border-dim: rgba(164, 140, 255, 0.18);
+  --border-hi: rgba(0, 229, 255, 0.48);
+
+  --text-main: #f4f1ff;
+  --text-sub: #b4abd4;
+  --text-dim: #7b729c;
+
+  --accent-pink: #ff3d7f;
+  --accent-cyan: #00e5ff;
+  --accent-gold: #ffc933;
+  --accent-lime: #6eff5c;
+  --accent-violet: #b65cff;
+  --accent-danger: #ff4757;
+
+  /* Element colors */
+  --el-fire: #ff5247;
+  --el-water: #29b6ff;
+  --el-wind: #3ee68a;
+  --el-light: #ffe052;
+  --el-dark: #c05cff;
+  --el-none: #b8c2d8;
+
+  /* Rarity colors */
+  --rar-N: #9ea7bd;
+  --rar-R: #4cc3ff;
+  --rar-SR: #c864ff;
+  --rar-SSR: #ffc933;
+  --rar-CHAOS: #ff3d9a;
+
+  /* Role colors */
+  --role-tank: #38bdf8;
+  --role-dealer: #ff5266;
+  --role-supporter: #c084fc;
+  --role-healer: #4ade80;
+
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background-color: var(--bg-deep);
+  color: var(--text-main);
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif;
+  font-size: 14px;
+  line-height: 1.35;
+  touch-action: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
+}
+
+input, select, textarea {
+  font-size: 16px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+button {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+button:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Scrollable inner areas only */
+.scroll-y {
+  overflow-y: auto;
+  overflow-x: hidden;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(182, 92, 255, 0.45) transparent;
+}
+.scroll-y::-webkit-scrollbar {
+  width: 4px;
+}
+.scroll-y::-webkit-scrollbar-thumb {
+  background: rgba(182, 92, 255, 0.45);
+  border-radius: 99px;
+}
+
+.scroll-x {
+  overflow-x: auto;
+  overflow-y: hidden;
+  touch-action: pan-x;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.scroll-x::-webkit-scrollbar {
+  display: none;
+}
+
+.truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}

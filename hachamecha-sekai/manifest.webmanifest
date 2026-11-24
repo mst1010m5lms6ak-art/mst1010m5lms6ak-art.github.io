@@ -1,0 +1,26 @@
+{
+  "name": "はちゃめちゃ世界",
+  "short_name": "はちゃめちゃ世界",
+  "description": "異世界の法則が混線する完全ソロ編成パズルRPG",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#090d1a",
+  "theme_color": "#090d1a",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "./assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

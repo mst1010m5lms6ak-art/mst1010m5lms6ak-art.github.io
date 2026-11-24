@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="はちゃめちゃ世界">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="theme-color" content="#090d1a">
+  <title>はちゃめちゃ世界</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" sizes="192x192" href="./assets/icon-192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="./assets/icon-192.png">
+  <link rel="stylesheet" href="./css/tokens.css">
+  <link rel="stylesheet" href="./css/layout.css">
+  <link rel="stylesheet" href="./css/components.css">
+  <link rel="stylesheet" href="./css/battle.css">
+</head>
+<body>
+  <div id="app-shell" class="app-shell">
+    <!-- 上半分：完全閲覧専用ディスプレイ領域（操作ボタンを一切置かない） -->
+    <section id="top-viewport" class="top-viewport" aria-label="情報表示エリア"></section>
+
+    <!-- 下半分：親指ゾーン操作領域（すべての操作を集約） -->
+    <section id="bottom-thumb-zone" class="bottom-thumb-zone" aria-label="操作エリア">
+      <div id="bottom-controls" class="bottom-controls"></div>
+      <nav id="bottom-nav" class="bottom-nav" aria-label="メインメニュー"></nav>
+    </section>
+
+    <!-- 下部アンカー型モーダル／リザルトオーバーレイ（ボタンは必ず下半分） -->
+    <div id="overlay-root" class="overlay-root hidden" aria-hidden="true"></div>
+
+    <!-- 非干渉トースト通知（上端セーフエリア下・閲覧のみ） -->
+    <div id="toast-root" class="toast-root" aria-live="polite"></div>
+  </div>
+
+  <!-- ビルド不要クラシックJS読み込み（file://・GitHub Pages・Cloudflare Pages・Capacitor全対応） -->
+  <script defer src="./js/namespace.js"></script>
+  <script defer src="./js/storage.js"></script>
+  <script defer src="./js/audio.js"></script>
+  <script defer src="./js/data/rules.js"></script>
+  <script defer src="./js/data/abilities.js"></script>
+  <script defer src="./js/data/characters.js"></script>
+  <script defer src="./js/data/enemies.js"></script>
+  <script defer src="./js/data/equipment.js"></script>
+  <script defer src="./js/data/stages.js"></script>
+  <script defer src="./js/engine/stats.js"></script>
+  <script defer src="./js/engine/dispatch.js"></script>
+  <script defer src="./js/engine/battle-vfx.js"></script>
+  <script defer src="./js/engine/battle.js"></script>
+  <script defer src="./js/ui/render-common.js"></script>
+  <script defer src="./js/ui/screen-quest.js"></script>
+  <script defer src="./js/ui/screen-party.js"></script>
+  <script defer src="./js/ui/screen-equip.js"></script>
+  <script defer src="./js/ui/screen-codex.js"></script>
+  <script defer src="./js/ui/screen-battle.js"></script>
+  <script defer src="./js/ui/app.js"></script>
+</body>
+</html>

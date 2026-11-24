@@ -6,12 +6,13 @@
   const C = Hacha.consts;
 
   const uiState = {
-    tab: 'party',        // party | ability | mastery | awaken
-    selectedCharId: 'c_fire_tank',
-    slotMode: 'party',   // party | link
+    tab: 'party',          // party | ability | mastery | awaken
+    slotMode: 'party',     // party | link
     slotIdx: 0,
-    page: 0,
-    abilityTierView: 1
+    selectedCharId: 'c_fire_tank',
+    abilityTierView: 1,
+    listScrollTop: 0,
+    stripScrollLeft: 0
   };
 
   function getUnlockedSorted() {
@@ -21,15 +22,14 @@
       .sort(U.compareRosterEntities);
   }
 
-  function removeCharFromAllAssignments(state, charId) {
-    for (let i = 0; i < 4; i++) {
-      if (state.party[i] === charId) state.party[i] = null;
-      if (state.links[i] === charId) state.links[i] = null;
-    }
+  function removeFromDispatch(state, charId) {
     state.dispatches.forEach((d) => {
       if (d.charIds.includes(charId)) {
         d.charIds = d.charIds.filter((id) => id !== charId);
-        if (!d.charIds.length) { d.active = false; d.progress = 0; }
+        if (d.charIds.length === 0) {
+          d.active = false;
+          d.progress = 0;
+        }
       }
     });
   }
@@ -37,38 +37,60 @@
   function assignCharToSlot(charId) {
     const state = Hacha.state;
     const cm = Hacha.ui.common;
-    const idx = uiState.slotIdx;
+    removeFromDispatch(state, charId);
 
     if (uiState.slotMode === 'party') {
-      const existingIdx = state.party.indexOf(charId);
-      if (existingIdx === idx) {
+      const prevIdx = state.party.indexOf(charId);
+      const linkIdx = state.links.indexOf(charId);
+      if (linkIdx >= 0) state.links[linkIdx] = null;
+
+      if (prevIdx >= 0 && prevIdx !== uiState.slotIdx) {
+        const tmp = state.party[uiState.slotIdx];
+        state.party[uiState.slotIdx] = charId;
+        state.party[prevIdx] = tmp;
+      } else {
+        state.party[uiState.slotIdx] = charId;
+      }
+      cm.showToast(`主力枠${uiState.slotIdx + 1}に配置しました`);
+    } else {
+      const partyIdx = state.party.indexOf(charId);
+      if (partyIdx >= 0) {
         if (state.party.filter(Boolean).length <= 1) {
           cm.showToast('主力は最低1人必要です', 'danger');
           return;
         }
-        state.party[idx] = null;
-      } else if (existingIdx >= 0) {
-        const tmp = state.party[idx];
-        state.party[idx] = charId;
-        state.party[existingIdx] = tmp;
-      } else {
-        removeCharFromAllAssignments(state, charId);
-        state.party[idx] = charId;
+        state.party[partyIdx] = null;
       }
-    } else {
-      const existingLink = state.links.indexOf(charId);
-      if (existingLink === idx) {
-        state.links[idx] = null;
+      const prevLink = state.links.indexOf(charId);
+      if (prevLink >= 0 && prevLink !== uiState.slotIdx) {
+        const tmp = state.links[uiState.slotIdx];
+        state.links[uiState.slotIdx] = charId;
+        state.links[prevLink] = tmp;
       } else {
-        if (state.party.includes(charId) && state.party.filter(Boolean).length <= 1) {
-          cm.showToast('最後の主力は支援へ移せません', 'danger');
-          return;
-        }
-        removeCharFromAllAssignments(state, charId);
-        state.links[idx] = charId;
+        state.links[uiState.slotIdx] = charId;
       }
+      cm.showToast(`支援枠${uiState.slotIdx + 1}に配置しました`);
     }
     Hacha.storage.saveState(true);
+  }
+
+  function renderCharStripHtml(roster, selectedId) {
+    const state = Hacha.state;
+    return `
+      <div class="scroll-strip-h" id="party-char-strip">
+        ${roster.map((c) => {
+          const assign = Hacha.engine.stats.getCharAssignment(state, c.id);
+          const active = c.id === selectedId;
+          const inP = assign.type === 'party' ? 'in-party' : '';
+          return `
+            <button class="char-chip-btn ${active ? 'active' : ''} ${inP}" data-strip-char="${c.id}">
+              <span>${c.icon}</span>
+              <span>${U.escapeHtml(c.name)}</span>
+            </button>
+          `;
+        }).join('')}
+      </div>
+    `;
   }
 
   function render(topEl, bottomEl, app) {
@@ -76,9 +98,13 @@
     const cm = Hacha.ui.common;
     const roster = getUnlockedSorted();
 
+    if (Hacha.ui.sharedCharId && roster.some((c) => c.id === Hacha.ui.sharedCharId)) {
+      uiState.selectedCharId = Hacha.ui.sharedCharId;
+    }
     if (!roster.some((c) => c.id === uiState.selectedCharId) && roster.length) {
       uiState.selectedCharId = roster[0].id;
     }
+    Hacha.ui.sharedCharId = uiState.selectedCharId;
     const charDef = Hacha.data.CHARACTER_MAP[uiState.selectedCharId] || roster[0];
     const prog = state.chars[charDef.id];
     const stats = Hacha.engine.stats.computeSingleCharStats(state, charDef.id, true);
@@ -86,7 +112,7 @@
     const roleMeta = C.ROLE_MAP[charDef.role];
     const eqs = Hacha.engine.stats.getEquippedItems(state, charDef.id);
 
-    /* ==================== 上半分：閲覧専用キャラ詳細＆編成プレビュー ==================== */
+    /* ==================== 上半分：閲覧専用キャラ詳細（図鑑外のため紹介文なし・375px見切れゼロ） ==================== */
     const eqSummary = ['weapon', 'armor', 'charm'].map((slot) => {
       const it = eqs[slot];
       if (!it) return `<span class="badge el-none">${C.SLOT_MAP[slot].icon}未装備</span>`;
@@ -94,6 +120,17 @@
       const q = U.getQualityInfo(it.quality);
       return `<span class="badge ${q.badgeClass}">${tpl.icon}${U.escapeHtml(tpl.name)} ${q.q}%</span>`;
     }).join('');
+
+    const activeAbilities = [];
+    const roleTiers = Hacha.data.ABILITIES_BY_ROLE[charDef.role] || [];
+    for (let t = 0; t < prog.abilityTier; t++) {
+      const chIdx = prog.abilityChoices[t] || 0;
+      const ab = roleTiers[t] && roleTiers[t][chIdx];
+      if (ab) activeAbilities.push(ab.name);
+    }
+    const abBadgesHtml = activeAbilities.length
+      ? activeAbilities.map((nm) => `<span class="badge scope-area">🔷${U.escapeHtml(nm)}</span>`).join('')
+      : `<span class="badge el-none">アビリティ未解放</span>`;
 
     const skillsHtml = charDef.skills.map((sk, idx) => `
       <div class="skill-mini-row">
@@ -107,22 +144,25 @@
     `).join('');
 
     const awakeStars = '★'.repeat(prog.awakening) + '☆'.repeat(5 - prog.awakening);
-    const activeResLine = resInfo.active.length
-      ? resInfo.active.slice(0, 4).map((r) => `${r.icon}${r.name}`).join(' / ')
-      : '発動中の共鳴なし';
+    const resBadgesHtml = resInfo.active.length
+      ? resInfo.active.slice(0, 4).map((r) => `<span class="badge race-badge">${r.icon}${r.name}</span>`).join('')
+      : `<span class="badge el-none">共鳴なし</span>`;
 
     topEl.innerHTML = `
       ${cm.renderViewHeader(`編成・育成｜所持 ${roster.length}/${Hacha.data.CHARACTERS.length}`)}
       <div class="panel panel-fill">
         <div class="meta-row-nowrap">
           <div class="meta-row">
-            <span style="font-size:16px;">${charDef.icon}</span>
+            <span style="font-size:15px;">${charDef.icon}</span>
             <span class="view-title">${U.escapeHtml(charDef.name)}</span>
             ${cm.elementBadge(charDef.element)}
             ${cm.raceBadges(charDef.races)}
-            ${cm.roleBadge(charDef.role)}
+            ${cm.roleShortBadge(charDef.role)}
           </div>
-          <span style="color:#ffd15c;font-size:11px;font-weight:800;">${awakeStars}</span>
+          <div class="meta-row">
+            <span class="badge q-master">戦力${U.formatNum(stats.power)}</span>
+            <span style="color:#ffd15c;font-size:10px;font-weight:800;">${awakeStars}</span>
+          </div>
         </div>
 
         <div class="detail-grid-stats">
@@ -135,16 +175,16 @@
         <div class="skill-mini-list">${skillsHtml}</div>
 
         <div class="meta-row">${eqSummary}</div>
+        <div class="meta-row">${abBadgesHtml}</div>
 
-        <div class="flavor-box">${U.escapeHtml(charDef.desc)}</div>
-
-        <div class="bu-hp-text" style="margin-top:auto;color:#7be3ff;">
-          🌈 共鳴(${resInfo.active.length})：${U.escapeHtml(activeResLine)}
+        <div class="meta-row" style="margin-top:auto;">
+          <span class="bu-hp-text" style="color:#48d6ff;">🌈共鳴(${resInfo.active.length})：</span>
+          ${resBadgesHtml}
         </div>
       </div>
     `;
 
-    /* ==================== 下半分：親指ゾーン操作エリア ==================== */
+    /* ==================== 下半分：親指ゾーン操作エリア（スクロールバーなし縦横スクロール） ==================== */
     let bodyHtml = '';
 
     if (uiState.tab === 'party') {
@@ -162,13 +202,7 @@
         `;
       }).join('');
 
-      /* 2×2＝4枚/ページにすることでiPhone SE(375×667)でもバッジ下端が一切見切れない */
-      const pageSize = 4;
-      const totalPages = Math.max(1, Math.ceil(roster.length / pageSize));
-      uiState.page = U.clamp(uiState.page, 0, totalPages - 1);
-      const slice = roster.slice(uiState.page * pageSize, uiState.page * pageSize + pageSize);
-
-      const gridTiles = slice.map((c) => {
+      const gridTiles = roster.map((c) => {
         const assign = Hacha.engine.stats.getCharAssignment(state, c.id);
         const sel = c.id === charDef.id;
         const cls = assign.type === 'party' ? 'in-party' : (assign.type === 'link' ? 'in-link' : (assign.type === 'dispatch' ? 'in-dispatch' : ''));
@@ -195,15 +229,10 @@
           <button class="btn btn-sm ${uiState.slotMode === 'party' ? 'btn-emerald' : ''}" data-slot-mode="party">⚔️ 主力(4)</button>
           <button class="btn btn-sm ${uiState.slotMode === 'link' ? 'btn-primary' : ''}" data-slot-mode="link">🔗 支援(4)</button>
           <button class="btn btn-sm btn-gold" id="btn-assign-selected">枠へ配置</button>
-          <button class="btn btn-sm btn-danger" id="btn-clear-slot" ${canRemoveSlot ? '' : 'disabled'}>枠を外す</button>
+          <button class="btn btn-sm btn-danger" id="btn-clear-slot" ${canRemoveSlot ? '' : 'disabled'}>外す</button>
         </div>
         <div class="party-slots-4">${slotsRow}</div>
-        <div class="select-grid-2" style="grid-template-rows:repeat(2,1fr);">${gridTiles}</div>
-        <div class="pager-bar">
-          <button class="btn btn-sm" id="btn-p-prev">◀ 前</button>
-          <span class="pager-info">${uiState.page + 1} / ${totalPages}（全${roster.length}体）</span>
-          <button class="btn btn-sm" id="btn-p-next">次 ▶</button>
-        </div>
+        <div class="scroll-list-v scroll-grid-2" id="party-char-list">${gridTiles}</div>
       `;
     } else if (uiState.tab === 'ability') {
       const curTier = U.clamp(uiState.abilityTierView, 1, 5);
@@ -238,19 +267,15 @@
       const canUnlockNext = nextCost && ownedCrys >= nextCost.crystals && state.resources.coins >= nextCost.coins;
 
       bodyHtml = `
-        <div class="action-row">
-          <button class="btn btn-sm" id="btn-char-prev">◀ 前の仲間</button>
-          <span class="pager-info">${roleMeta.icon}${roleMeta.crystalName}：${ownedCrys}</span>
-          <button class="btn btn-sm" id="btn-char-next">次の仲間 ▶</button>
-        </div>
+        ${renderCharStripHtml(roster, charDef.id)}
         <div class="sub-tabs">${tierBtns}</div>
-        <div class="select-list-fixed" style="grid-template-rows:repeat(5,1fr);">${choiceCards}</div>
+        <div class="scroll-list-v scroll-list-1" id="party-ab-list">${choiceCards}</div>
         <div class="action-row">
           ${nextCost ? `
             <button class="btn btn-sm btn-gold" id="btn-unlock-ab-tier" ${canUnlockNext ? '' : 'disabled'}>
-              🔓 段階${prog.abilityTier + 1}を解放（${roleMeta.crystalName}${nextCost.crystals}・🪙${nextCost.coins}）
+              🔓 段階${prog.abilityTier + 1}解放（${roleMeta.icon}${ownedCrys}/${nextCost.crystals}・🪙${nextCost.coins}）
             </button>
-          ` : `<button class="btn btn-sm btn-emerald" disabled>✨ 全5段階解放済み</button>`}
+          ` : `<button class="btn btn-sm btn-emerald" disabled>✨ 全5段階解放済み（${roleMeta.icon}所持${ownedCrys}）</button>`}
         </div>
       `;
     } else if (uiState.tab === 'mastery') {
@@ -263,7 +288,7 @@
         const isMax = rank >= 10;
         const canTrain = !isMax && state.resources.scrolls >= costScrolls && state.resources.coins >= costCoins;
         return `
-          <div class="item-tile" style="justify-content:center;gap:4px;">
+          <div class="item-tile" style="justify-content:center;gap:3px;">
             <div class="meta-row-nowrap">
               <div class="meta-row">
                 ${cm.scopeBadge(sk.scope)}
@@ -283,11 +308,7 @@
       }).join('');
 
       bodyHtml = `
-        <div class="action-row">
-          <button class="btn btn-sm" id="btn-char-prev">◀ 前の仲間</button>
-          <span class="pager-info">技の巻物：${state.resources.scrolls}個</span>
-          <button class="btn btn-sm" id="btn-char-next">次の仲間 ▶</button>
-        </div>
+        ${renderCharStripHtml(roster, charDef.id)}
         <div class="select-list-fixed" style="grid-template-rows:repeat(3,1fr);">${rows}</div>
       `;
     } else {
@@ -299,11 +320,7 @@
       const canAwake = !isMax && state.resources.fragments >= needFrag && state.resources.coins >= needCoins;
 
       bodyHtml = `
-        <div class="action-row">
-          <button class="btn btn-sm" id="btn-char-prev">◀ 前の仲間</button>
-          <span class="pager-info">混沌の核片：${state.resources.fragments}個</span>
-          <button class="btn btn-sm" id="btn-char-next">次の仲間 ▶</button>
-        </div>
+        ${renderCharStripHtml(roster, charDef.id)}
         <div class="panel panel-fill" style="justify-content:space-between;">
           <div class="meta-row-nowrap">
             <span class="view-title">異界覚醒段階</span>
@@ -315,8 +332,8 @@
             <div class="stat-chip"><span class="stat-chip-lbl">速度補正</span><span class="stat-chip-val">+${curAw * 3}%</span></div>
             <div class="stat-chip"><span class="stat-chip-lbl">会心補正</span><span class="stat-chip-val">+${(curAw * 1.5).toFixed(1)}%</span></div>
           </div>
-          <div class="flavor-box">
-            混沌の核片を注ぎ込むことで基礎能力・会心・速度の上限を大きく引き上げます。乱入敵の撃破や大ボス・無限塔・異界派遣から核片を獲得できます。
+          <div class="note-text">
+            混沌の核片で基礎能力・速度・会心の上限を引き上げます（レイド・異界塔・闘技場・異界派遣で獲得）。
           </div>
           <button class="btn btn-gold" id="btn-do-awaken" ${canAwake ? '' : 'disabled'}>
             ${isMax ? '✨ 異界覚醒 最大到達' : `🔮 異界覚醒 ★${curAw + 1}へ（核片${needFrag}・🪙${needCoins}）`}
@@ -335,11 +352,28 @@
       ${bodyHtml}
     `;
 
+    /* スクロール位置復元＆選択チップ自動可視化 */
+    const listEl = bottomEl.querySelector('#party-char-list');
+    cm.bindVerticalScrollState(listEl, () => uiState.listScrollTop, (v) => { uiState.listScrollTop = v; });
+
+    const stripEl = bottomEl.querySelector('#party-char-strip');
+    cm.bindHorizontalStripState(stripEl, () => uiState.stripScrollLeft, (v) => { uiState.stripScrollLeft = v; }, '.char-chip-btn.active');
+
     /* イベント結線（すべて下半分） */
     bottomEl.querySelectorAll('[data-ptab]').forEach((btn) => {
       btn.addEventListener('click', () => {
         Hacha.audio.play('tap');
         uiState.tab = btn.getAttribute('data-ptab');
+        app.renderCurrent();
+      });
+    });
+
+    bottomEl.querySelectorAll('[data-strip-char]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        Hacha.audio.play('tap');
+        if (stripEl) uiState.stripScrollLeft = stripEl.scrollLeft;
+        uiState.selectedCharId = btn.getAttribute('data-strip-char');
+        Hacha.ui.sharedCharId = uiState.selectedCharId;
         app.renderCurrent();
       });
     });
@@ -357,7 +391,10 @@
         Hacha.audio.play('tap');
         uiState.slotIdx = parseInt(btn.getAttribute('data-slot-idx'), 10);
         const curId = uiState.slotMode === 'party' ? state.party[uiState.slotIdx] : state.links[uiState.slotIdx];
-        if (curId) uiState.selectedCharId = curId;
+        if (curId) {
+          uiState.selectedCharId = curId;
+          Hacha.ui.sharedCharId = curId;
+        }
         app.renderCurrent();
       });
     });
@@ -365,11 +402,13 @@
     bottomEl.querySelectorAll('[data-pick-char]').forEach((btn) => {
       btn.addEventListener('click', () => {
         Hacha.audio.play('tap');
+        if (listEl) uiState.listScrollTop = listEl.scrollTop;
         const cid = btn.getAttribute('data-pick-char');
         if (uiState.selectedCharId === cid) {
           assignCharToSlot(cid);
         } else {
           uiState.selectedCharId = cid;
+          Hacha.ui.sharedCharId = cid;
         }
         app.renderCurrent();
       });
@@ -379,6 +418,7 @@
     if (assignBtn) {
       assignBtn.addEventListener('click', () => {
         Hacha.audio.play('tap');
+        if (listEl) uiState.listScrollTop = listEl.scrollTop;
         assignCharToSlot(charDef.id);
         app.renderCurrent();
       });
@@ -402,26 +442,6 @@
         app.renderCurrent();
       });
     }
-
-    const pPrev = bottomEl.querySelector('#btn-p-prev');
-    const pNext = bottomEl.querySelector('#btn-p-next');
-    if (pPrev) pPrev.addEventListener('click', () => { Hacha.audio.play('tap'); uiState.page = Math.max(0, uiState.page - 1); app.renderCurrent(); });
-    if (pNext) pNext.addEventListener('click', () => { Hacha.audio.play('tap'); uiState.page += 1; app.renderCurrent(); });
-
-    const cPrev = bottomEl.querySelector('#btn-char-prev');
-    const cNext = bottomEl.querySelector('#btn-char-next');
-    if (cPrev) cPrev.addEventListener('click', () => {
-      Hacha.audio.play('tap');
-      const idx = roster.findIndex((c) => c.id === charDef.id);
-      uiState.selectedCharId = roster[(idx - 1 + roster.length) % roster.length].id;
-      app.renderCurrent();
-    });
-    if (cNext) cNext.addEventListener('click', () => {
-      Hacha.audio.play('tap');
-      const idx = roster.findIndex((c) => c.id === charDef.id);
-      uiState.selectedCharId = roster[(idx + 1) % roster.length].id;
-      app.renderCurrent();
-    });
 
     bottomEl.querySelectorAll('[data-ab-tier]').forEach((btn) => {
       btn.addEventListener('click', () => {

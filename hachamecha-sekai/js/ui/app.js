@@ -8,10 +8,11 @@
     { id: 'party',    label: '編成', icon: '⚔️' },
     { id: 'equip',    label: '装備', icon: '🎒' },
     { id: 'dispatch', label: '派遣', icon: '🧭' },
-    { id: 'codex',    label: '図鑑', icon: '📖' }
+    { id: 'codex',    label: '図鑑', icon: '📖' },
+    { id: 'settings', label: '設定', icon: '⚙️' }
   ];
 
-  let currentScreen = 'quest'; // quest | party | equip | dispatch | codex | battle
+  let currentScreen = 'quest'; // quest | party | equip | dispatch | codex | settings | battle
   let inBattle = false;
 
   const topEl = document.getElementById('top-viewport');
@@ -65,9 +66,11 @@
           if (target === 'party' && Hacha.ui.screenParty.resetToMainTab) Hacha.ui.screenParty.resetToMainTab();
           if (target === 'equip' && Hacha.ui.screenEquip.resetEquipTab) Hacha.ui.screenEquip.resetEquipTab();
           if (target === 'codex' && Hacha.ui.screenCodex.resetToMainTab) Hacha.ui.screenCodex.resetToMainTab();
+          if (target === 'settings' && Hacha.ui.screenSettings.resetState) Hacha.ui.screenSettings.resetState();
           renderCurrent();
           return;
         }
+        if (currentScreen === 'settings' && Hacha.ui.screenSettings.resetState) Hacha.ui.screenSettings.resetState();
         currentScreen = target;
         renderCurrent();
       });
@@ -88,6 +91,8 @@
       Hacha.ui.screenEquip.renderDispatch(topEl, bottomEl, appApi);
     } else if (currentScreen === 'codex') {
       Hacha.ui.screenCodex.render(topEl, bottomEl, appApi);
+    } else if (currentScreen === 'settings') {
+      Hacha.ui.screenSettings.render(topEl, bottomEl, appApi);
     }
   }
 
@@ -119,22 +124,10 @@
     isInBattle: () => inBattle
   };
 
-  /* iOS Safari PWA 誤操作防止（ダブルタップズーム・ピンチズーム・長押しメニュー抑止） */
+  /* iOS Safari PWA 誤操作防止（ピンチズーム・長押しメニュー抑止。連続タップを殺す touchend 抑止は不使用・CSS touch-action: manipulation でズーム抑止） */
   function installTouchGuards() {
     document.addEventListener('pointerdown', () => Hacha.audio.unlock(), { passive: true });
     document.addEventListener('touchstart', () => Hacha.audio.unlock(), { passive: true });
-
-    let lastTouchEnd = 0;
-    document.addEventListener('touchend', (e) => {
-      const now = Date.now();
-      if (now - lastTouchEnd <= 290) {
-        const tag = e.target && e.target.tagName;
-        if (tag !== 'TEXTAREA' && tag !== 'INPUT') {
-          e.preventDefault();
-        }
-      }
-      lastTouchEnd = now;
-    }, { passive: false });
 
     document.addEventListener('gesturestart', (e) => e.preventDefault(), { passive: false });
     document.addEventListener('gesturechange', (e) => e.preventDefault(), { passive: false });
@@ -151,12 +144,14 @@
     });
   }
 
-  /* Service Worker 登録（HTTP/HTTPS環境のみ。file:// や Capacitor ネイティブ環境では安全スキップ） */
+  /* Service Worker 登録（HTTP/HTTPS環境のみ。updateViaCache:'none' でPWA更新を確実反映） */
   function registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return;
     if (window.location.protocol !== 'http:' && window.location.protocol !== 'https:') return;
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js').catch(() => {});
+      navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
+        .then((reg) => { if (reg && reg.update) reg.update().catch(() => {}); })
+        .catch(() => {});
     });
   }
 

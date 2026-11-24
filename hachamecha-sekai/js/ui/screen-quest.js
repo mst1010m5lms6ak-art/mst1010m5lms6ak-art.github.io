@@ -3,16 +3,16 @@
 
   const Hacha = window.Hacha;
   const U = Hacha.util;
-  const C = Hacha.consts;
 
   const uiState = {
-    mode: 'main',         // main | tower | raid | trial | chaos
+    mode: 'main',         // main | tower | raid | trial | arena
     areaIndex: 1,
     stageNum: 1,
     towerTargetFloor: 1,
     raidIndex: 0,
     trialIndex: 0,
-    chaosIndex: 0
+    arenaIndex: 0,
+    listScrollTop: 0
   };
 
   function getSelectedStage() {
@@ -32,7 +32,7 @@
     if (uiState.mode === 'trial') {
       return Hacha.data.TRIAL_STAGES[uiState.trialIndex] || Hacha.data.TRIAL_STAGES[0];
     }
-    return Hacha.data.CHAOS_RUSH_STAGES[uiState.chaosIndex] || Hacha.data.CHAOS_RUSH_STAGES[0];
+    return Hacha.data.ARENA_STAGES[uiState.arenaIndex] || Hacha.data.ARENA_STAGES[0];
   }
 
   function isMainStageUnlocked(areaIdx, stageNum) {
@@ -47,7 +47,7 @@
     const cm = Hacha.ui.common;
     const stage = getSelectedStage();
     const rule = Hacha.data.WORLD_RULES[stage.ruleId];
-    const boss = Hacha.data.ENEMY_MAP[stage.bossId];
+    const boss = stage.bossId ? Hacha.data.ENEMY_MAP[stage.bossId] : null;
     const resInfo = Hacha.engine.stats.computeActiveResonances(state, state.party, state.links);
     const restrictCheck = Hacha.engine.stats.checkStageRestriction(state, stage);
     const mainUnlocked = stage.mode !== 'main' || isMainStageUnlocked(stage.areaIndex, stage.stageNum);
@@ -55,7 +55,7 @@
 
     const canStart = mainUnlocked && restrictCheck.ok && activeParty.length > 0;
 
-    /* ==================== 上半分：閲覧専用プレビュー ==================== */
+    /* ==================== 上半分：閲覧専用プレビュー（密度最適化・空白解消） ==================== */
     const dropSamples = (stage.dropPool || []).slice(0, 3).map((eid) => {
       const eq = Hacha.data.EQUIPMENT_MAP[eid];
       return eq ? `${eq.icon}${eq.name}` : '';
@@ -85,31 +85,69 @@
       `;
     }).join('');
 
-    topEl.innerHTML = `
-      ${cm.renderViewHeader('はちゃめちゃ世界｜出撃')}
-      <div class="panel panel-fill">
-        <div class="meta-row-nowrap">
-          <div class="view-title">${U.escapeHtml(stage.name)}</div>
-          <span class="badge scope-area">${stage.waves} WAVE</span>
-        </div>
-
-        <div class="flavor-box">
-          <strong>${rule ? `${rule.icon} ${rule.name}` : '世界法則'}</strong>：${U.escapeHtml(rule ? rule.summary : '')}
-        </div>
-
+    let opponentRowHtml = '';
+    if (stage.mode === 'arena' && Array.isArray(stage.arenaWaves)) {
+      const finalWave = stage.arenaWaves[stage.arenaWaves.length - 1];
+      const members = (finalWave && finalWave.charIds || []).map((cid) => {
+        const ch = Hacha.data.CHARACTER_MAP[cid];
+        return ch ? `${ch.icon}${ch.name}` : '';
+      }).filter(Boolean).join('・');
+      opponentRowHtml = `
         <div class="skill-mini-row">
           <div class="meta-row">
-            <span class="badge scope-all">ボス</span>
+            <span class="badge scope-all">決勝</span>
+            <span class="unit-name-full">${U.escapeHtml((finalWave && finalWave.teamName) || '強豪チーム')}</span>
+            <span class="bu-hp-text">4vs4</span>
+          </div>
+          <span class="bu-hp-text">品質${stage.minQuality || 70}%〜極</span>
+        </div>
+        <div class="skill-mini-row">
+          <span class="skill-desc-line">決勝出場：${U.escapeHtml(members)}</span>
+        </div>
+      `;
+    } else {
+      opponentRowHtml = `
+        <div class="skill-mini-row">
+          <div class="meta-row">
+            <span class="badge scope-all">${stage.mode === 'raid' ? 'レイド' : 'ボス'}</span>
             <span class="unit-name-full">${boss ? `${boss.icon}${U.escapeHtml(boss.name)}` : '不明'}</span>
             ${boss ? cm.elementBadge(boss.element) : ''}
             ${boss ? cm.raceBadges(boss.races) : ''}
           </div>
           <span class="bu-hp-text">品質${stage.minQuality || 30}%〜極</span>
         </div>
+      `;
+    }
+
+    const waveBadgeLabel = stage.mode === 'arena' ? `${stage.waves}回戦` : `${stage.waves} WAVE`;
+    const mainIntrudeBadge = stage.mode === 'main' ? `<span class="badge el-none">🚨乱入0.3%</span>` : '';
+
+    topEl.innerHTML = `
+      ${cm.renderViewHeader('はちゃめちゃ世界｜出撃')}
+      <div class="panel panel-fill">
+        <div class="meta-row-nowrap">
+          <div class="view-title">${U.escapeHtml(stage.name)}</div>
+          <div class="meta-row">
+            ${mainIntrudeBadge}
+            <span class="badge scope-area">${waveBadgeLabel}</span>
+          </div>
+        </div>
+
+        <div class="flavor-box">
+          <strong>${rule ? `${rule.icon} ${rule.name}` : '世界法則'}</strong>：${U.escapeHtml(rule ? rule.summary : '')}
+        </div>
+
+        ${opponentRowHtml}
+
+        <div class="detail-grid-stats">
+          <div class="stat-chip"><span class="stat-chip-lbl">報酬資金</span><span class="stat-chip-val">🪙${U.formatNum(stage.coins)}</span></div>
+          <div class="stat-chip"><span class="stat-chip-lbl">ロール結晶</span><span class="stat-chip-val">💎${stage.crystals}</span></div>
+          <div class="stat-chip"><span class="stat-chip-lbl">技の巻物</span><span class="stat-chip-val">📜${stage.scrolls}</span></div>
+          <div class="stat-chip"><span class="stat-chip-lbl">混沌の核片</span><span class="stat-chip-val">🔮${stage.fragments}</span></div>
+        </div>
 
         <div class="skill-mini-row">
           <span class="skill-desc-line">戦利品：${U.escapeHtml(dropSamples || '高品質装備')} 他</span>
-          <span class="bu-hp-text">🪙${stage.coins} 💎${stage.crystals}</span>
         </div>
 
         ${stage.restriction ? `
@@ -120,7 +158,7 @@
           </div>
         ` : (stage.recHint ? `
           <div class="skill-mini-row">
-            <span class="skill-desc-line" style="color:#ffe066;">💡 攻略指標：${U.escapeHtml(stage.recHint)}</span>
+            <span class="skill-desc-line" style="color:#ffe066;">💡 ${U.escapeHtml(stage.recHint)}</span>
           </div>
         ` : '')}
 
@@ -172,7 +210,7 @@
             <div class="stat-chip"><span class="stat-chip-lbl">最高到達</span><span class="stat-chip-val">${state.progress.bestTowerFloor || 0}F</span></div>
             <div class="stat-chip"><span class="stat-chip-lbl">挑戦可能</span><span class="stat-chip-val">${maxF}F</span></div>
             <div class="stat-chip"><span class="stat-chip-lbl">選択階層</span><span class="stat-chip-val" style="color:#ffe066;">${uiState.towerTargetFloor}F</span></div>
-            <div class="stat-chip"><span class="stat-chip-lbl">5階節目</span><span class="stat-chip-val">${uiState.towerTargetFloor % 5 === 0 ? '大ボス' : '通常'}</span></div>
+            <div class="stat-chip"><span class="stat-chip-lbl">5階節目</span><span class="stat-chip-val">${uiState.towerTargetFloor % 5 === 0 ? 'レイド級' : '通常'}</span></div>
           </div>
           <div class="action-row">
             <button class="btn btn-sm" data-tower-delta="-5">-5階</button>
@@ -199,7 +237,7 @@
           </button>
         `;
       }).join('');
-      middleHtml = `<div class="select-list-fixed" style="grid-template-rows:repeat(5,1fr);">${tiles}</div>`;
+      middleHtml = `<div class="scroll-list-v scroll-list-1" id="quest-stage-list">${tiles}</div>`;
     } else if (uiState.mode === 'trial') {
       const tiles = Hacha.data.TRIAL_STAGES.map((tr, idx) => {
         const cleared = !!(state.progress.trialCleared && state.progress.trialCleared[tr.id]);
@@ -213,40 +251,40 @@
           </button>
         `;
       }).join('');
-      middleHtml = `<div class="select-grid-2" style="grid-template-rows:repeat(3,1fr);">${tiles}</div>`;
+      middleHtml = `<div class="scroll-list-v scroll-grid-2" id="quest-stage-list">${tiles}</div>`;
     } else {
-      const tiles = Hacha.data.CHAOS_RUSH_STAGES.map((ch, idx) => {
-        const cleared = !!(state.progress.chaosCleared && state.progress.chaosCleared[ch.id]);
+      const tiles = Hacha.data.ARENA_STAGES.map((ar, idx) => {
+        const cleared = !!(state.progress.arenaCleared && state.progress.arenaCleared[ar.id]);
         return `
-          <button class="item-tile ${uiState.chaosIndex === idx ? 'selected' : ''}" data-chaos-idx="${idx}">
+          <button class="item-tile ${uiState.arenaIndex === idx ? 'selected' : ''}" data-arena-idx="${idx}">
             <div class="meta-row-nowrap">
-              <span class="unit-name-full">🚨${U.escapeHtml(ch.name)}</span>
-              <span class="bu-hp-text" style="color:${cleared ? '#6effb8' : '#ff9eb2'};">${cleared ? '制覇' : '高乱入'}</span>
+              <span class="unit-name-full">${ar.rankIcon}${U.escapeHtml(ar.rankLabel)}</span>
+              <span class="bu-hp-text" style="color:${cleared ? '#6effb8' : '#7be3ff'};">${cleared ? '制覇済' : '3回戦'}</span>
             </div>
-            <div class="bu-hp-text">品質${ch.minQuality}%〜・核片${ch.fragments}＋乱入報酬</div>
+            <div class="bu-hp-text">品質${ar.minQuality}%〜・核片${ar.fragments}</div>
           </button>
         `;
       }).join('');
-      middleHtml = `<div class="select-grid-2" style="grid-template-rows:repeat(2,1fr);">${tiles}</div>`;
+      middleHtml = `<div class="scroll-list-v scroll-grid-2" id="quest-stage-list">${tiles}</div>`;
     }
 
     const autoLoop = !!state.settings.autoLoop;
-    const sellLabel = cm.getAutoSellLabel(state.settings.autoSellBelow);
+    const sellLabel = cm.getAutoSellPrefixedLabel(state.settings.autoSellBelow);
 
     bottomEl.innerHTML = `
       <div class="sub-tabs">
         <button class="sub-tab ${uiState.mode === 'main' ? 'active' : ''}" data-qmode="main">🗺️大陸</button>
-        <button class="sub-tab ${uiState.mode === 'tower' ? 'active' : ''}" data-qmode="tower">🗼無限塔</button>
-        <button class="sub-tab ${uiState.mode === 'raid' ? 'active' : ''}" data-qmode="raid">👹大ボス</button>
+        <button class="sub-tab ${uiState.mode === 'tower' ? 'active' : ''}" data-qmode="tower">🗼異界塔</button>
+        <button class="sub-tab ${uiState.mode === 'raid' ? 'active' : ''}" data-qmode="raid">👹レイド</button>
         <button class="sub-tab ${uiState.mode === 'trial' ? 'active' : ''}" data-qmode="trial">⚖️試練</button>
-        <button class="sub-tab ${uiState.mode === 'chaos' ? 'active' : ''}" data-qmode="chaos">🚨乱入</button>
+        <button class="sub-tab ${uiState.mode === 'arena' ? 'active' : ''}" data-qmode="arena">🏟️闘技場</button>
       </div>
 
       ${middleHtml}
 
       <div class="action-row">
         <button class="btn btn-sm ${autoLoop ? 'btn-toggle-on' : ''}" id="btn-toggle-loop">
-          🔁 自動周回:${autoLoop ? 'ON' : 'OFF'}
+          🔁 自動周回：${autoLoop ? 'ON' : 'OFF'}
         </button>
         <button class="btn btn-sm ${state.settings.autoSellBelow > 0 ? 'btn-toggle-warn' : ''}" id="btn-cycle-sell">
           💰 ${U.escapeHtml(sellLabel)}
@@ -260,11 +298,15 @@
       </div>
     `;
 
+    const listEl = bottomEl.querySelector('#quest-stage-list');
+    cm.bindVerticalScrollState(listEl, () => uiState.listScrollTop, (v) => { uiState.listScrollTop = v; });
+
     /* イベント結線（すべて下半分のみ） */
     bottomEl.querySelectorAll('[data-qmode]').forEach((btn) => {
       btn.addEventListener('click', () => {
         Hacha.audio.play('tap');
         uiState.mode = btn.getAttribute('data-qmode');
+        uiState.listScrollTop = 0;
         if (uiState.mode === 'tower') uiState.towerTargetFloor = Math.max(1, state.progress.towerFloor || 1);
         app.renderCurrent();
       });
@@ -307,6 +349,7 @@
     bottomEl.querySelectorAll('[data-raid-idx]').forEach((btn) => {
       btn.addEventListener('click', () => {
         Hacha.audio.play('tap');
+        if (listEl) uiState.listScrollTop = listEl.scrollTop;
         uiState.raidIndex = parseInt(btn.getAttribute('data-raid-idx'), 10);
         app.renderCurrent();
       });
@@ -315,15 +358,17 @@
     bottomEl.querySelectorAll('[data-trial-idx]').forEach((btn) => {
       btn.addEventListener('click', () => {
         Hacha.audio.play('tap');
+        if (listEl) uiState.listScrollTop = listEl.scrollTop;
         uiState.trialIndex = parseInt(btn.getAttribute('data-trial-idx'), 10);
         app.renderCurrent();
       });
     });
 
-    bottomEl.querySelectorAll('[data-chaos-idx]').forEach((btn) => {
+    bottomEl.querySelectorAll('[data-arena-idx]').forEach((btn) => {
       btn.addEventListener('click', () => {
         Hacha.audio.play('tap');
-        uiState.chaosIndex = parseInt(btn.getAttribute('data-chaos-idx'), 10);
+        if (listEl) uiState.listScrollTop = listEl.scrollTop;
+        uiState.arenaIndex = parseInt(btn.getAttribute('data-arena-idx'), 10);
         app.renderCurrent();
       });
     });
@@ -371,9 +416,21 @@
     return null;
   }
 
+  function advanceNextArena(stage) {
+    if (!stage || stage.mode !== 'arena') return null;
+    const idx = Hacha.data.ARENA_STAGES.findIndex((a) => a.id === stage.id);
+    if (idx >= 0 && idx + 1 < Hacha.data.ARENA_STAGES.length) {
+      uiState.mode = 'arena';
+      uiState.arenaIndex = idx + 1;
+      return Hacha.data.ARENA_STAGES[idx + 1];
+    }
+    return null;
+  }
+
   Hacha.ui.screenQuest = {
     render,
     getSelectedStage,
-    advanceNextStageIfMain
+    advanceNextStageIfMain,
+    advanceNextArena
   };
 })();

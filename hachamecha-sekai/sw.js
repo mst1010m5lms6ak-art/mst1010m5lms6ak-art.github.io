@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hachamecha-sekai-v2';
+const CACHE_NAME = 'hachamecha-sekai-v5';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -27,13 +27,22 @@ const CORE_ASSETS = [
   './js/ui/screen-party.js',
   './js/ui/screen-equip.js',
   './js/ui/screen-codex.js',
+  './js/ui/screen-settings.js',
   './js/ui/screen-battle.js',
   './js/ui/app.js'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS))
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.all(
+        CORE_ASSETS.map((url) =>
+          fetch(new Request(url, { cache: 'reload' }))
+            .then((res) => (res && res.ok ? cache.put(url, res) : null))
+            .catch(() => cache.add(url).catch(() => {}))
+        )
+      )
+    )
   );
   self.skipWaiting();
 });

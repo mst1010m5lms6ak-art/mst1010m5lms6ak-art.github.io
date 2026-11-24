@@ -312,15 +312,20 @@
   overflow: hidden;
 }
 
-/* 1行固定ストリームログ（折返しゼロ・上端見切れゼロ） */
+/* 1行固定ストリームログ（上詰め・最新行ハイライト・上端見切れゼロ） */
 .battle-log-viewport {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 2px;
   overflow: hidden;
+}
+
+.log-row-latest {
+  border: 1px solid rgba(72, 214, 255, 0.45);
+  background: rgba(28, 46, 86, 0.88);
 }
 
 .log-row {

@@ -75,7 +75,7 @@
   const SCOUT_RULES = [
     { charId: 'c_fire_dealer',    check: (p) => !!p.clearedStages.area1_s5 },
     { charId: 'c_fire_supporter', check: (p) => !!p.clearedStages.area1_s10 },
-    { charId: 'c_fire_healer',    check: (p) => (p.intruderKills || 0) >= 2 },
+    { charId: 'c_fire_healer',    check: (p) => !!(p.arenaCleared && p.arenaCleared.arena_bronze) },
     { charId: 'c_water_tank',     check: (p) => !!p.clearedStages.area2_s5 },
     { charId: 'c_water_supporter',check: (p) => !!p.clearedStages.area2_s10 },
     { charId: 'c_water_healer',   check: (p) => (p.bestTowerFloor || 0) >= 5 },
@@ -87,10 +87,10 @@
     { charId: 'c_light_supporter',check: (p) => Object.keys(p.trialCleared || {}).length >= 1 },
     { charId: 'c_dark_tank',      check: (p) => !!p.clearedStages.area5_s5 },
     { charId: 'c_dark_supporter', check: (p) => !!p.clearedStages.area5_s10 },
-    { charId: 'c_dark_healer',    check: (p) => (p.intruderKills || 0) >= 5 },
+    { charId: 'c_dark_healer',    check: (p) => (p.totalWins || 0) >= 30 },
     { charId: 'c_none_dealer',    check: (p) => (p.bestTowerFloor || 0) >= 10 },
     { charId: 'c_none_supporter', check: (p) => Object.keys(p.bossCleared || {}).length >= 3 },
-    { charId: 'c_none_healer',    check: (p) => Object.keys(p.chaosCleared || {}).length >= 2 }
+    { charId: 'c_none_healer',    check: (p) => Object.keys(p.arenaCleared || {}).length >= 3 }
   ];
 
   function checkScoutUnlocks(state) {

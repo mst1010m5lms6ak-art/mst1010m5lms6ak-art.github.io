@@ -10,12 +10,13 @@
     let rafId = null;
     let lastTs = 0;
     let running = false;
+    let paused = false;
     let session = null;   // 現在進行中の1戦データ
     let loop = null;      // 周回セッション（自動周回時は累積維持）
 
     function getSpeedMult() {
       const s = (Hacha.state && Hacha.state.settings && Hacha.state.settings.battleSpeed) || 1;
-      return s === 3 ? 3 : (s === 2 ? 2 : 1);
+      return s === 3 ? 2.35 : (s === 2 ? 1.65 : 1);
     }
 
     function createEmptyDpsMap(partySpecs) {
@@ -57,7 +58,10 @@
         cds: [0, 0, 0],
         maxHp: spec.maxHp,
         hp: spec.maxHp,
+        displayHp: spec.maxHp,
+        trailHp: spec.maxHp,
         shield: startShield,
+        displayShield: startShield,
         atk: spec.atk,
         defVal: spec.defVal,
         spd: spec.spd,
@@ -105,7 +109,10 @@
         cds: [0, 0, 0],
         maxHp,
         hp: maxHp,
+        displayHp: maxHp,
+        trailHp: maxHp,
         shield: 0,
+        displayShield: 0,
         atk,
         defVal,
         spd,
@@ -120,7 +127,65 @@
         reviveUsed: false,
         hitFlash: 0,
         isBoss: !!o.boss || def.category === 'boss' || def.category === 'raid',
-        isIntruder: !!o.intruder || def.category === 'intruder'
+        isIntruder: !!o.intruder || def.category === 'intruder',
+        isArenaUnit: false
+      };
+    }
+
+    /* 闘技場専用：ゲーム内キャラ定義から4vs4模擬戦の相手ユニットを生成 */
+    function createUnitFromArenaCharId(charId, slotIdx, stage, isLeader) {
+      const def = Hacha.data.CHARACTER_MAP[charId] || Hacha.data.CHARACTERS[0];
+      const scale = stage.scale || 1;
+      const mods = {};
+      (def.skills || []).forEach((sk) => {
+        if (sk.scope === 'passive' && sk.passive) {
+          Object.keys(sk.passive).forEach((k) => {
+            mods[k] = (mods[k] || 0) + sk.passive[k];
+          });
+        }
+      });
+
+      const maxHp = Math.round(def.base.hp * (1 + (mods.hpPct || 0)) * (1.35 * scale) * (isLeader ? 1.12 : 1));
+      const atk = Math.round(def.base.atk * (0.86 * scale));
+      const defVal = Math.round(def.base.def * (1 + (mods.defPct || 0)) * (0.86 * scale));
+      const spd = Math.round(def.base.spd * (1 + (mods.spdPct || 0)) * (0.94 + Math.min(0.18, Math.max(-0.08, (scale - 1) * 0.12))));
+      const crit = Math.min(0.55, (def.base.crit || 0.10) + (mods.critFlat || 0));
+
+      return {
+        key: `arena_${slotIdx}_${charId}_${Math.random().toString(36).slice(2, 6)}`,
+        side: 'enemy',
+        slot: slotIdx,
+        charId: def.id,
+        name: def.name,
+        icon: def.icon,
+        element: def.element,
+        races: def.races.slice(),
+        role: def.role,
+        skills: def.skills,
+        skillRanks: [1, 1, 1],
+        cds: [0, 0, 0],
+        maxHp,
+        hp: maxHp,
+        displayHp: maxHp,
+        trailHp: maxHp,
+        shield: 0,
+        displayShield: 0,
+        atk,
+        defVal,
+        spd,
+        crit,
+        ct: Hacha.util.randInt(0, 120),
+        statuses: [],
+        mods,
+        partyMods: {},
+        resTotals: {},
+        alive: true,
+        gutsUsed: false,
+        reviveUsed: false,
+        hitFlash: 0,
+        isBoss: !!isLeader,
+        isIntruder: false,
+        isArenaUnit: true
       };
     }
 
@@ -588,7 +653,7 @@
           addChainGauge(actor.mods.healChainGain);
         }
         Hacha.audio.play('heal');
-        const targetLabel = targets.length === 1 ? targets[0].name : `味方${targets.length}体`;
+        const targetLabel = targets.length === 1 ? targets[0].name : `${actor.side === 'ally' ? '味方' : '相手'}${targets.length}体`;
         addLog('normal', `${actor.icon}${actor.name}`, `${skill.name} ▶ ${targetLabel}`, `+${Hacha.util.formatNum(totalHeal)}`, 'log-heal');
       }
 
@@ -621,7 +686,7 @@
 
       if (!isAttack && !isHeal) {
         Hacha.audio.play('buff');
-        const tLabel = skill.scope === 'self' ? '自身' : '味方全体';
+        const tLabel = skill.scope === 'self' ? '自身' : (actor.side === 'ally' ? '味方全体' : '相手全体');
         addLog('normal', `${actor.icon}${actor.name}`, `${skill.name} ▶ ${tLabel}`, '強化展開', 'log-buff');
       }
 
@@ -730,17 +795,20 @@
       addLog('chain', '🌈共鳴チェイン', `${chainTitle} ▶ 敵${aliveEnemies.length}体`, `-${Hacha.util.formatNum(totalChainDmg)}`, 'log-weak');
     }
 
-    function maybeTriggerIntrusion(atWaveStart) {
+    function maybeTriggerIntrusion() {
       if (!session) return false;
       const st = session.stage;
-      if (session.wave >= st.waves) return false; // ボスWAVEでは乱入しない
-      if (session.waveIntruded) return false;
+      /* 乱入は大陸の通常WAVEのみ発生（厳密0.3%・1WAVEにつき1回のみ抽選） */
+      if (st.mode !== 'main') return false;
+      if (session.wave >= st.waves) return false;
+      if (session.waveIntruded || session.waveIntrusionRolled) return false;
       if (!st.intruderPool || !st.intruderPool.length) return false;
 
       const occupied = new Set(session.enemies.filter((e) => e.alive).map((e) => e.slot));
       if (occupied.size >= 4) return false;
 
-      const prob = atWaveStart ? (st.intruderChance * 0.45) : (st.intruderChance * 0.72);
+      session.waveIntrusionRolled = true;
+      const prob = typeof st.intruderChance === 'number' ? st.intruderChance : 0.003;
       if (Math.random() >= prob) return false;
 
       let freeSlot = -1;
@@ -756,7 +824,7 @@
       session.enemies.sort((a, b) => a.slot - b.slot);
       session.waveIntruded = true;
       session.intrusionBanner = `🚨 乱入発生！ ${intruder.icon}${intruder.name} が割り込んだ！`;
-      session.intrusionBannerTimer = 2.4;
+      session.intrusionBannerTimer = 2.6;
 
       vfx.spawnIntrusionWave(intruder.name);
       Hacha.audio.play('intrusion');
@@ -768,14 +836,23 @@
       const st = session.stage;
       session.wave = waveNum;
       session.waveIntruded = false;
+      session.waveIntrusionRolled = false;
+      session.arenaTeamName = '';
       session.enemies = [];
 
       const isFinalWave = waveNum >= st.waves;
-      if (isFinalWave) {
+      if (st.mode === 'arena' && Array.isArray(st.arenaWaves)) {
+        const waveCfg = st.arenaWaves[Math.min(st.arenaWaves.length - 1, waveNum - 1)];
+        const ids = (waveCfg && waveCfg.charIds) || ['c_fire_tank', 'c_water_dealer', 'c_wind_supporter', 'c_light_healer'];
+        session.arenaTeamName = (waveCfg && waveCfg.teamName) || `第${waveNum}試合チーム`;
+        ids.slice(0, 4).forEach((cid, idx) => {
+          session.enemies.push(createUnitFromArenaCharId(cid, idx, st, isFinalWave && idx === 0));
+        });
+      } else if (isFinalWave) {
         const boss = createUnitFromEnemyId(st.bossId, 0, st, { boss: true, elite: !!st.bossIsElite });
         session.enemies.push(boss);
         if (st.mode !== 'raid' && st.normalPool && st.normalPool.length) {
-          const escortCount = st.mode === 'chaos' ? 2 : Hacha.util.randInt(1, 2);
+          const escortCount = Hacha.util.randInt(1, 2);
           for (let i = 1; i <= escortCount; i++) {
             const eid = Hacha.util.pickRandom(st.normalPool);
             session.enemies.push(createUnitFromEnemyId(eid, i, st, {}));
@@ -815,10 +892,15 @@
         }
       });
 
-      addLog('wave', `WAVE ${waveNum}/${st.waves}`, isFinalWave ? '強敵部隊が出現！' : `敵${session.enemies.length}体が出現`, st.shortName, 'log-buff');
+      if (st.mode === 'arena') {
+        const roundLabel = waveNum === 1 ? '1回戦' : (waveNum === st.waves ? '決勝戦' : `第${waveNum}試合`);
+        addLog('wave', `🏟️${roundLabel}`, `${session.arenaTeamName}（4体）が出場！`, st.shortName, 'log-buff');
+      } else {
+        addLog('wave', `WAVE ${waveNum}/${st.waves}`, isFinalWave ? '強敵部隊が出現！' : `敵${session.enemies.length}体が出現`, st.shortName, 'log-buff');
+      }
 
-      if (!isFinalWave) {
-        maybeTriggerIntrusion(true);
+      if (!isFinalWave && st.mode === 'main') {
+        maybeTriggerIntrusion();
       }
     }
 
@@ -904,22 +986,22 @@
           state.progress.bossCleared[st.id] = (state.progress.bossCleared[st.id] || 0) + 1;
         } else if (st.mode === 'trial') {
           state.progress.trialCleared[st.id] = (state.progress.trialCleared[st.id] || 0) + 1;
-        } else if (st.mode === 'chaos') {
-          state.progress.chaosCleared[st.id] = (state.progress.chaosCleared[st.id] || 0) + 1;
+        } else if (st.mode === 'arena') {
+          state.progress.arenaCleared[st.id] = (state.progress.arenaCleared[st.id] || 0) + 1;
         }
 
-        /* 報酬計算（乱入撃破ボーナス加算） */
+        /* 報酬計算（0.3%激レア乱入撃破時は豪華ボーナス加算） */
         const intBonus = session.intrudersDefeated.length;
-        result.coins = st.coins + intBonus * 140;
-        result.scrolls = st.scrolls + (intBonus > 0 ? 1 : 0);
-        result.fragments = st.fragments + intBonus;
+        result.coins = st.coins + intBonus * 450;
+        result.scrolls = st.scrolls + intBonus * 3;
+        result.fragments = st.fragments + intBonus * 3;
 
         state.resources.coins += result.coins;
         state.resources.scrolls += result.scrolls;
         state.resources.fragments += result.fragments;
 
         const roles = ['tank', 'dealer', 'supporter', 'healer'];
-        const totalCrys = st.crystals + intBonus;
+        const totalCrys = st.crystals + intBonus * 4;
         for (let i = 0; i < totalCrys; i++) {
           const r = Hacha.util.pickRandom(roles);
           state.resources.crystals[r] += 1;
@@ -934,10 +1016,10 @@
             else result.keptDrops.push(d1);
           }
         }
-        /* 乱入敵からの追加高品質ドロップ */
+        /* 0.3%乱入敵からの超高品質レア装備ドロップ */
         for (let i = 0; i < intBonus; i++) {
-          const intPool = ['eq_w_12', 'eq_a_12', 'eq_c_12'].concat(st.dropPool || []);
-          const dInt = Hacha.engine.stats.rollEquipmentDrop(state, intPool, Math.min(92, (st.minQuality || 50) + 14), 0.04);
+          const intPool = ['eq_w_12', 'eq_a_12', 'eq_c_12', 'eq_w_14', 'eq_a_14', 'eq_c_14'].concat(st.dropPool || []);
+          const dInt = Hacha.engine.stats.rollEquipmentDrop(state, intPool, Math.min(95, (st.minQuality || 50) + 22), 0.10);
           if (dInt) {
             if (dInt.autoSold) { result.autoSoldCount++; result.autoSoldCoins += dInt.sellCoins; }
             else result.keptDrops.push(dInt);
@@ -1014,10 +1096,16 @@
 
     function stopEngineLoop() {
       running = false;
+      paused = false;
       if (rafId) {
         cancelAnimationFrame(rafId);
         rafId = null;
       }
+    }
+
+    function setPaused(flag) {
+      paused = !!flag;
+      lastTs = performance.now();
     }
 
     function startSingleRun(stage, keepLoopState) {
@@ -1037,7 +1125,10 @@
         enemies: [],
         wave: 1,
         waveIntruded: false,
+        waveIntrusionRolled: false,
+        arenaTeamName: '',
         chainGauge: 0,
+        displayChainGauge: 0,
         phase: 'charging',
         phaseTimer: 0,
         activeActorKey: null,
@@ -1118,10 +1209,27 @@
       };
     }
 
-    /* 周回終了予約：進行中の戦闘が完了してから終了する仕様 */
+    /* 周回セッションを現在完了済み戦果で綺麗に確定するヘルパー */
+    function finishLoopNow(retreated) {
+      if (!loop || !loop.active || !session) return;
+      const summary = Object.assign({}, loop, {
+        totalElapsedSec: (Date.now() - loop.startTime) / 1000,
+        dpsSnapshot: Object.keys(session.dpsMap).map((k) => Object.assign({}, session.dpsMap[k])),
+        dpsElapsedSec: session.dpsElapsedSec,
+        stoppedByDefeat: false,
+        retreated: !!retreated
+      });
+      stopEngineLoop();
+      if (cb.onFinish) cb.onFinish({ isLoopResult: true, loopSummary: summary, lastResult: null });
+    }
+
+    /* 周回終了予約：進行中の戦闘が完了してからリザルトへ遷移（待機中なら即リザルト確定） */
     function requestStopLoop() {
       if (loop && loop.active) {
         loop.stopRequested = true;
+        if (session && session.phase === 'loop_intermission') {
+          finishLoopNow(false);
+        }
       }
     }
 
@@ -1129,22 +1237,54 @@
       if (!session || !running) return;
       /* 周回インターミッション中の撤退は直前勝利分をそのまま周回リザルトへ綺麗に確定 */
       if (session.phase === 'loop_intermission' && loop && loop.active) {
-        const summary = Object.assign({}, loop, {
-          totalElapsedSec: (Date.now() - loop.startTime) / 1000,
-          dpsSnapshot: Object.keys(session.dpsMap).map((k) => Object.assign({}, session.dpsMap[k])),
-          dpsElapsedSec: session.dpsElapsedSec,
-          stoppedByDefeat: false,
-          retreated: true
-        });
-        stopEngineLoop();
-        if (cb.onFinish) cb.onFinish({ isLoopResult: true, loopSummary: summary, lastResult: null });
+        finishLoopNow(true);
         return;
       }
       finalizeSingleBattle(false, true);
     }
 
+    function stepSmoothGauges(rawDt) {
+      const hpRate = Math.min(1, rawDt * 14);
+      const trailRate = Math.min(1, rawDt * 3.8);
+      const shRate = Math.min(1, rawDt * 12);
+      const chRate = Math.min(1, rawDt * 10);
+
+      session.allies.concat(session.enemies).forEach((u) => {
+        if (u.hitFlash > 0) u.hitFlash = Math.max(0, u.hitFlash - rawDt);
+
+        const dh = u.hp - u.displayHp;
+        u.displayHp = Math.abs(dh) < 0.6 ? u.hp : (u.displayHp + dh * hpRate);
+
+        if (u.hp >= u.trailHp) {
+          u.trailHp = u.hp;
+        } else {
+          const dtHp = u.hp - u.trailHp;
+          u.trailHp = Math.abs(dtHp) < 0.6 ? u.hp : (u.trailHp + dtHp * trailRate);
+        }
+
+        const ds = u.shield - u.displayShield;
+        u.displayShield = Math.abs(ds) < 0.6 ? u.shield : (u.displayShield + ds * shRate);
+      });
+
+      const dc = session.chainGauge - session.displayChainGauge;
+      session.displayChainGauge = Math.abs(dc) < 0.12 ? session.chainGauge : (session.displayChainGauge + dc * chRate);
+    }
+
+    function advanceCtGauges(dt, excludeKey) {
+      const living = session.allies.concat(session.enemies).filter((u) => u.alive);
+      living.forEach((u) => {
+        if (excludeKey && u.key === excludeKey) return;
+        u.ct = Math.min(1200, u.ct + getEffectiveSpd(u) * dt * 2.55);
+      });
+    }
+
     function tick(now) {
       if (!running || !session) return;
+      if (paused) {
+        lastTs = now;
+        rafId = requestAnimationFrame(tick);
+        return;
+      }
       const rawDt = Math.min(0.05, Math.max(0.001, (now - lastTs) / 1000));
       lastTs = now;
       const sp = getSpeedMult();
@@ -1162,14 +1302,17 @@
         if (session.chainBannerTimer <= 0) session.chainBanner = '';
       }
 
-      session.allies.concat(session.enemies).forEach((u) => {
-        if (u.hitFlash > 0) u.hitFlash = Math.max(0, u.hitFlash - rawDt);
-      });
+      /* HPバー・ダメージ残像・シールド・共鳴ゲージを毎フレームぬるぬる補間 */
+      stepSmoothGauges(rawDt);
 
       if (session.phase === 'loop_intermission') {
+        if (loop && loop.stopRequested) {
+          finishLoopNow(false);
+          return;
+        }
         session.phaseTimer -= rawDt;
         if (session.phaseTimer <= 0) {
-          /* 無限塔自動周回時は次階層へ進む */
+          /* 異界塔自動周回時は次階層へ進む */
           const nextStage = session.stage.mode === 'tower'
             ? Hacha.data.buildTowerStage(Hacha.state.progress.towerFloor)
             : session.stage;
@@ -1177,6 +1320,8 @@
           startSingleRun(nextStage, true);
         }
       } else if (session.phase === 'acting' || session.phase === 'chain') {
+        /* 攻撃・共鳴演出中も他ユニットのCTゲージが途切れず進行（同時攻撃は厳格に防止） */
+        advanceCtGauges(dt, session.activeActorKey);
         session.phaseTimer -= rawDt;
         if (session.phaseTimer <= 0) {
           session.activeActorKey = null;
@@ -1195,8 +1340,10 @@
               if (!running) return;
             }
           } else {
-            /* 敵が1体以上減って空きスロットができたら途中乱入判定 */
-            maybeTriggerIntrusion(false);
+            /* 大陸のみ：敵が1体以上減って空きスロットができたら未抽選WAVEで0.3%判定 */
+            if (session.stage.mode === 'main') {
+              maybeTriggerIntrusion();
+            }
             session.phase = 'charging';
           }
         }
@@ -1206,17 +1353,14 @@
         const aliveEnemies = session.enemies.filter((e) => e.alive);
         if (session.chainGauge >= 100 && aliveAllies.length && aliveEnemies.length) {
           session.phase = 'chain';
-          session.phaseTimer = 0.72 / (sp === 3 ? 2.1 : (sp === 2 ? 1.5 : 1));
+          session.phaseTimer = 0.76 / sp;
           executeResonanceChain();
         } else {
           /* 全生存ユニットのCTゲージを滑らかに進行 */
-          const living = aliveAllies.concat(aliveEnemies);
-          living.forEach((u) => {
-            u.ct += getEffectiveSpd(u) * dt * 2.95;
-          });
+          advanceCtGauges(dt, null);
 
           /* 1000以上になった中から厳密に1体だけ選出して行動（同時攻撃は絶対に起きない） */
-          const ready = living.filter((u) => u.ct >= 1000);
+          const ready = aliveAllies.concat(aliveEnemies).filter((u) => u.ct >= 1000);
           if (ready.length) {
             ready.sort((a, b) => {
               if (b.ct !== a.ct) return b.ct - a.ct;
@@ -1227,7 +1371,7 @@
             actor.ct = Math.max(0, actor.ct - 1000);
             session.activeActorKey = actor.key;
             session.phase = 'acting';
-            session.phaseTimer = 0.54 / (sp === 3 ? 2.4 : (sp === 2 ? 1.6 : 1));
+            session.phaseTimer = 0.62 / sp;
             executeTurn(actor);
           }
         }
@@ -1247,7 +1391,9 @@
         allies: session.allies,
         enemies: session.enemies,
         wave: session.wave,
+        arenaTeamName: session.arenaTeamName || '',
         chainGauge: session.chainGauge,
+        displayChainGauge: session.displayChainGauge,
         activeActorKey: session.activeActorKey,
         turnOrder: predictTurnOrder(4),
         logs: session.logs,
@@ -1267,6 +1413,7 @@
       enableLoopMidBattle,
       requestStopLoop,
       retreat,
+      setPaused,
       stopEngineLoop,
       getSnapshot,
       isRunning: () => running

@@ -17,8 +17,12 @@
   function renderUnitCardInner(u) {
     const el = C.ELEMENT_MAP[u.element] || C.ELEMENT_MAP.none;
     const tag = u.isIntruder ? '🚨' : (u.isBoss ? '👑' : '');
-    const hpPct = u.maxHp > 0 ? U.clamp(u.hp / u.maxHp, 0, 1) : 0;
-    const shPct = u.maxHp > 0 ? U.clamp(u.shield / u.maxHp, 0, 1) : 0;
+    const dispHp = typeof u.displayHp === 'number' ? u.displayHp : u.hp;
+    const trailHp = typeof u.trailHp === 'number' ? u.trailHp : u.hp;
+    const dispSh = typeof u.displayShield === 'number' ? u.displayShield : u.shield;
+    const hpPct = u.maxHp > 0 ? U.clamp(dispHp / u.maxHp, 0, 1) : 0;
+    const trailPct = u.maxHp > 0 ? U.clamp(trailHp / u.maxHp, 0, 1) : 0;
+    const shPct = u.maxHp > 0 ? U.clamp(dispSh / u.maxHp, 0, 1) : 0;
     const ctPct = U.clamp((u.ct || 0) / 1000, 0, 1);
     const hpBarCls = u.side === 'enemy' ? 'gauge-enemy-hp' : (hpPct > 0.5 ? 'gauge-hp' : (hpPct > 0.25 ? 'gauge-hp-mid' : 'gauge-hp-low'));
 
@@ -34,6 +38,7 @@
       </div>
       <div class="bu-bars">
         <div class="gauge-track hp-track">
+          <div class="gauge-fill gauge-hp-trail" data-hp-trail style="transform:scaleX(${trailPct});"></div>
           <div class="gauge-fill ${hpBarCls}" data-hp-bar style="transform:scaleX(${hpPct});"></div>
           <div class="gauge-fill gauge-shield" data-sh-bar style="transform:scaleX(${shPct});"></div>
         </div>
@@ -138,7 +143,7 @@
       syncControlButtons(controller.getSnapshot());
     });
 
-    /* 自動周回ON / 周回終了予約（進行中の戦闘完了後に終了する仕様） */
+    /* 自動周回ON / 終了予約（進行中の戦闘完了後に周回リザルトへ遷移） */
     refs.loopBtn.addEventListener('click', () => {
       Hacha.audio.play('tap');
       const snap = controller.getSnapshot();
@@ -148,8 +153,11 @@
           controller.enableLoopMidBattle();
           Hacha.ui.common.showToast('周回終了予約を取り消しました');
         } else {
+          const wasIntermission = snap.phase === 'loop_intermission';
           controller.requestStopLoop();
-          Hacha.ui.common.showToast('この戦闘が完了したら周回を終了します', 'gold');
+          if (!wasIntermission) {
+            Hacha.ui.common.showToast('この戦闘が終了してからリザルトへ進みます', 'gold');
+          }
         }
       } else {
         Hacha.state.settings.autoLoop = true;
@@ -157,7 +165,9 @@
         controller.enableLoopMidBattle();
         Hacha.ui.common.showToast('自動周回をONにしました！', 'gold');
       }
-      syncControlButtons(controller.getSnapshot());
+      if (controller.isRunning()) {
+        syncControlButtons(controller.getSnapshot());
+      }
     });
 
     /* 自動売却しきい値切替 */
@@ -166,25 +176,51 @@
       syncControlButtons(controller.getSnapshot());
     });
 
-    /* 撤退（下部確認ボトムシート：見切れ防止＆空白解消） */
+    /* 撤退（確認中は戦闘を一時停止し、裏での勝敗遷移による競合を完全防止） */
     refs.retreatBtn.addEventListener('click', () => {
       Hacha.audio.play('tap');
+      const snap = controller.getSnapshot();
+      if (!snap || !controller.isRunning()) return;
+      controller.setPaused(true);
+      const canReserveStop = snap.loop && snap.loop.active && !snap.loop.stopRequested;
       Hacha.ui.common.openBottomOverlay(
-        `<div class="panel"><div class="view-title">撤退の確認</div><div class="note-text" style="margin-top:4px;">進行中の戦闘から撤退します。自動周回中ならここまでの戦果を周回レポートで確認できます。</div></div>`,
+        `<div class="panel"><div class="view-title">撤退の確認</div><div class="note-text" style="margin-top:4px;">${canReserveStop ? '今すぐ撤退すると進行中の戦闘は中断されます。この戦闘を終えてからリザルトへ進みたい場合は「この戦闘後に周回終了」を押してください。' : '進行中の戦闘から撤退します。自動周回中ならここまでの戦果を確認できます。'}</div></div>`,
         `
+          ${canReserveStop ? `
+            <div class="action-row">
+              <button class="btn btn-gold" id="cf-stop-after">⏳ この戦闘後に周回終了</button>
+            </div>
+          ` : ''}
           <div class="action-row">
-            <button class="btn btn-danger" id="cf-retreat-yes">🏳️ 撤退する</button>
+            <button class="btn btn-danger" id="cf-retreat-yes">🏳️ 今すぐ撤退</button>
             <button class="btn btn-primary" id="cf-retreat-no">戦闘を続ける</button>
           </div>
         `,
         (root) => {
+          const stopAfterBtn = root.querySelector('#cf-stop-after');
+          if (stopAfterBtn) {
+            stopAfterBtn.addEventListener('click', () => {
+              Hacha.audio.play('tap');
+              Hacha.ui.common.closeOverlay();
+              controller.setPaused(false);
+              const cur = controller.getSnapshot();
+              const wasInter = cur && cur.phase === 'loop_intermission';
+              controller.requestStopLoop();
+              if (!wasInter && controller.isRunning()) {
+                Hacha.ui.common.showToast('この戦闘が終了してからリザルトへ進みます', 'gold');
+                syncControlButtons(controller.getSnapshot());
+              }
+            });
+          }
           root.querySelector('#cf-retreat-yes').addEventListener('click', () => {
             Hacha.ui.common.closeOverlay();
+            controller.setPaused(false);
             controller.retreat();
           });
           root.querySelector('#cf-retreat-no').addEventListener('click', () => {
             Hacha.audio.play('tap');
             Hacha.ui.common.closeOverlay();
+            controller.setPaused(false);
           });
         },
         { compact: true }
@@ -203,10 +239,10 @@
 
     if (snap && snap.loop && snap.loop.active) {
       if (snap.loop.stopRequested) {
-        refs.loopBtn.textContent = '⏳ 終了予約';
+        refs.loopBtn.textContent = '⏳ 戦闘後終了';
         refs.loopBtn.className = 'btn btn-sm btn-toggle-warn';
       } else {
-        refs.loopBtn.textContent = '🔁 周回:ON';
+        refs.loopBtn.textContent = '🛑 周回終了';
         refs.loopBtn.className = 'btn btn-sm btn-toggle-on';
       }
     } else {
@@ -246,16 +282,23 @@
     card.classList.toggle('is-dead', !u.alive);
 
     const hpTxt = card.querySelector('[data-hp-txt]');
+    const hpTrail = card.querySelector('[data-hp-trail]');
     const hpBar = card.querySelector('[data-hp-bar]');
     const shBar = card.querySelector('[data-sh-bar]');
     const ctBar = card.querySelector('[data-ct-bar]');
     const stStrip = card.querySelector('[data-st-strip]');
 
-    const hpPct = u.maxHp > 0 ? U.clamp(u.hp / u.maxHp, 0, 1) : 0;
-    const shPct = u.maxHp > 0 ? U.clamp(u.shield / u.maxHp, 0, 1) : 0;
+    const dispHp = typeof u.displayHp === 'number' ? u.displayHp : u.hp;
+    const trailHp = typeof u.trailHp === 'number' ? u.trailHp : u.hp;
+    const dispSh = typeof u.displayShield === 'number' ? u.displayShield : u.shield;
+
+    const hpPct = u.maxHp > 0 ? U.clamp(dispHp / u.maxHp, 0, 1) : 0;
+    const trailPct = u.maxHp > 0 ? U.clamp(trailHp / u.maxHp, 0, 1) : 0;
+    const shPct = u.maxHp > 0 ? U.clamp(dispSh / u.maxHp, 0, 1) : 0;
     const ctPct = U.clamp((u.ct || 0) / 1000, 0, 1);
 
     if (hpTxt) hpTxt.textContent = u.shield > 0 ? `${U.formatNum(u.hp)}+${U.formatNum(u.shield)}` : U.formatNum(u.hp);
+    if (hpTrail) hpTrail.style.transform = `scaleX(${trailPct})`;
     if (hpBar) {
       hpBar.style.transform = `scaleX(${hpPct})`;
       if (u.side === 'ally') {
@@ -286,15 +329,16 @@
       if (!force && latestSeq === uiState.lastLogSeq) return;
       uiState.lastLogSeq = latestSeq;
 
-      /* コンテナ高さから整数行のみを切り出すため、上端ログが見切れない */
+      /* コンテナ高さから整数行のみを切り出し、上詰め＋最新行ハイライトで見やすく表示 */
       const h = box.clientHeight || 150;
       const maxRows = Math.max(4, Math.floor((h - 10) / 24));
       const visible = snap.logs.slice(-maxRows);
 
-      const rowsHtml = visible.map((row) => {
+      const rowsHtml = visible.map((row, idx) => {
         const kCls = row.kind === 'chain' ? 'log-chain' : (row.kind === 'intrusion' ? 'log-intrusion' : (row.kind === 'wave' ? 'log-wave' : ''));
+        const latestCls = idx === visible.length - 1 ? 'log-row-latest' : '';
         return `
-          <div class="log-row ${kCls}">
+          <div class="log-row ${kCls} ${latestCls}">
             <span class="log-actor">${U.escapeHtml(row.actor)}</span>
             <span class="log-action">${U.escapeHtml(row.action)}</span>
             <span class="log-result ${row.resultCls}">${U.escapeHtml(row.result)}</span>
@@ -371,27 +415,35 @@
     if (waveKey !== uiState.lastWaveKey) {
       uiState.lastWaveKey = waveKey;
       refs.stageName.textContent = snap.stage.name;
-      refs.waveBadge.textContent = `WAVE ${snap.wave}/${snap.stage.waves}`;
+      if (snap.stage.mode === 'arena') {
+        const rd = snap.wave === 1 ? '1回戦' : (snap.wave === snap.stage.waves ? '決勝戦' : `準決勝`);
+        refs.waveBadge.textContent = `${rd} ${snap.wave}/${snap.stage.waves}`;
+      } else {
+        refs.waveBadge.textContent = `WAVE ${snap.wave}/${snap.stage.waves}`;
+      }
       rebuildUnitSlots(snap);
       syncControlButtons(snap);
       if (uiState.infoTab === 'rule') renderInfoPanel(snap, true);
     }
 
-    /* 共鳴チェインゲージ（ぬるぬる） */
-    const cPct = U.clamp(snap.chainGauge / 100, 0, 1);
+    /* 共鳴チェインゲージ（毎フレームぬるぬる補間） */
+    const dispChain = typeof snap.displayChainGauge === 'number' ? snap.displayChainGauge : snap.chainGauge;
+    const cPct = U.clamp(dispChain / 100, 0, 1);
     refs.chainFill.style.transform = `scaleX(${cPct})`;
-    refs.chainPct.textContent = `${Math.floor(snap.chainGauge)}%`;
+    refs.chainPct.textContent = `${Math.floor(dispChain)}%`;
 
     if (snap.loop && snap.loop.active) {
       refs.loopPill.classList.remove('hidden');
-      refs.loopPill.textContent = snap.loop.stopRequested ? `周回${snap.loop.runs + 1}・終了予約` : `周回 ${snap.loop.runs + 1}周目`;
+      refs.loopPill.textContent = snap.loop.stopRequested ? `周回${snap.loop.runs + 1}・戦闘後終了` : `周回 ${snap.loop.runs + 1}周目`;
     } else {
       refs.loopPill.classList.add('hidden');
     }
 
-    /* 専用中央レーン（乱入警報・共鳴チェイン・周回遷移・世界法則表示：敵味方カードと絶対非干渉） */
+    /* 専用中央レーン（乱入警報・共鳴チェイン・周回遷移・闘技場対戦名・世界法則表示） */
     if (refs.midLane) {
-      let midText = snap.rule ? `${snap.rule.icon} ${snap.rule.name}` : 'はちゃめちゃ戦場';
+      let midText = (snap.stage.mode === 'arena' && snap.arenaTeamName)
+        ? `🏟️ VS ${snap.arenaTeamName}`
+        : (snap.rule ? `${snap.rule.icon} ${snap.rule.name}` : 'はちゃめちゃ戦場');
       let midCls = 'battle-mid-lane';
       if (snap.intrusionBanner) {
         midText = snap.intrusionBanner;
@@ -493,12 +545,14 @@
 
     const hasNextMain = result.won && result.stage.mode === 'main' && !(result.stage.areaIndex === 5 && result.stage.stageNum === 10);
     const hasNextTower = result.won && result.stage.mode === 'tower';
+    const hasNextArena = result.won && result.stage.mode === 'arena' && Hacha.data.ARENA_STAGES[Hacha.data.ARENA_STAGES.length - 1].id !== result.stage.id;
 
     const bottomHtml = `
       <div class="action-row">
         <button class="btn btn-primary" id="nr-retry">⚔️ もう一度挑戦</button>
         ${hasNextMain ? `<button class="btn btn-emerald" id="nr-next">▶ 次のステージへ</button>` : ''}
         ${hasNextTower ? `<button class="btn btn-emerald" id="nr-next-tower">🗼 次の階層へ</button>` : ''}
+        ${hasNextArena ? `<button class="btn btn-emerald" id="nr-next-arena">🏟️ 次の階級へ</button>` : ''}
       </div>
       <div class="action-row">
         <button class="btn btn-gold" id="nr-loop">🔁 このステージを自動周回</button>
@@ -528,6 +582,16 @@
           Hacha.audio.play('tap');
           cm.closeOverlay();
           app.launchBattle(Hacha.data.buildTowerStage(Hacha.state.progress.towerFloor), false);
+        });
+      }
+      const nextArenaBtn = root.querySelector('#nr-next-arena');
+      if (nextArenaBtn) {
+        nextArenaBtn.addEventListener('click', () => {
+          Hacha.audio.play('tap');
+          cm.closeOverlay();
+          const nextAr = Hacha.ui.screenQuest.advanceNextArena(result.stage);
+          if (nextAr) app.launchBattle(nextAr, false);
+          else app.exitBattleTo('quest');
         });
       }
       root.querySelector('#nr-loop').addEventListener('click', () => {

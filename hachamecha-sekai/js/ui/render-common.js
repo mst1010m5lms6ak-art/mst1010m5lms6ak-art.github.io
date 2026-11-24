@@ -104,6 +104,52 @@
     return opt ? opt.label : '自動売却OFF';
   }
 
+  function getAutoSellPrefixedLabel(threshold) {
+    if (!threshold || threshold <= 0) return '自動売却：OFF';
+    if (threshold >= 100) return '自動売却：極100%未満';
+    return `自動売却：${threshold}%未満`;
+  }
+
+  /* 縦スクロール位置を即時＆描画フレーム後に確実復元（タップ時の巻き戻り防止） */
+  function bindVerticalScrollState(listEl, getSaved, setSaved) {
+    if (!listEl) return;
+    const saved = getSaved() || 0;
+    listEl.scrollTop = saved;
+    requestAnimationFrame(() => {
+      if (listEl.isConnected) listEl.scrollTop = saved;
+    });
+    listEl.addEventListener('scroll', () => {
+      setSaved(listEl.scrollTop);
+    }, { passive: true });
+  }
+
+  /* 横スクロール仲間帯の位置復元＆選択中チップが画面外なら自動で中央付近へ可視化 */
+  function bindHorizontalStripState(stripEl, getSaved, setSaved, activeSelector) {
+    if (!stripEl) return;
+    const apply = () => {
+      if (!stripEl.isConnected) return;
+      let left = getSaved() || 0;
+      stripEl.scrollLeft = left;
+      const activeEl = activeSelector ? stripEl.querySelector(activeSelector) : null;
+      if (activeEl) {
+        const elLeft = activeEl.offsetLeft;
+        const elRight = elLeft + activeEl.offsetWidth;
+        const viewLeft = stripEl.scrollLeft;
+        const viewRight = viewLeft + stripEl.clientWidth;
+        if (elLeft < viewLeft + 4 || elRight > viewRight - 4) {
+          left = Math.max(0, elLeft - Math.max(0, (stripEl.clientWidth - activeEl.offsetWidth) / 2));
+          stripEl.scrollLeft = left;
+          setSaved(stripEl.scrollLeft);
+        }
+      }
+    };
+    apply();
+    requestAnimationFrame(apply);
+    stripEl.addEventListener('scroll', () => {
+      setSaved(stripEl.scrollLeft);
+    }, { passive: true });
+  }
+
   function cycleAutoSellSetting() {
     const opts = C.AUTO_SELL_OPTIONS;
     const cur = Hacha.state.settings.autoSellBelow || 0;
@@ -112,7 +158,7 @@
     Hacha.state.settings.autoSellBelow = next.value;
     Hacha.storage.saveState(true);
     Hacha.audio.play('tap');
-    showToast(next.label);
+    showToast(getAutoSellPrefixedLabel(next.value));
     return next;
   }
 
@@ -129,6 +175,9 @@
     openBottomOverlay,
     closeOverlay,
     getAutoSellLabel,
+    getAutoSellPrefixedLabel,
+    bindVerticalScrollState,
+    bindHorizontalStripState,
     cycleAutoSellSetting
   };
 })();

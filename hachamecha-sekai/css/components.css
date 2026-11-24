@@ -1,5 +1,7 @@
 /* 共通ヘッダ帯（閲覧専用・上半分最上段） */
 .view-header {
+  position: relative;
+  z-index: 2;
   flex: 0 0 30px;
   height: 30px;
   display: flex;
@@ -7,9 +9,10 @@
   justify-content: space-between;
   gap: 6px;
   padding: 0 8px;
-  background: rgba(18, 28, 54, 0.94);
+  background: rgba(18, 28, 54, 0.96);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
+  transform: translateZ(0);
 }
 
 .view-title {
@@ -183,7 +186,9 @@
 }
 
 .btn:disabled {
-  opacity: 0.38;
+  opacity: 0.54;
+  color: #b7c6e4;
+  border-color: rgba(132, 168, 255, 0.25);
   cursor: not-allowed;
 }
 
@@ -229,7 +234,110 @@
   font-size: 11px;
 }
 
-/* ページネーション行（中途半端なスクロール撲滅の要） */
+/* スクロールバーなし縦・横スクロールリスト（下半分親指ゾーン専用・画面全体スクロールは厳禁） */
+.scroll-list-v {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  touch-action: pan-y;
+  background: rgba(9, 14, 30, 0.52);
+  border: 1px solid rgba(132, 168, 255, 0.14);
+  border-radius: var(--radius-sm);
+  padding: 4px 4px 6px 4px;
+}
+
+.scroll-list-v::-webkit-scrollbar {
+  display: none;
+}
+
+.scroll-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  align-content: start;
+}
+
+.scroll-grid-2 .item-tile {
+  min-height: 48px;
+}
+
+.scroll-list-1 {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.scroll-list-1 .item-tile {
+  min-height: 44px;
+}
+
+.scroll-list-1 .ability-tile {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 4px 8px;
+}
+
+.scroll-strip-h {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  touch-action: pan-x;
+  padding: 1px 0;
+}
+
+.scroll-strip-h::-webkit-scrollbar {
+  display: none;
+}
+
+.char-chip-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  transition: transform 0.08s ease, border-color 0.12s ease, background-color 0.12s ease;
+}
+
+.char-chip-btn:active {
+  transform: scale(0.95);
+}
+
+.char-chip-btn.active {
+  background: linear-gradient(180deg, rgba(72, 214, 255, 0.3), rgba(40, 96, 178, 0.35));
+  border-color: var(--accent-cyan);
+  color: #ffffff;
+}
+
+.char-chip-btn.in-party {
+  border-color: rgba(68, 230, 154, 0.52);
+}
+
+.char-chip-btn.active.in-party {
+  border-color: var(--accent-cyan);
+}
+
+/* ページネーション行 */
 .pager-bar {
   flex: 0 0 30px;
   height: 30px;
@@ -295,8 +403,13 @@
 .item-tile.in-dispatch { border-color: rgba(255, 209, 92, 0.65); }
 
 .item-tile.locked-tile {
-  opacity: 0.48;
-  background: rgba(13, 19, 36, 0.8);
+  opacity: 0.72;
+  background: rgba(15, 22, 42, 0.88);
+  border-color: rgba(132, 168, 255, 0.16);
+}
+
+.item-tile.locked-tile .unit-name-full {
+  color: #a9badb;
 }
 
 /* アビリティ5行リスト専用（iPhone SEでも上下切れない超精密密度） */
@@ -369,6 +482,9 @@
   border-radius: 999px;
 }
 
+.gauge-hp-trail {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.88), rgba(255, 170, 190, 0.92));
+}
 .gauge-hp { background: linear-gradient(90deg, #2bd984, #70ffad); }
 .gauge-hp-mid { background: linear-gradient(90deg, #f0b636, #ffe37d); }
 .gauge-hp-low { background: linear-gradient(90deg, #e83d5a, #ff7e92); }
@@ -380,18 +496,34 @@
 /* 詳細表示カード（上半分・固定収容） */
 .detail-grid-stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
+}
+
+.detail-grid-stats-5 {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 3px;
 }
 
 .stat-chip {
   background: rgba(9, 15, 31, 0.85);
   border: 1px solid var(--border-subtle);
   border-radius: 5px;
-  padding: 2px 4px;
+  padding: 3px 4px;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+.stat-chip-delta {
+  font-size: 9px;
+  font-family: var(--font-mono);
+  font-weight: 800;
+  line-height: 1.1;
+  min-height: 10px;
 }
 
 .stat-chip-lbl {
@@ -493,6 +625,19 @@
   padding: 6px;
   color: var(--text-primary);
   resize: none;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.textarea-io::-webkit-scrollbar {
+  display: none;
+}
+
+.section-micro-lbl {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
 }
 
 /* コンパクト端末 (iPhone SE 等 667px高) での精密タイポグラフィ調整 */
@@ -512,4 +657,8 @@
   .party-slot-card { min-height: 40px; }
   .party-slot-card.compact-slot { min-height: 34px; height: 34px; }
   .ability-tile { padding: 1px 6px; }
+  .scroll-grid-2 .item-tile { min-height: 43px; }
+  .scroll-list-1 .item-tile { min-height: 39px; }
+  .scroll-list-1 .ability-tile { min-height: 35px; padding: 3px 7px; }
+  .char-chip-btn { height: 27px; padding: 0 7px; font-size: 10.5px; }
 }

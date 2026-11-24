@@ -123,7 +123,7 @@
         bestTowerFloor: 0,
         bossCleared: {},
         trialCleared: {},
-        chaosCleared: {},
+        arenaCleared: {},
         totalBattles: 0,
         totalWins: 0,
         intruderKills: 0,
@@ -160,7 +160,7 @@
     merged.progress.clearedStages = Object.assign({}, raw.progress && raw.progress.clearedStages);
     merged.progress.bossCleared = Object.assign({}, raw.progress && raw.progress.bossCleared);
     merged.progress.trialCleared = Object.assign({}, raw.progress && raw.progress.trialCleared);
-    merged.progress.chaosCleared = Object.assign({}, raw.progress && raw.progress.chaosCleared);
+    merged.progress.arenaCleared = Object.assign({}, raw.progress && raw.progress.arenaCleared);
     merged.progress.intruderKillMap = Object.assign({}, raw.progress && raw.progress.intruderKillMap);
     merged.settings = Object.assign({}, base.settings, raw.settings || {});
     merged.codex = Object.assign({}, base.codex, raw.codex || {});

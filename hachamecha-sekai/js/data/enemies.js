@@ -4,7 +4,7 @@
   const Hacha = window.Hacha;
 
   /*
-   * 敵全36種（エリア通常20・エリアボス5・乱入専用6・異界大ボス5）
+   * 敵全36種（エリア通常20・エリアボス5・乱入専用6・異界レイドボス5）
    * すべての敵が固有の技（単体/範囲/全体明記）と紹介文を持つ
    */
   const ENEMIES = [
@@ -335,7 +335,7 @@
       ]
     },
 
-    /* ========== 異界大ボス（5種：エンドコンテンツ高難度レイド） ========== */
+    /* ========== 異界レイドボス（5種：エンドコンテンツ高難度レイド） ========== */
     {
       id: 'e_rb_1', name: '灼熱機関竜イフリート', kana: 'しゃくねつきかんりゅういふりーと', icon: '🌋', category: 'raid',
       element: 'fire', races: ['dragon', 'machine'], role: 'dealer',
@@ -384,7 +384,7 @@
       id: 'e_rb_5', name: '万界混線王カオス', kana: 'ばんかいこんせんおうかおす', icon: '👾', category: 'raid',
       element: 'dark', races: ['dragon', 'god'], role: 'dealer',
       base: { hp: 22800, atk: 495, def: 274, spd: 138 },
-      desc: '和風もSFも神話も丸ごとミキサーにかけた究極の混沌王。すべての育成と共鳴パズルを総動員して挑む頂点の大ボス。',
+      desc: '和風もSFも神話も丸ごとミキサーにかけた究極の混沌王。すべての育成と共鳴パズルを総動員して挑む頂点のレイドボス。',
       skills: [
         { name: '境界断裂クロー', scope: 'single', cd: 0, mult: 1.30, status: { id: 'poison', chance: 0.65, turns: 2 } },
         { name: '世界法則シャッフル', scope: 'area', cd: 2, mult: 1.66, status: { id: 'atk_down', chance: 0.55, turns: 2 } },

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="はちゃめちゃ世界">
+  <meta name="theme-color" content="#0d111d">
+  <title>はちゃめちゃ世界</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" sizes="180x180" href="./assets/icons/icon-180.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="./assets/icons/icon-192.png">
+  <link rel="stylesheet" href="./css/base.css">
+  <link rel="stylesheet" href="./css/theme.css">
+  <link rel="stylesheet" href="./css/layout.css">
+  <link rel="stylesheet" href="./css/battle.css">
+  <link rel="stylesheet" href="./css/screens.css">
+</head>
+<body>
+  <div id="app" data-world="frontier" data-tab="battle" data-battle-active="false">
+    <section id="viewport-upper" class="viewport-upper" aria-label="ライブ表示領域">
+      <header id="top-hud" class="top-hud"></header>
+      <div id="upper-stage" class="upper-stage"></div>
+      <div id="fx-layer" class="fx-layer" aria-hidden="true"></div>
+    </section>
+    <div id="cockpit-divider" class="cockpit-divider" aria-hidden="true">
+      <span class="divider-rail"></span>
+      <span id="divider-world-tag" class="divider-tag">境界平原</span>
+      <span class="divider-rail"></span>
+    </div>
+    <section id="deck-lower" class="deck-lower" aria-label="操作デッキ">
+      <div id="lower-panel" class="lower-panel"></div>
+      <div id="context-bar" class="context-bar"></div>
+      <nav id="bottom-nav" class="bottom-nav" aria-label="メインナビゲーション"></nav>
+    </section>
+    <div id="sheet-backdrop" class="sheet-backdrop hidden" aria-hidden="true"></div>
+    <section id="bottom-sheet" class="bottom-sheet hidden" aria-modal="true" role="dialog">
+      <div class="sheet-header">
+        <div id="sheet-title" class="sheet-title"></div>
+        <div id="sheet-subtitle" class="sheet-subtitle"></div>
+      </div>
+      <div id="sheet-body" class="sheet-body"></div>
+      <div id="sheet-actions" class="sheet-actions"></div>
+    </section>
+    <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
+  </div>
+
+  <script defer src="./js/namespace.js"></script>
+  <script defer src="./js/utils.js"></script>
+  <script defer src="./js/storage.js"></script>
+  <script defer src="./js/data/elements_races.js"></script>
+  <script defer src="./js/data/abilities.js"></script>
+  <script defer src="./js/data/characters.js"></script>
+  <script defer src="./js/data/enemies.js"></script>
+  <script defer src="./js/data/equipment.js"></script>
+  <script defer src="./js/data/stages_pve.js"></script>
+  <script defer src="./js/engine/state.js"></script>
+  <script defer src="./js/engine/calc.js"></script>
+  <script defer src="./js/engine/expedition.js"></script>
+  <script defer src="./js/engine/battle.js"></script>
+  <script defer src="./js/ui/anim.js"></script>
+  <script defer src="./js/ui/battle_view.js"></script>
+  <script defer src="./js/ui/party_view.js"></script>
+  <script defer src="./js/ui/growth_view.js"></script>
+  <script defer src="./js/ui/quest_view.js"></script>
+  <script defer src="./js/ui/codex_view.js"></script>
+  <script defer src="./js/ui/app.js"></script>
+</body>
+</html>

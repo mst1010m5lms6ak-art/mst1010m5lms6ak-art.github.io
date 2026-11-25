@@ -190,7 +190,7 @@
       roleCounts[c.role] = (roleCounts[c.role] || 0) + 1;
     });
     if (Object.keys(roleCounts).length === 4) {
-      active.push({ name: '四職完全均衡', desc: 'HP+10%・攻撃+10%・防御+10%・回復+10%' });
+      active.push({ name: '四職均衡', desc: '全基礎+10%・回復+10%' });
       addMod({ hpPct: 0.10, atkPct: 0.10, defPct: 0.10, healOutPct: 0.10 });
     } else {
       if ((roleCounts.dealer || 0) >= 2) {

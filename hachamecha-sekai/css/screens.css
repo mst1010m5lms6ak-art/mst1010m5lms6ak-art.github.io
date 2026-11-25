@@ -4,9 +4,9 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 5px;
-  padding: 8px 9px;
+  padding: 7px 9px;
   border-radius: 12px;
   background: linear-gradient(160deg, rgba(25, 34, 62, 0.94), rgba(15, 21, 40, 0.96));
   border: 1px solid var(--line-mid);
@@ -507,15 +507,15 @@
   align-items: center;
 }
 
-/* シナジーチップ（上半分ノンスクロールで綺麗に収容） */
+/* シナジーチップ（上半分ノンスクロールで最大2〜3個を1pxも見切れず収容） */
 .synergy-list {
   display: flex;
   flex-wrap: wrap;
   align-content: flex-start;
   gap: 3px;
-  max-height: 44px;
+  flex: 0 1 auto;
+  min-height: 0;
   overflow: hidden;
-  flex-shrink: 0;
 }
 
 /* 陣形2×2ビジュアルマップ（編成・陣形タブの上半分専用） */
@@ -694,10 +694,10 @@
 }
 
 .syn-chip {
-  font-size: 9.5px;
+  font-size: 8.5px;
   font-weight: 800;
-  padding: 2px 6px;
-  border-radius: 6px;
+  padding: 1px 5px;
+  border-radius: 5px;
   background: rgba(168, 107, 255, 0.2);
   border: 1px solid rgba(168, 107, 255, 0.5);
   color: #e4caff;

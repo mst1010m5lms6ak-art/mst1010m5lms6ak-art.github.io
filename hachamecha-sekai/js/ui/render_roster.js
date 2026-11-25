@@ -305,8 +305,8 @@
         }).join('');
 
         bodyHtml =
-          '<div class="fixed-area" style="justify-content:space-between;gap:4px">' +
-          '<div class="result-box" style="padding:5px 7px">' +
+          '<div class="fixed-area" style="justify-content:flex-start;gap:6px">' +
+          '<div class="result-box" style="padding:6px 8px">' +
           '<div class="tag-row" style="justify-content:space-between">' +
           '<span style="font-weight:900;font-size:11px">愛用品: ' + HW.esc(def.favorite.name) + '</span>' +
           '<span class="b-pill">' + (cs.favoriteUnlocked ? '解放済' : '★4必要') + '</span>' +
@@ -316,7 +316,7 @@
           '<button type="button" id="btn-unlock-fav" class="btn btn-sm btn-primary" style="flex-shrink:0"' + (!canFav ? ' disabled' : '') + '>' + (cs.favoriteUnlocked ? '解放済' : '1200G+宝珠3') + '</button>' +
           '</div>' +
           '</div>' +
-          '<div class="result-box" style="padding:5px 7px">' +
+          '<div class="result-box" style="padding:6px 8px">' +
           '<div class="tag-row" style="justify-content:space-between">' +
           '<span style="font-weight:900;font-size:11px">固有神器: ' + HW.esc(def.relic.name) + '</span>' +
           '<span class="b-pill boss">' + (cs.relicUnlocked ? '解放済' : '★5必要') + '</span>' +
@@ -326,13 +326,16 @@
           '<button type="button" id="btn-unlock-rel" class="btn btn-sm btn-gold" style="flex-shrink:0"' + (!canRel ? ' disabled' : '') + '>' + (cs.relicUnlocked ? '解放済' : '2400G+核石4') + '</button>' +
           '</div>' +
           '</div>' +
-          '<div class="result-box" style="padding:5px 7px;border-color:rgba(255,210,76,0.45)">' +
+          '<div class="result-box" style="padding:6px 8px;border-color:rgba(255,210,76,0.45)">' +
           '<div class="tag-row" style="justify-content:space-between;margin-bottom:3px">' +
           '<span style="font-weight:900;font-size:11px;color:var(--acc-gold)">戦技開眼 <span class="num">' + cs.masteryCount + ' / ' + HW.KAIKAN_MAX + '</span></span>' +
           '<span style="font-size:9.5px;color:#d6f9ff" class="num">基礎+' + kStatPct + '% / 速+' + kSpd + '</span>' +
           '</div>' +
           '<div class="q-bar"><div class="q-bar-fill" style="width:' + kPct + '%;background:linear-gradient(90deg,#2de2e6,#ffd24c)"></div></div>' +
           '<div class="kaikan-gates">' + gatesHtml + '</div>' +
+          '</div>' +
+          '<div class="result-box" style="padding:5px 8px;font-size:10px;color:var(--txt-sub)">' +
+          '<strong style="color:#e4caff">バディ特性: ' + HW.esc(def.linkBonus.name) + '</strong>（' + HW.esc(def.linkBonus.desc) + '）' +
           '</div>' +
           '</div>';
       }

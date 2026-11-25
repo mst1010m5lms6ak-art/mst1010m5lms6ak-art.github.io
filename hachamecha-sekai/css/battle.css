@@ -621,12 +621,21 @@
 }
 
 @media (max-height: 700px) {
-  .unit-card { padding: 3px 5px; gap: 2px; }
-  .u-name { font-size: 10px; }
+  .battle-stage-wrap { gap: 2px; }
+  .battle-meta-bar { padding: 2px 6px; }
+  .battle-stage-name { font-size: 10px; }
+  .turn-order-bar { padding: 2px 4px; }
+  .battle-arena { gap: 2px; padding: 3px; }
+  .unit-grid { gap: 3px; }
+  .unit-card { padding: 2px 5px; gap: 1px; border-radius: 7px; }
+  .u-name { font-size: 9.5px; }
+  .u-hp-row { gap: 3px; }
+  .bar-track { height: 5px; }
+  .bar-track.atb { flex: 0 0 3px; height: 3px; }
   .u-hp-txt { font-size: 8.5px; }
-  .ct-pip { font-size: 8px; padding: 0 3px; }
-  .eff-tag { font-size: 7.5px; }
-  .u-effects { min-height: 11px; }
-  .action-banner { height: 19px; font-size: 10px; }
+  .ct-pip { font-size: 7.5px; padding: 0 3px; line-height: 1.2; }
+  .eff-tag { font-size: 7px; padding: 0 2.5px; line-height: 1.15; }
+  .u-effects { min-height: 10px; }
+  .action-banner { height: 18px; font-size: 9.5px; }
   .battle-ctrl-row .btn { min-height: 34px; }
 }

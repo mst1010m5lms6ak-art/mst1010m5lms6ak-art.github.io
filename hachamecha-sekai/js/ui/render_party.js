@@ -69,8 +69,9 @@
       const form = built.formation;
 
       const synHtml = built.synergies.length
-        ? built.synergies.slice(0, 4).map((s) => '<span class="syn-chip">' + HW.esc(s.name) + ': ' + HW.esc(s.desc) + '</span>').join('')
-        : '<span style="font-size:10px;color:var(--txt-muted)">属性・種族・ロール・リンク一致で編成シナジー発動</span>';
+        ? built.synergies.slice(0, 3).map((s) => '<span class="syn-chip">' + HW.esc(s.name) + ': ' + HW.esc(s.desc) + '</span>').join('') +
+          (built.synergies.length > 3 ? '<span class="syn-chip">他+' + (built.synergies.length - 3) + '</span>' : '')
+        : '<span style="font-size:9.5px;color:var(--txt-muted)">属性・種族・ロール・リンク一致で編成シナジー発動</span>';
 
       let topBodyHtml = '';
       if (partyUi.sub === 'formation') {
@@ -113,13 +114,13 @@
           const l = lid ? HW.getCharDef(lid) : null;
           const pos = form.slots[i];
           return (
-            '<div class="result-box" style="padding:4px 7px">' +
-            '<div class="tag-row" style="justify-content:space-between">' +
-            '<span style="font-size:9.5px;color:var(--acc-cyan);font-weight:900">' + (i + 1) + '.' + HW.esc(pos.label) + '</span>' +
-            (c ? HW.badgeElement(c.element) + HW.badgeRole(c.role, true) : '') +
+            '<div class="result-box" style="padding:3px 6px">' +
+            '<div class="tag-row" style="justify-content:space-between;flex-wrap:nowrap">' +
+            '<span style="font-size:9px;color:var(--acc-cyan);font-weight:900;white-space:nowrap">' + (i + 1) + '.' + HW.esc(pos.label) + '</span>' +
+            (c ? '<span class="tag-row" style="gap:2px;flex-wrap:nowrap">' + HW.badgeElement(c.element) + HW.badgeRole(c.role, true) + '</span>' : '') +
             '</div>' +
-            '<div style="font-size:11.5px;font-weight:900;margin-top:1px">' + (c ? HW.esc(c.name) : '空き') + '</div>' +
-            '<div style="font-size:9.5px;color:#d8b4fe">裏: ' + (l ? HW.esc(l.name) + ' (' + HW.esc(l.linkBonus.name) + ')' : '未設定') + '</div>' +
+            '<div style="font-size:11px;font-weight:900;margin-top:1px;white-space:nowrap">' + (c ? HW.esc(c.name) : '空き') + '</div>' +
+            '<div style="font-size:9px;color:#d8b4fe;white-space:nowrap;overflow:hidden">裏: ' + (l ? HW.esc(l.name) + ' (' + HW.esc(l.linkBonus.name) + ')' : '未設定') + '</div>' +
             '</div>'
           );
         }).join('');

@@ -399,8 +399,8 @@
 
 /* 小型端末（iPhone SEなど高さ667px以下）自動最適化 */
 @media (max-height: 700px) {
-  .top-stage { flex: 0 0 43%; padding: 4px 8px 4px; }
-  .app-frame.mode-battle .top-stage { flex: 0 0 55%; }
+  .top-stage { flex: 0 0 44%; padding: 4px 8px 4px; }
+  .app-frame.mode-battle .top-stage { flex: 0 0 58%; padding: 3px 6px 3px; }
   .bottom-dock { padding: 4px 8px 4px; gap: 4px; }
   .bottom-nav { flex: 0 0 50px; padding: 3px 5px 4px; }
   .nav-btn { min-height: 40px; font-size: 9px; }

@@ -122,26 +122,31 @@
     const p = getUnitRect(targetDomId);
     if (!p || w <= 0 || h <= 0) return;
 
-    // 同一ユニットに出ている既存ポップ数を数えて放射・段違い配置し重複防止
+    // 同一ユニットに出ている既存ポップ数を数えて横・段違い配置（バナーやカード外へ絶対飛び出さない）
     const sameCnt = popups.filter((x) => x.domId === targetDomId && x.life < 0.36).length;
-    const offsetsX = [0, 26, -26, 14, -14];
+    const offsetsX = [18, -18, 0, 28, -28];
     const ox = offsetsX[sameCnt % offsetsX.length];
     const rawX = p.cx + ox;
-    const rawY = p.cy - 2 - (sameCnt % 3) * 14;
-    const clampedX = Math.max(46, Math.min(w - 46, rawX));
-    const clampedY = Math.max(26, Math.min(h - 14, rawY));
+    const minY = p.top + 16;
+    const maxY = Math.max(minY, p.bottom - 12);
+    const baseY = p.top + Math.min(p.h * 0.52, p.h - 16);
+    const rawY = baseY - (sameCnt % 2) * 10;
+    const clampedX = Math.max(p.left + 26, Math.min(p.right - 26, Math.max(40, Math.min(w - 40, rawX))));
+    const clampedY = Math.max(minY, Math.min(maxY, rawY));
+    const isBuffTag = kind === 'buff' || kind === 'miss';
 
     if (popups.length >= MAX_POPUPS) popups.shift();
     popups.push({
       domId: targetDomId,
       x: clampedX,
       y: clampedY,
+      minY: p.top + 12,
       text: text,
       color: color || '#ffffff',
       kind: kind || (isBig ? 'crit' : 'normal'),
-      size: isBig ? 18.5 : 14.5,
+      size: isBig ? 17.5 : isBuffTag ? 11 : 14,
       life: 0,
-      maxLife: isBig ? 0.66 : 0.50
+      maxLife: isBig ? 0.62 : isBuffTag ? 0.42 : 0.48
     });
   }
 
@@ -233,10 +238,11 @@
         scale = 1.24 - ((t - 0.16) / 0.14) * 0.24;
       }
       const easeOut = 1 - Math.pow(1 - t, 2);
-      const py = Math.max(20, pop.y - easeOut * 18);
+      const py = Math.max(pop.minY || 16, pop.y - easeOut * 10);
 
       ctx.save();
-      ctx.globalAlpha = t > 0.68 ? Math.max(0, (1 - t) / 0.32) : 0.98;
+      const baseAlpha = pop.kind === 'buff' ? 0.86 : 0.98;
+      ctx.globalAlpha = t > 0.68 ? Math.max(0, ((1 - t) / 0.32) * baseAlpha) : baseAlpha;
       ctx.translate(pop.x, py);
       ctx.scale(scale, scale);
 

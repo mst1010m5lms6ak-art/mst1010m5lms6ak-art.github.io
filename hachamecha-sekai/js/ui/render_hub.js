@@ -247,11 +247,11 @@
         bodyHtml = '<div class="scroll-list" data-scroll-key="hub_shop">' + cards + '</div>';
       } else {
         bodyHtml =
-          '<div class="fixed-area" style="justify-content:space-between;gap:6px">' +
-          '<button type="button" id="set-se-btn" class="btn ' + (sd.settings.seEnabled ? 'btn-lime' : '') + '">効果音 (SE): ' + (sd.settings.seEnabled ? 'ON' : 'OFF') + '</button>' +
-          '<button type="button" id="set-spd-btn" class="btn btn-primary num">デフォルト戦闘速度: ' + (sd.settings.battleSpeed || 3) + '倍速</button>' +
-          '<button type="button" id="set-backup-btn" class="btn btn-gold">バックアップコード出力 / 読込</button>' +
-          '<button type="button" id="set-reset-btn" class="btn btn-danger">セーブデータ初期化</button>' +
+          '<div class="fixed-area" style="justify-content:flex-start;gap:9px;padding-top:4px">' +
+          '<button type="button" id="set-se-btn" class="btn ' + (sd.settings.seEnabled ? 'btn-lime' : '') + '" style="min-height:44px">効果音 (SE): ' + (sd.settings.seEnabled ? 'ON' : 'OFF') + '</button>' +
+          '<button type="button" id="set-spd-btn" class="btn btn-primary num" style="min-height:44px">デフォルト戦闘速度: ' + (sd.settings.battleSpeed || 3) + '倍速</button>' +
+          '<button type="button" id="set-backup-btn" class="btn btn-gold" style="min-height:44px">バックアップコード出力 / 読込</button>' +
+          '<button type="button" id="set-reset-btn" class="btn btn-danger" style="min-height:44px">セーブデータ初期化</button>' +
           '</div>';
       }
 

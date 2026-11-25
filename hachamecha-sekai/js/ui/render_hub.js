@@ -53,8 +53,12 @@
       '<button type="button" class="btn" data-sheet-close="1">閉じる</button>' +
       '<button type="button" class="btn btn-lime" id="disp-launch">派遣開始</button>';
 
-    const open = () => {
+    const open = (keepScroll) => {
+      const prevBody = document.querySelector('#sheet-panel .sheet-body');
+      const prevTop = keepScroll && prevBody ? prevBody.scrollTop : 0;
       HW.DOM.openSheet(mission.name + ' メンバー選択', renderBody(), actions, (panel) => {
+        const sb = panel.querySelector('.sheet-body');
+        if (sb && prevTop > 0) sb.scrollTop = prevTop;
         panel.querySelectorAll('[data-disp-c]').forEach((btn) => {
           btn.addEventListener('click', () => {
             const cid = btn.getAttribute('data-disp-c');
@@ -62,7 +66,7 @@
             if (idx >= 0) selected.splice(idx, 1);
             else if (selected.length < mission.slots) selected.push(cid);
             HW.Audio.tap();
-            open();
+            open(true);
           });
         });
         panel.querySelector('#disp-launch').addEventListener('click', () => {
@@ -115,6 +119,29 @@
   }
 
   HW.RenderHub = {
+    tickTimers: function () {
+      if (hubUi.sub !== 'dispatch') return;
+      const sd = HW.State.data;
+      let becameComplete = false;
+      HW.DISPATCH_MISSIONS.forEach((m) => {
+        const active = sd.dispatches[m.id];
+        if (!active) return;
+        const done = HW.Dispatch.isComplete(m.id);
+        const rem = HW.Dispatch.getRemainingSec(m.id);
+        const pill = document.querySelector('[data-disp-timer="' + m.id + '"]');
+        if (pill) {
+          const prevDone = pill.getAttribute('data-disp-done') === '1';
+          if (done && !prevDone) becameComplete = true;
+          pill.textContent = done ? '受取!' : formatSec(rem);
+        }
+        if (m.id === hubUi.selectedMission) {
+          const topRem = document.getElementById('hub-disp-top-rem');
+          if (topRem) topRem.textContent = done ? '受取可' : formatSec(rem);
+        }
+      });
+      if (becameComplete) HW.App.render();
+    },
+
     render: function (topEl, bottomEl) {
       const sd = HW.State.data;
       let topHtml = '';
@@ -131,24 +158,26 @@
           '<div class="stat-grid-3">' +
           '<div class="stat-cell"><span class="stat-k">所要時間</span><span class="stat-v num">' + formatSec(m.durationSec) + '</span></div>' +
           '<div class="stat-cell"><span class="stat-k">勝利短縮</span><span class="stat-v num" style="color:var(--acc-cyan)">-' + m.battleCutSec + '秒</span></div>' +
-          '<div class="stat-cell"><span class="stat-k">残り時間</span><span class="stat-v num" style="color:var(--acc-gold)">' + (active ? (done ? '受取可' : formatSec(rem)) : '--') + '</span></div>' +
+          '<div class="stat-cell"><span class="stat-k">残り時間</span><span id="hub-disp-top-rem" class="stat-v num" style="color:var(--acc-gold)">' + (active ? (done ? '受取可' : formatSec(rem)) : '--') + '</span></div>' +
           '</div>' +
           '<div class="result-box" style="font-size:10.5px;color:var(--txt-sub)">' +
           (active ? '派遣中: ' + active.charIds.map((id) => HW.esc(HW.getCharDef(id).name)).join('・') : '余剰キャラを派遣して欠片・素材・高品質装備を回収') +
           '</div>' +
           '</div>';
       } else if (hubUi.sub === 'shop') {
-        const matsLine = HW.RANK_MATERIALS.map((mat) => mat.name.slice(0, 2) + ':' + (sd.materials[mat.id] || 0)).join(' / ');
+        const matsGrid = HW.RANK_MATERIALS.map((mat) =>
+          '<div class="mat-mini-pill"><span style="color:' + mat.color + '">' + HW.esc(mat.name.slice(0, 2)) + '</span><span class="num">' + (sd.materials[mat.id] || 0) + '</span></div>'
+        ).join('');
         topHtml =
           '<div class="preview-box">' +
           '<div class="preview-head"><span class="preview-name">異界交換所</span><span class="b-pill boss">闘技場限定あり</span></div>' +
-          '<div style="font-size:11px;color:var(--txt-sub)">闘技場メダルで限定キャラの欠片や限定セット装備と交換可能</div>' +
+          '<div style="font-size:10.5px;color:var(--txt-sub)">闘技場メダルで限定キャラの欠片や限定セット装備と交換可能</div>' +
           '<div class="stat-grid-3">' +
           '<div class="stat-cell"><span class="stat-k">ゴールド</span><span class="stat-v num" style="color:var(--acc-gold)">' + HW.formatNum(sd.gold) + '</span></div>' +
           '<div class="stat-cell"><span class="stat-k">万能欠片</span><span class="stat-v num" style="color:var(--acc-cyan)">' + HW.formatNum(sd.omniShards) + '</span></div>' +
           '<div class="stat-cell"><span class="stat-k">闘技場メダル</span><span class="stat-v num" style="color:var(--acc-pink)">' + HW.formatNum(sd.arenaMedals) + '</span></div>' +
           '</div>' +
-          '<div class="result-box" style="font-size:10px;color:var(--txt-sub)">階位素材: ' + HW.esc(matsLine) + '</div>' +
+          '<div class="mat-mini-grid">' + matsGrid + '</div>' +
           '</div>';
       } else {
         const unlockedCnt = HW.CHARACTERS.filter((c) => sd.chars[c.id].unlocked).length;
@@ -187,7 +216,7 @@
             '<span class="stage-card-title">' + HW.esc(m.name) + '</span>' +
             '<span class="stage-card-sub">' + HW.esc(m.sub) + '</span>' +
             '</div>' +
-            '<span class="b-pill' + (done ? ' intruder' : '') + ' num">' + (done ? '受取!' : active ? formatSec(rem) : '待機') + '</span>' +
+            '<span class="b-pill' + (done ? ' intruder' : '') + ' num" data-disp-timer="' + m.id + '" data-disp-done="' + (done ? '1' : '0') + '">' + (done ? '受取!' : active ? formatSec(rem) : '待機') + '</span>' +
             '</button>'
           );
         }).join('');
@@ -195,9 +224,9 @@
         const curActive = sd.dispatches[curM.id];
         const curDone = HW.Dispatch.isComplete(curM.id);
         bodyHtml =
-          '<div class="fixed-area" style="justify-content:space-between">' +
-          '<div>' + cards + '</div>' +
-          '<button type="button" id="hub-disp-act" class="btn ' + (curDone ? 'btn-gold' : 'btn-lime') + '" style="min-height:40px"' + (curActive && !curDone ? ' disabled' : '') + '>' +
+          '<div class="fixed-area" style="gap:5px">' +
+          '<div class="compact-card-stack">' + cards + '</div>' +
+          '<button type="button" id="hub-disp-act" class="btn ' + (curDone ? 'btn-gold' : 'btn-lime') + '" style="min-height:38px;flex-shrink:0"' + (curActive && !curDone ? ' disabled' : '') + '>' +
           (curDone ? '探索報酬を受け取る！' : curActive ? '探索進行中（戦闘勝利で短縮）' : 'メンバーを選んで派遣') +
           '</button>' +
           '</div>';
@@ -215,7 +244,7 @@
             '</button>'
           );
         }).join('');
-        bodyHtml = '<div class="scroll-list">' + cards + '</div>';
+        bodyHtml = '<div class="scroll-list" data-scroll-key="hub_shop">' + cards + '</div>';
       } else {
         bodyHtml =
           '<div class="fixed-area" style="justify-content:space-between;gap:6px">' +

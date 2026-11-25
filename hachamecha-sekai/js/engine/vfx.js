@@ -118,17 +118,18 @@
     }
   }
 
-  function spawnPopup(targetDomId, text, color, isBig) {
+  function spawnPopup(targetDomId, text, color, isBig, kind) {
     const p = getUnitRect(targetDomId);
     if (!p || w <= 0 || h <= 0) return;
 
-    // 同一ユニットに出ている既存ポップ数を数えて縦にズラし重複防止
-    const sameCnt = popups.filter((x) => x.domId === targetDomId && x.life < 0.35).length;
-    // カード右寄り下部を基準にし、名前やHPバー・中央バナーに極力被らない安全領域へクランプ
-    const rawX = p.cx + (sameCnt % 2 === 0 ? 12 : -12);
-    const rawY = p.bottom - 14 - sameCnt * 13;
-    const clampedX = Math.max(40, Math.min(w - 40, rawX));
-    const clampedY = Math.max(24, Math.min(h - 10, rawY));
+    // 同一ユニットに出ている既存ポップ数を数えて放射・段違い配置し重複防止
+    const sameCnt = popups.filter((x) => x.domId === targetDomId && x.life < 0.36).length;
+    const offsetsX = [0, 26, -26, 14, -14];
+    const ox = offsetsX[sameCnt % offsetsX.length];
+    const rawX = p.cx + ox;
+    const rawY = p.cy - 2 - (sameCnt % 3) * 14;
+    const clampedX = Math.max(46, Math.min(w - 46, rawX));
+    const clampedY = Math.max(26, Math.min(h - 14, rawY));
 
     if (popups.length >= MAX_POPUPS) popups.shift();
     popups.push({
@@ -137,9 +138,10 @@
       y: clampedY,
       text: text,
       color: color || '#ffffff',
-      size: isBig ? 14 : 11.5,
+      kind: kind || (isBig ? 'crit' : 'normal'),
+      size: isBig ? 18.5 : 14.5,
       life: 0,
-      maxLife: isBig ? 0.68 : 0.52
+      maxLife: isBig ? 0.66 : 0.50
     });
   }
 
@@ -214,7 +216,7 @@
       ctx.restore();
     }
 
-    // ダメージ・回復・閃きポップアップ（小さく安全に浮上）
+    // ダメージ・回復・開眼ポップアップ（太字ジオメトリック＋丸み縁取り＋弾みアニメ）
     for (let i = popups.length - 1; i >= 0; i--) {
       const pop = popups[i];
       pop.life += dt;
@@ -223,16 +225,56 @@
         continue;
       }
       const t = pop.life / pop.maxLife;
-      const py = Math.max(16, pop.y - t * 14);
+      // 出現直後にポンッと弾むイージング
+      let scale = 1;
+      if (t < 0.16) {
+        scale = 0.72 + (t / 0.16) * 0.52;
+      } else if (t < 0.30) {
+        scale = 1.24 - ((t - 0.16) / 0.14) * 0.24;
+      }
+      const easeOut = 1 - Math.pow(1 - t, 2);
+      const py = Math.max(20, pop.y - easeOut * 18);
+
       ctx.save();
-      ctx.globalAlpha = t > 0.65 ? (1 - t) / 0.35 : 0.96;
-      ctx.font = '900 ' + pop.size + 'px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.globalAlpha = t > 0.68 ? Math.max(0, (1 - t) / 0.32) : 0.98;
+      ctx.translate(pop.x, py);
+      ctx.scale(scale, scale);
+
+      const isNumeric = /^[\+\-★0-9,万億]+$/.test(pop.text);
+      const fontFamily = isNumeric
+        ? '"Avenir Next", "SF Pro Rounded", "DIN Alternate", "Helvetica Neue", Arial, sans-serif'
+        : '"Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", sans-serif';
+      ctx.font = (isNumeric ? 'italic 900 ' : '900 ') + pop.size + 'px ' + fontFamily;
       ctx.textAlign = 'center';
-      ctx.lineWidth = 3.2;
-      ctx.strokeStyle = 'rgba(7, 10, 20, 0.94)';
-      ctx.strokeText(pop.text, pop.x, py);
-      ctx.fillStyle = pop.color;
-      ctx.fillText(pop.text, pop.x, py);
+      ctx.textBaseline = 'middle';
+      ctx.lineJoin = 'round';
+      ctx.miterLimit = 2;
+
+      // 柔らかいドロップシャドウで背景カードからクッキリ浮かせる
+      ctx.shadowColor = 'rgba(4, 7, 16, 0.92)';
+      ctx.shadowBlur = 6;
+      ctx.shadowOffsetY = 2;
+      ctx.lineWidth = pop.kind === 'crit' || pop.kind === 'kaikan' ? 4.2 : 3.4;
+      ctx.strokeStyle = 'rgba(7, 10, 22, 0.95)';
+      ctx.strokeText(pop.text, 0, 0);
+
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+      if (pop.kind === 'crit' || pop.kind === 'kaikan') {
+        const grad = ctx.createLinearGradient(0, -pop.size * 0.6, 0, pop.size * 0.6);
+        grad.addColorStop(0, '#fff9c4');
+        grad.addColorStop(0.55, '#ffd24c');
+        grad.addColorStop(1, '#ff8b3d');
+        ctx.fillStyle = grad;
+      } else if (pop.kind === 'heal') {
+        const grad = ctx.createLinearGradient(0, -pop.size * 0.5, 0, pop.size * 0.5);
+        grad.addColorStop(0, '#c2ffe0');
+        grad.addColorStop(1, '#38e896');
+        ctx.fillStyle = grad;
+      } else {
+        ctx.fillStyle = pop.color;
+      }
+      ctx.fillText(pop.text, 0, 0);
       ctx.restore();
     }
   }

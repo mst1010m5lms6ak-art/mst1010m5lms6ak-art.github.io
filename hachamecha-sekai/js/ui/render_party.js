@@ -5,8 +5,15 @@
 
   const partyUi = {
     sub: 'main', // 'main' | 'links' | 'formation' | 'raid'
-    raidIdx: 0
+    raidIdx: 0,
+    previewFormId: null
   };
+
+  function getAggroMeta(aggro) {
+    if (aggro >= 1.8) return { label: '狙われ:高', cls: 'high', hi: true };
+    if (aggro >= 1.1) return { label: '狙われ:中', cls: 'mid', hi: false };
+    return { label: '狙われ:低', cls: 'low', hi: false };
+  }
 
   function openCharPicker(title, currentId, excludedIds, allowClear, onPick) {
     const sd = HW.State.data;
@@ -62,37 +69,73 @@
       const form = built.formation;
 
       const synHtml = built.synergies.length
-        ? built.synergies.map((s) => '<span class="syn-chip">' + HW.esc(s.name) + ': ' + HW.esc(s.desc) + '</span>').join('')
-        : '<span style="font-size:10.5px;color:var(--txt-muted)">属性・種族・ロール・リンク一致で編成シナジー発動</span>';
+        ? built.synergies.slice(0, 4).map((s) => '<span class="syn-chip">' + HW.esc(s.name) + ': ' + HW.esc(s.desc) + '</span>').join('')
+        : '<span style="font-size:10px;color:var(--txt-muted)">属性・種族・ロール・リンク一致で編成シナジー発動</span>';
 
-      const slotSummary = [0, 1, 2, 3].map((i) => {
-        const cid = party.main[i];
-        const lid = party.links[i];
-        const c = cid ? HW.getCharDef(cid) : null;
-        const l = lid ? HW.getCharDef(lid) : null;
-        const pos = form.slots[i];
-        return (
-          '<div class="result-box" style="padding:4px 7px">' +
-          '<div class="tag-row" style="justify-content:space-between">' +
-          '<span style="font-size:9.5px;color:var(--acc-cyan);font-weight:900">' + HW.esc(pos.label) + '</span>' +
-          (c ? HW.badgeElement(c.element) + HW.badgeRole(c.role, true) : '') +
+      let topBodyHtml = '';
+      if (partyUi.sub === 'formation') {
+        const viewFormId = partyUi.previewFormId || party.formationId;
+        const viewForm = HW.getFormation(viewFormId);
+        const viewUnlocked = sd.unlockedFormations.includes(viewForm.id);
+        const isEquipped = party.formationId === viewForm.id;
+        const mapCells = viewForm.slots.map((sl, i) => {
+          const cid = party.main[i];
+          const c = cid ? HW.getCharDef(cid) : null;
+          const ag = getAggroMeta(sl.aggro);
+          const mods = HW.formatModTags(sl.mod);
+          const rowTag = i < 2 ? '前衛' : '後衛';
+          return (
+            '<div class="form-slot-box ' + (i < 2 ? 'front' : 'back') + (ag.hi ? ' high-aggro' : '') + '">' +
+            '<div class="tag-row" style="justify-content:space-between;flex-wrap:nowrap">' +
+            '<span style="font-size:10px;font-weight:900;color:#fff;white-space:nowrap">' + (i + 1) + '.' + HW.esc(sl.label) + ' <span style="color:var(--txt-muted);font-size:8.5px">(' + rowTag + ')</span></span>' +
+            '<span class="aggro-pill ' + ag.cls + '">' + ag.label + '</span>' +
+            '</div>' +
+            '<div style="font-size:10px;color:var(--acc-gold);font-weight:800;white-space:nowrap">' + (c ? HW.esc(c.name) : '空き枠') + '</div>' +
+            '<div class="form-mod-line">' + HW.esc(mods.join(' / ') || '補正なし') + '</div>' +
+            '</div>'
+          );
+        }).join('');
+
+        topBodyHtml =
+          '<div class="preview-box">' +
+          '<div class="preview-head">' +
+          '<span class="preview-name">' + HW.esc(viewForm.name) + '</span>' +
+          '<span class="b-pill' + (!viewUnlocked ? ' boss' : isEquipped ? ' intruder' : '') + '">' + (isEquipped ? '適用中' : viewUnlocked ? '選択可' : viewForm.unlockDesc) + '</span>' +
           '</div>' +
-          '<div style="font-size:11.5px;font-weight:900;margin-top:1px">' + (c ? HW.esc(c.name) : '空き') + '</div>' +
-          '<div style="font-size:9.5px;color:#d8b4fe">裏: ' + (l ? HW.esc(l.name) + ' (' + HW.esc(l.linkBonus.name) + ')' : '未設定') + '</div>' +
-          '</div>'
-        );
-      }).join('');
+          '<div style="font-size:10px;color:var(--txt-sub)">' + HW.esc(viewForm.summary) + '</div>' +
+          '<div class="form-map-grid">' + mapCells + '</div>' +
+          '</div>';
+      } else {
+        const slotSummary = [0, 1, 2, 3].map((i) => {
+          const cid = party.main[i];
+          const lid = party.links[i];
+          const c = cid ? HW.getCharDef(cid) : null;
+          const l = lid ? HW.getCharDef(lid) : null;
+          const pos = form.slots[i];
+          return (
+            '<div class="result-box" style="padding:4px 7px">' +
+            '<div class="tag-row" style="justify-content:space-between">' +
+            '<span style="font-size:9.5px;color:var(--acc-cyan);font-weight:900">' + (i + 1) + '.' + HW.esc(pos.label) + '</span>' +
+            (c ? HW.badgeElement(c.element) + HW.badgeRole(c.role, true) : '') +
+            '</div>' +
+            '<div style="font-size:11.5px;font-weight:900;margin-top:1px">' + (c ? HW.esc(c.name) : '空き') + '</div>' +
+            '<div style="font-size:9.5px;color:#d8b4fe">裏: ' + (l ? HW.esc(l.name) + ' (' + HW.esc(l.linkBonus.name) + ')' : '未設定') + '</div>' +
+            '</div>'
+          );
+        }).join('');
 
-      topEl.innerHTML =
-        HW.renderStageHeader('パーティ編成') +
-        '<div class="preview-box">' +
-        '<div class="preview-head">' +
-        '<span class="preview-name num">総戦力 ' + HW.formatNum(totalPower) + '</span>' +
-        '<span class="b-pill">陣形: ' + HW.esc(form.name) + '</span>' +
-        '</div>' +
-        '<div class="party-slots-4">' + slotSummary + '</div>' +
-        '<div class="synergy-list">' + synHtml + '</div>' +
-        '</div>';
+        topBodyHtml =
+          '<div class="preview-box">' +
+          '<div class="preview-head">' +
+          '<span class="preview-name num">総戦力 ' + HW.formatNum(totalPower) + '</span>' +
+          '<span class="b-pill">陣形: ' + HW.esc(form.name) + '</span>' +
+          '</div>' +
+          '<div class="party-slots-4">' + slotSummary + '</div>' +
+          '<div class="synergy-list">' + synHtml + '</div>' +
+          '</div>';
+      }
+
+      topEl.innerHTML = HW.renderStageHeader('パーティ編成') + topBodyHtml;
 
       const tabs = [
         { id: 'main', label: '主力4枠' },
@@ -113,7 +156,7 @@
             const unitBuilt = built.units.find((u) => u.slotIndex === i);
             const st = unitBuilt ? unitBuilt.stats : null;
             const pos = form.slots[i];
-            const setTxt = st && st.activeSets.length ? st.activeSets.map((x) => x.name).join('・') : 'セットなし';
+            const setTxt = st && st.activeSets.length ? st.activeSets[0].name + (st.activeSets.length > 1 ? ' 他' : '') : 'セットなし';
             return (
               '<button type="button" class="party-slot-card active-slot" data-edit-main="' + i + '">' +
               '<div class="tag-row" style="justify-content:space-between">' +
@@ -125,8 +168,8 @@
               (cs ? '<span class="char-stars">' + HW.starsText(cs.star) + '</span>' : '') +
               '</div>' +
               (st
-                ? '<div style="font-size:10px;color:#dbe4ff" class="num">HP ' + HW.formatNum(st.hp) + ' / 攻 ' + HW.formatNum(st.atk) + '</div>' +
-                  '<div style="font-size:9.5px;color:var(--txt-sub);display:flex;justify-content:space-between"><span>' + HW.esc(setTxt) + '</span><span class="num" style="color:var(--acc-gold)">戦力' + HW.formatNum(st.power) + '</span></div>'
+                ? '<div style="font-size:10px;color:#dbe4ff" class="num">HP ' + HW.formatCompact(st.hp) + ' / 攻 ' + HW.formatCompact(st.atk) + '</div>' +
+                  '<div style="font-size:9.5px;color:var(--txt-sub);display:flex;justify-content:space-between;gap:4px"><span>' + HW.esc(setTxt) + '</span><span class="num" style="color:var(--acc-gold);white-space:nowrap">戦力' + HW.formatCompact(st.power) + '</span></div>'
                 : '<div style="font-size:10px;color:var(--txt-sub)">空きスロット</div>') +
               '</button>'
             );
@@ -164,15 +207,20 @@
           '<button type="button" id="btn-link-auto" class="btn btn-primary" style="margin-top:6px">控えキャラ自動リンク</button>' +
           '</div>';
       } else if (partyUi.sub === 'formation') {
+        const viewId = partyUi.previewFormId || party.formationId;
         contentHtml =
           '<div class="formation-grid">' +
           HW.FORMATIONS.map((f) => {
             const unlocked = sd.unlockedFormations.includes(f.id);
-            const sel = party.formationId === f.id;
+            const isActive = party.formationId === f.id;
+            const isViewing = viewId === f.id;
             return (
-              '<button type="button" class="form-card' + (sel ? ' selected' : '') + (!unlocked ? ' locked' : '') + '" data-form-id="' + f.id + '"' + (!unlocked ? ' disabled' : '') + '>' +
-              '<div style="font-size:11.5px;font-weight:900;color:#fff">' + HW.esc(f.name) + '</div>' +
-              '<div style="font-size:9.5px;color:var(--txt-sub)">' + HW.esc(unlocked ? f.summary : f.unlockDesc) + '</div>' +
+              '<button type="button" class="form-card' + (isActive ? ' selected' : '') + (!unlocked ? ' locked' : '') + '" style="' + (isViewing && !isActive ? 'border-color:var(--acc-cyan)' : '') + '" data-form-id="' + f.id + '">' +
+              '<div class="tag-row" style="justify-content:space-between;flex-wrap:nowrap">' +
+              '<span style="font-size:11px;font-weight:900;color:#fff;white-space:nowrap">' + HW.esc(f.name) + '</span>' +
+              (isActive ? '<span class="b-pill intruder" style="font-size:8.5px;padding:0 4px">使用</span>' : !unlocked ? '<span class="b-pill boss" style="font-size:8px;padding:0 4px">未解放</span>' : '') +
+              '</div>' +
+              '<div style="font-size:9px;color:var(--txt-sub)">' + HW.esc(unlocked ? f.summary : f.unlockDesc) + '</div>' +
               '</button>'
             );
           }).join('') +
@@ -215,6 +263,7 @@
       bottomEl.querySelectorAll('[data-psub]').forEach((btn) => {
         btn.addEventListener('click', () => {
           partyUi.sub = btn.getAttribute('data-psub');
+          if (partyUi.sub === 'formation') partyUi.previewFormId = party.formationId;
           HW.Audio.tap();
           HW.App.render();
         });
@@ -246,9 +295,16 @@
 
       bottomEl.querySelectorAll('[data-form-id]').forEach((btn) => {
         btn.addEventListener('click', () => {
-          party.formationId = btn.getAttribute('data-form-id');
+          const fid = btn.getAttribute('data-form-id');
+          partyUi.previewFormId = fid;
           HW.Audio.tap();
-          HW.State.save();
+          if (sd.unlockedFormations.includes(fid)) {
+            party.formationId = fid;
+            HW.State.save();
+          } else {
+            const f = HW.getFormation(fid);
+            HW.DOM.toast(f.name + '（' + f.unlockDesc + '）の詳細を表示中');
+          }
           HW.App.render();
         });
       });

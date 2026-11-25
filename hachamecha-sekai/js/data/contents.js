@@ -89,7 +89,7 @@
         matIds: a.matPool,
         goldBase: Math.round(120 + idx * 38),
         minQuality: Math.min(72, 18 + a.area * 9 + s),
-        intruderChance: 0.035 // 通常エリア限定・WAVE1〜4での超低確率乱入
+        intruderChance: 0.008 // 通常エリア限定・WAVE1〜4での低確率乱入（約0.8%/WAVE・1周約3%）
       });
     }
     return Object.assign({}, a, { stages: stages });

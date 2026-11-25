@@ -66,18 +66,24 @@
 
     if (rosterUi.sub === 'ability' && rosterUi.previewAb) {
       const ab = rosterUi.previewAb;
+      const req = HW.ABILITY_TIER_REQ[ab.tier - 1] || HW.ABILITY_TIER_REQ[0];
+      const unlockedTiers = HW.State.getUnlockedAbilityTiers(def.id);
+      const isLockedTier = ab.tier > unlockedTiers;
       return (
         '<div class="preview-box">' +
         '<div class="preview-head">' +
         '<span class="preview-name">' + HW.esc(def.name) + ' — 能力ビルド</span>' +
         HW.badgeRole(def.role, false) +
         '</div>' +
-        '<div class="result-box" style="border-color:var(--acc-cyan)">' +
-        '<div class="tag-row" style="justify-content:space-between;margin-bottom:3px">' +
-        '<span style="font-size:13px;font-weight:900;color:#fff">' + HW.esc(ab.name) + '</span>' +
-        '<span class="b-pill">第' + ab.tier + '段階</span>' +
+        '<div class="result-box" style="border-color:' + (isLockedTier ? 'var(--acc-gold)' : 'var(--acc-cyan)') + '">' +
+        '<div class="tag-row" style="justify-content:space-between;margin-bottom:2px">' +
+        '<span style="font-size:12.5px;font-weight:900;color:#fff">' + HW.esc(ab.name) + '</span>' +
+        '<span class="b-pill' + (isLockedTier ? ' boss' : '') + '">第' + ab.tier + '段階' + (isLockedTier ? '・未解放' : '') + '</span>' +
         '</div>' +
-        '<div style="font-size:11.5px;color:#d6f9ff">' + HW.esc(ab.desc) + '</div>' +
+        '<div style="font-size:11px;color:#d6f9ff">' + HW.esc(ab.desc) + '</div>' +
+        (isLockedTier
+          ? '<div style="font-size:9.5px;color:var(--acc-gold);margin-top:2px">解放条件: ★' + req.star + ' かつ RANK ' + HW.RANK_NAMES[req.rank - 1] + '（現在 ★' + cs.star + ' / R-' + HW.RANK_NAMES[cs.rank - 1] + '）</div>'
+          : '') +
         '</div>' +
         '<div class="stat-grid-4">' +
         '<div class="stat-cell"><span class="stat-k">HP</span><span class="stat-v num">' + HW.formatNum(calc.hp) + '</span></div>' +
@@ -109,13 +115,15 @@
       );
     }).join('');
 
-    const setChips = calc.activeSets.map((s) => '<span class="syn-chip">' + HW.esc(s.name) + '</span>').join('');
+    const setChips = calc.activeSets.slice(0, 2).map((s) => '<span class="syn-chip">' + HW.esc(s.name) + '</span>').join('');
 
     return (
       '<div class="preview-box">' +
-      '<div class="preview-head">' +
+      '<div class="preview-head-col">' +
+      '<div class="preview-head-line">' +
       '<div class="tag-row"><span class="preview-name">' + HW.esc(def.name) + '</span>' + HW.badgeElement(def.element) + HW.badgeRole(def.role, true) + HW.badgeRaces(def.races) + '</div>' +
       '<span class="char-stars">' + (cs.unlocked ? HW.starsText(cs.star) + ' R-' + HW.RANK_NAMES[cs.rank - 1] : '未解放') + '</span>' +
+      '</div>' +
       '</div>' +
       '<div class="stat-grid-4">' +
       '<div class="stat-cell"><span class="stat-k">HP</span><span class="stat-v num">' + HW.formatNum(calc.hp) + '</span></div>' +
@@ -124,9 +132,12 @@
       '<div class="stat-cell"><span class="stat-k">速度</span><span class="stat-v num">' + calc.spd + '</span></div>' +
       '</div>' +
       '<div class="skill-mini-list">' + skillsHtml + '</div>' +
-      '<div class="tag-row" style="justify-content:space-between">' +
-      '<div class="tag-row">' + (setChips || '<span style="font-size:10px;color:var(--txt-sub)">極意 ' + cs.masteryCount + ' / 会心 ' + Math.round(calc.crit * 100) + '% / 回避 ' + Math.round(calc.eva * 100) + '%</span>') + '</div>' +
-      '<span style="font-size:10.5px;font-weight:900;color:var(--acc-gold)" class="num">戦力 ' + HW.formatNum(calc.power) + '</span>' +
+      '<div class="tag-row" style="justify-content:space-between;flex-wrap:nowrap;gap:4px">' +
+      '<div class="tag-row" style="flex-wrap:nowrap;overflow:hidden">' +
+      '<span class="b-pill num" style="font-size:9px">開眼 ' + cs.masteryCount + '/' + HW.KAIKAN_MAX + '</span>' +
+      setChips +
+      '</div>' +
+      '<span style="font-size:10.5px;font-weight:900;color:var(--acc-gold);white-space:nowrap" class="num">戦力 ' + HW.formatNum(calc.power) + '</span>' +
       '</div>' +
       '</div>'
     );
@@ -164,13 +175,13 @@
             '</div>' +
             '<div class="tag-row">' + HW.badgeElement(c.element) + HW.badgeRole(c.role, true) + HW.badgeRaces(c.races) + '</div>' +
             '<div class="char-tile-sub">' +
-            '<span>' + (st.unlocked ? 'RANK ' + HW.RANK_NAMES[st.rank - 1] : c.arenaOnly ? '闘技場交換' : '欠片収集') + '</span>' +
+            '<span>' + (st.unlocked ? 'R-' + HW.RANK_NAMES[st.rank - 1] + ' / 開眼' + st.masteryCount : c.arenaOnly ? '闘技場交換' : '欠片収集') + '</span>' +
             '<span class="num">欠片 ' + st.shards + '</span>' +
             '</div>' +
             '</button>'
           );
         }).join('');
-        bodyHtml = '<div class="scroll-list"><div class="char-grid">' + tiles + '</div></div>';
+        bodyHtml = '<div class="scroll-list" data-scroll-key="roster_list"><div class="char-grid">' + tiles + '</div></div>';
       } else if (rosterUi.sub === 'star') {
         const need = !cs.unlocked ? HW.STAR_SHARD_COST.unlock : cs.star >= 6 ? 0 : HW.STAR_SHARD_COST[cs.star + 1];
         const canDirect = need > 0 && cs.shards >= need;
@@ -184,7 +195,7 @@
           '<span class="cur-pill shard num">所持 ' + cs.shards + ' / 必要 ' + need + '</span>' +
           '</div>' +
           '<div style="font-size:10.5px;color:var(--txt-sub);line-height:1.45">' +
-          '★2〜★5で能力段階が順次解放 ／ ★4で<strong>愛用品</strong>解放 ／ ★5で<strong>固有神器</strong>解放 ／ ★6極で究極覚醒' +
+          '覚醒★とRANKの両方を上げることで能力段階が解放（T2:★2&R-III〜T5:★5&R-IX）／ ★4で<strong>愛用品</strong> ／ ★5で<strong>固有神器</strong>解放' +
           '</div>' +
           '</div>' +
           '<div class="result-box" style="font-size:11px;color:var(--txt-sub)">' +
@@ -234,6 +245,7 @@
           const unlockedTiers = HW.State.getUnlockedAbilityTiers(def.id);
           const rows = roleAbs.map((row, ti) => {
             const locked = ti >= unlockedTiers;
+            const req = HW.ABILITY_TIER_REQ[ti];
             const cells = row.map((ab, ci) => {
               const active = !locked && cs.abilities[ti] === ci;
               return (
@@ -242,7 +254,14 @@
                 '</button>'
               );
             }).join('');
-            return '<div class="ab-tier-row"><div class="ab-tier-tag">T' + (ti + 1) + '</div>' + cells + '</div>';
+            return (
+              '<div class="ab-tier-row">' +
+              '<div class="ab-tier-tag' + (locked ? ' locked' : '') + '"><span>T' + (ti + 1) + '</span>' +
+              (locked ? '<span class="ab-tier-req">★' + req.star + 'R' + HW.RANK_NAMES[req.rank - 1] + '</span>' : '') +
+              '</div>' +
+              cells +
+              '</div>'
+            );
           }).join('');
           bodyHtml = '<div class="ab-matrix">' + rows + '</div>';
         }
@@ -271,20 +290,49 @@
       } else {
         const canFav = cs.unlocked && !cs.favoriteUnlocked && cs.star >= 4 && sd.gold >= 1200 && (sd.materials.mat_orb || 0) >= 3;
         const canRel = cs.unlocked && !cs.relicUnlocked && cs.star >= 5 && sd.gold >= 2400 && (sd.materials.mat_core || 0) >= 4;
+        const kPct = Math.min(100, Math.round((cs.masteryCount / HW.KAIKAN_MAX) * 100));
+        const kStatPct = (cs.masteryCount * 1.5).toFixed(1).replace(/\.0$/, '');
+        const kSpd = Math.min(18, Math.floor(cs.masteryCount / 2));
+        const milestones = HW.getKaikanMilestones(def.role);
+        const gatesHtml = milestones.map((ms) => {
+          const ok = cs.masteryCount >= ms.need;
+          return (
+            '<div class="kaikan-gate' + (ok ? ' reached' : '') + '">' +
+            '<span class="kaikan-gate-t">' + ms.title + ' ' + ms.need + '</span>' +
+            '<span class="kaikan-gate-d">' + HW.esc(ms.desc) + '</span>' +
+            '</div>'
+          );
+        }).join('');
+
         bodyHtml =
-          '<div class="fixed-area" style="justify-content:space-between;gap:5px">' +
-          '<div class="result-box">' +
-          '<div class="tag-row" style="justify-content:space-between"><span style="font-weight:900;font-size:11.5px">愛用品: ' + HW.esc(def.favorite.name) + '</span><span class="b-pill">' + (cs.favoriteUnlocked ? '解放済' : '★4必要') + '</span></div>' +
-          '<div style="font-size:10.5px;color:var(--txt-sub);margin:2px 0">' + HW.esc(def.favorite.desc) + '</div>' +
-          '<button type="button" id="btn-unlock-fav" class="btn btn-sm btn-primary" style="width:100%"' + (!canFav ? ' disabled' : '') + '>' + (cs.favoriteUnlocked ? '解放済み' : '解放 (1200G＋神話の宝珠×3)') + '</button>' +
+          '<div class="fixed-area" style="justify-content:space-between;gap:4px">' +
+          '<div class="result-box" style="padding:5px 7px">' +
+          '<div class="tag-row" style="justify-content:space-between">' +
+          '<span style="font-weight:900;font-size:11px">愛用品: ' + HW.esc(def.favorite.name) + '</span>' +
+          '<span class="b-pill">' + (cs.favoriteUnlocked ? '解放済' : '★4必要') + '</span>' +
           '</div>' +
-          '<div class="result-box">' +
-          '<div class="tag-row" style="justify-content:space-between"><span style="font-weight:900;font-size:11.5px">固有神器: ' + HW.esc(def.relic.name) + '</span><span class="b-pill boss">' + (cs.relicUnlocked ? '解放済' : '★5必要') + '</span></div>' +
-          '<div style="font-size:10.5px;color:var(--txt-sub);margin:2px 0">' + HW.esc(def.relic.desc) + '</div>' +
-          '<button type="button" id="btn-unlock-rel" class="btn btn-sm btn-gold" style="width:100%"' + (!canRel ? ' disabled' : '') + '>' + (cs.relicUnlocked ? '解放済み' : '解放 (2400G＋時空の核石×4)') + '</button>' +
+          '<div class="tag-row" style="justify-content:space-between;margin-top:3px;gap:6px;flex-wrap:nowrap">' +
+          '<span style="font-size:10px;color:var(--txt-sub);flex:1;min-width:0">' + HW.esc(def.favorite.desc) + '</span>' +
+          '<button type="button" id="btn-unlock-fav" class="btn btn-sm btn-primary" style="flex-shrink:0"' + (!canFav ? ' disabled' : '') + '>' + (cs.favoriteUnlocked ? '解放済' : '1200G+宝珠3') + '</button>' +
           '</div>' +
-          '<div class="result-box" style="font-size:10.5px;color:var(--txt-sub)">' +
-          '閃き極意: <strong style="color:var(--acc-gold)">' + cs.masteryCount + ' / 40</strong>（全ステ+' + Math.round(cs.masteryCount * 1.5) + '%） / バディ特性: ' + HW.esc(def.linkBonus.name) + '（' + HW.esc(def.linkBonus.desc) + '）' +
+          '</div>' +
+          '<div class="result-box" style="padding:5px 7px">' +
+          '<div class="tag-row" style="justify-content:space-between">' +
+          '<span style="font-weight:900;font-size:11px">固有神器: ' + HW.esc(def.relic.name) + '</span>' +
+          '<span class="b-pill boss">' + (cs.relicUnlocked ? '解放済' : '★5必要') + '</span>' +
+          '</div>' +
+          '<div class="tag-row" style="justify-content:space-between;margin-top:3px;gap:6px;flex-wrap:nowrap">' +
+          '<span style="font-size:10px;color:var(--txt-sub);flex:1;min-width:0">' + HW.esc(def.relic.desc) + '</span>' +
+          '<button type="button" id="btn-unlock-rel" class="btn btn-sm btn-gold" style="flex-shrink:0"' + (!canRel ? ' disabled' : '') + '>' + (cs.relicUnlocked ? '解放済' : '2400G+核石4') + '</button>' +
+          '</div>' +
+          '</div>' +
+          '<div class="result-box" style="padding:5px 7px;border-color:rgba(255,210,76,0.45)">' +
+          '<div class="tag-row" style="justify-content:space-between;margin-bottom:3px">' +
+          '<span style="font-weight:900;font-size:11px;color:var(--acc-gold)">戦技開眼 <span class="num">' + cs.masteryCount + ' / ' + HW.KAIKAN_MAX + '</span></span>' +
+          '<span style="font-size:9.5px;color:#d6f9ff" class="num">基礎+' + kStatPct + '% / 速+' + kSpd + '</span>' +
+          '</div>' +
+          '<div class="q-bar"><div class="q-bar-fill" style="width:' + kPct + '%;background:linear-gradient(90deg,#2de2e6,#ffd24c)"></div></div>' +
+          '<div class="kaikan-gates">' + gatesHtml + '</div>' +
           '</div>' +
           '</div>';
       }
@@ -373,7 +421,8 @@
           const ab = HW.ABILITIES[def.role][ti][ci];
           rosterUi.previewAb = Object.assign({ tier: ti + 1 }, ab);
           if (!HW.State.setAbility(def.id, ti, ci)) {
-            HW.DOM.toast('覚醒★またはRANK昇格で第' + (ti + 1) + '段階が解放されます');
+            const req = HW.ABILITY_TIER_REQ[ti];
+            HW.DOM.toast('第' + (ti + 1) + '段階は ★' + req.star + ' かつ RANK ' + HW.RANK_NAMES[req.rank - 1] + ' で解放されます');
           }
           HW.App.render();
         });

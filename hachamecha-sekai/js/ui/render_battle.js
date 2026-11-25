@@ -46,7 +46,9 @@
         : '';
 
     const hpBarCls = u.side === 'ally' ? 'hp-ally' : u.isBoss ? 'hp-boss' : 'hp-enemy';
-    const hpLabel = u.shield > 0 ? HW.formatNum(u.hp) + '(+' + HW.formatNum(u.shield) + ')' : HW.formatNum(u.hp);
+    const hpLabel = u.shield > 0
+      ? HW.formatCompact(u.hp) + '<span class="u-sh-txt">+' + HW.formatCompact(u.shield) + '</span>'
+      : HW.formatCompact(u.hp);
 
     return (
       '<div id="' + u.domId + '" class="' + cls + '" style="border-left-color:' + elColor + '">' +
@@ -134,11 +136,30 @@
     return ctrl + '<div class="dps-rows">' + rows + '</div>';
   }
 
+  function getLogTagClass(badge) {
+    if (!badge) return '';
+    if (badge === '会心' || badge === '不屈') return 'crit';
+    if (badge === '開眼' || badge === '極装備' || badge === '超稀' || badge === '乱入' || badge === '乱入賞' || badge === '獲得' || badge === '欠片') return 'drop';
+    if (badge === '弱点' || badge === '撃破') return 'weak';
+    if (badge === '回復' || badge === '蘇生') return 'heal';
+    return '';
+  }
+
   function renderLogInner() {
     const logs = HW.Battle.logs;
     return (
       '<div id="battle-log-list" class="battle-log-list">' +
-      logs.map((l) => '<div class="log-entry ' + l.kind + '">' + HW.esc(l.text) + '</div>').join('') +
+      logs.map((l, idx) => {
+        const tagHtml = l.badge
+          ? '<span class="log-tag ' + getLogTagClass(l.badge) + '">' + HW.esc(l.badge) + '</span>'
+          : '';
+        return (
+          '<div class="log-entry ' + l.kind + (idx === 0 ? ' latest' : '') + '">' +
+          tagHtml +
+          '<span class="log-text">' + HW.esc(l.text) + '</span>' +
+          '</div>'
+        );
+      }).join('') +
       '</div>'
     );
   }
@@ -235,7 +256,8 @@
       if (uiState.dockTab === 'log') {
         box.innerHTML = renderLogInner();
         const list = document.getElementById('battle-log-list');
-        if (list) list.scrollTop = list.scrollHeight;
+        // 最新が先頭のため常にscrollTop=0で上端見切れゼロ
+        if (list) list.scrollTop = 0;
       } else {
         box.innerHTML = renderDpsInner();
         box.querySelectorAll('[data-dps-metric]').forEach((btn) => {
@@ -313,7 +335,7 @@
       if (sum.towerMaxFloor > 0) specialLines.push('異界塔 到達更新: ' + sum.towerMaxFloor + 'F！');
       if (sum.intruderCount > 0) specialLines.push('希少乱入敵 撃破×' + sum.intruderCount);
       if (sum.unlockedFormations.length > 0) specialLines.push('新陣形解放: ' + sum.unlockedFormations.join(' / '));
-      if (sum.sparks.length > 0) specialLines.push('閃き開花: ' + sum.sparks.join('、'));
+      if (sum.sparks.length > 0) specialLines.push('戦技開眼: ' + sum.sparks.join('、'));
 
       const bodyHtml =
         '<div class="result-banner ' + bannerCls + '">' + HW.esc(bannerTxt) + '</div>' +

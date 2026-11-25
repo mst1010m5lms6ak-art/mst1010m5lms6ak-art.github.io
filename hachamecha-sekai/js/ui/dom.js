@@ -13,12 +13,39 @@
       '<div class="stage-header">' +
       '<div class="stage-title">' + HW.esc(titleText) + '</div>' +
       '<div class="currency-strip">' +
-      '<span class="cur-pill gold num">G ' + HW.formatNum(sd.gold) + '</span>' +
-      '<span class="cur-pill shard num">欠片 ' + HW.formatNum(sd.omniShards) + '</span>' +
-      '<span class="cur-pill medal num">闘 ' + HW.formatNum(sd.arenaMedals) + '</span>' +
+      '<span class="cur-pill gold num">G ' + HW.formatCompact(sd.gold) + '</span>' +
+      '<span class="cur-pill shard num">欠片 ' + HW.formatCompact(sd.omniShards) + '</span>' +
+      '<span class="cur-pill medal num">闘 ' + HW.formatCompact(sd.arenaMedals) + '</span>' +
       '</div>' +
       '</div>'
     );
+  };
+
+  // モディファイアオブジェクトを人間が読みやすい短縮配列へ変換（陣形・固有装備・図鑑共通）
+  HW.formatModTags = function (mod) {
+    if (!mod) return [];
+    const list = [];
+    if (mod.hpPct) list.push('HP+' + Math.round(mod.hpPct * 100) + '%');
+    if (mod.atkPct) list.push('攻+' + Math.round(mod.atkPct * 100) + '%');
+    if (mod.defPct) list.push('防+' + Math.round(mod.defPct * 100) + '%');
+    if (mod.spdFlat) list.push('速+' + mod.spdFlat);
+    if (mod.crit) list.push('会心+' + Math.round(mod.crit * 100) + '%');
+    if (mod.critDmg) list.push('会心倍+' + Math.round(mod.critDmg * 100) + '%');
+    if (mod.defPen) list.push('貫通+' + Math.round(mod.defPen * 100) + '%');
+    if (mod.dmgUp) list.push('与ダメ+' + Math.round(mod.dmgUp * 100) + '%');
+    if (mod.dmgRed) list.push('被減' + Math.round(mod.dmgRed * 100) + '%');
+    if (mod.healOutPct) list.push('与癒+' + Math.round(mod.healOutPct * 100) + '%');
+    if (mod.healInPct) list.push('被癒+' + Math.round(mod.healInPct * 100) + '%');
+    if (mod.res) list.push('耐性+' + Math.round(mod.res * 100) + '%');
+    if (mod.effHit) list.push('命中+' + Math.round(mod.effHit * 100) + '%');
+    if (mod.startGauge) list.push('開戦+' + Math.round(mod.startGauge * 100) + '%');
+    if (mod.counterChance) list.push('反撃' + Math.round(mod.counterChance * 100) + '%');
+    if (mod.extraHitChance) list.push('追撃' + Math.round(mod.extraHitChance * 100) + '%');
+    if (mod.ailmentBonus) list.push('異常特効+' + Math.round(mod.ailmentBonus * 100) + '%');
+    if (mod.turnRegenPct) list.push('再生' + Math.round(mod.turnRegenPct * 100) + '%');
+    if (mod.lifesteal) list.push('吸血+' + Math.round(mod.lifesteal * 100) + '%');
+    if (mod.eva) list.push('回避+' + Math.round(mod.eva * 100) + '%');
+    return list;
   };
 
   HW.badgeElement = function (elId) {
@@ -96,27 +123,13 @@
     },
 
     /**
-     * iOS Safari / PWA standalone のセーフエリア＆画面ズレ三重防御 + 誤操作防止
+     * iOS Safari / PWA standalone の画面ズレ防御 + 誤操作防止（タップ感度を落とさない実装）
      */
     setupMobileGuard: function () {
-      // 1. 長押しメニュー・ダブルタップズーム・ピンチズームの完全無効化
+      // 1. 長押しメニュー・ピンチズーム無効化（ダブルタップズーム防止はCSS touch-action: manipulationに委譲しclick握り潰しを防止）
       document.addEventListener('contextmenu', (e) => e.preventDefault());
       document.addEventListener('gesturestart', (e) => e.preventDefault());
       document.addEventListener('gesturechange', (e) => e.preventDefault());
-      document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false });
-
-      let lastTouchEnd = 0;
-      document.addEventListener(
-        'touchend',
-        (e) => {
-          const now = Date.now();
-          if (now - lastTouchEnd <= 280) {
-            e.preventDefault();
-          }
-          lastTouchEnd = now;
-        },
-        { passive: false }
-      );
 
       // 初回タップでWebAudio解禁
       const unlockAudio = () => {
@@ -125,43 +138,26 @@
       };
       window.addEventListener('pointerdown', unlockAudio, { passive: true });
 
-      // 2. iOS PWA standalone 起動時のセーフエリアめり込み対策
-      const syncSafeArea = () => {
-        const root = document.documentElement;
-        const safeTopEl = document.getElementById('safe-top');
-        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
-          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-        const isStandalone = Boolean(
-          window.navigator.standalone ||
-          (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
-        );
-
-        if (isIOS && isStandalone && safeTopEl) {
-          const computedTop = safeTopEl.getBoundingClientRect().height;
-          // 一部iOS PWA環境で env(safe-area-inset-top) が 0px になる既知バグを検出して補正
-          if (computedTop < 12 && window.screen && window.screen.height >= 812) {
-            root.style.setProperty('--safe-top', '47px');
-            root.style.setProperty('--safe-bottom', '24px');
-          }
-        }
+      // 2. リサイズ・キーボード収納後のリフロー＆VFX Canvas同期
+      // ※ステータスバー領域はOS側の通常表示に委譲しているため、safe-topへの固定px上乗せは行わず余計な隙間を防止
+      const syncViewport = () => {
         HW.VFX.resize();
       };
 
-      syncSafeArea();
+      syncViewport();
       window.addEventListener('resize', () => {
-        syncSafeArea();
-        // iOS PWA でキーボード収納後に画面が上へズレっぱなしになるWebKitバグの強制リフロー対策
+        syncViewport();
         window.scrollTo(0, 0);
       });
       if (window.visualViewport) {
         window.visualViewport.addEventListener('resize', () => {
           window.scrollTo(0, 0);
-          syncSafeArea();
+          syncViewport();
         });
       }
-      window.addEventListener('orientationchange', () => setTimeout(syncSafeArea, 150));
+      window.addEventListener('orientationchange', () => setTimeout(syncViewport, 150));
 
-      // ボトムシートのオーバーレイ背景タップで閉じる（下半分付近のみ許可でもOK、利便性優先で背景タップ閉じる）
+      // ボトムシートのオーバーレイ背景タップで閉じる
       const ov = document.getElementById('sheet-overlay');
       if (ov) {
         ov.addEventListener('click', (e) => {

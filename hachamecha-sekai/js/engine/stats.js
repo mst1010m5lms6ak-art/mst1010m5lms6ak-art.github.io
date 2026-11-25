@@ -65,6 +65,16 @@
       if (sk.target === 'passive' && sk.passiveMod) mergeMod(mod, sk.passiveMod);
     });
 
+    // 2.5 戦技開眼のロール別節目ボーナス（10/20/30/40到達で順次開花）
+    const kaikanMilestones = HW.getKaikanMilestones(def.role);
+    const activeKaikan = [];
+    kaikanMilestones.forEach((ms) => {
+      if (mastery >= ms.need) {
+        mergeMod(mod, ms.mod);
+        activeKaikan.push(ms);
+      }
+    });
+
     // 3. 愛用品(★4) & 固有神器(★5)
     if (cs.favoriteUnlocked && def.favorite) mergeMod(mod, def.favorite.mod);
     if (cs.relicUnlocked && def.relic) mergeMod(mod, def.relic.mod);
@@ -155,7 +165,8 @@
       effHit: effHit,
       power: power,
       mod: mod,
-      activeSets: activeSets
+      activeSets: activeSets,
+      kaikanMilestones: activeKaikan
     };
   };
 

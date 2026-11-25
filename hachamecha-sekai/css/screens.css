@@ -197,20 +197,35 @@
 
 .ab-tier-row {
   display: grid;
-  grid-template-columns: 26px repeat(5, minmax(0, 1fr));
+  grid-template-columns: 42px repeat(5, minmax(0, 1fr));
   gap: 3px;
   align-items: stretch;
 }
 
 .ab-tier-tag {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 900;
   color: var(--acc-cyan);
   background: rgba(45, 226, 230, 0.12);
   border-radius: 6px;
+  line-height: 1.1;
+  padding: 1px 2px;
+}
+
+.ab-tier-tag.locked {
+  color: var(--txt-muted);
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.ab-tier-req {
+  font-size: 7.5px;
+  font-weight: 800;
+  color: var(--acc-gold);
+  white-space: nowrap;
 }
 
 .ab-cell {
@@ -476,29 +491,206 @@
   gap: 2px;
 }
 
-/* 図鑑紹介文ボックス（図鑑画面専用） */
+/* 図鑑紹介文ボックス（図鑑画面専用・上半分ノンスクロールで完全収容） */
 .codex-lore {
   flex: 1 1 0;
   min-height: 0;
-  overflow-y: auto;
-  padding: 7px 9px;
+  overflow: hidden;
+  padding: 6px 8px;
   border-radius: 9px;
   background: rgba(9, 13, 25, 0.86);
   border: 1px solid var(--line-dim);
-  font-size: 11.5px;
-  line-height: 1.5;
+  font-size: 10.5px;
+  line-height: 1.42;
   color: #dde5fa;
+  display: flex;
+  align-items: center;
 }
 
-/* シナジーチップ（高さクリップ無しで自由に収容） */
+/* シナジーチップ（上半分ノンスクロールで綺麗に収容） */
 .synergy-list {
   display: flex;
   flex-wrap: wrap;
   align-content: flex-start;
-  gap: 4px;
+  gap: 3px;
+  max-height: 44px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* 陣形2×2ビジュアルマップ（編成・陣形タブの上半分専用） */
+.form-map-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 5px;
   flex: 1 1 0;
   min-height: 0;
-  overflow-y: auto;
+}
+
+.form-slot-box {
+  background: rgba(12, 18, 36, 0.92);
+  border: 1px solid var(--line-mid);
+  border-radius: 9px;
+  padding: 4px 7px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.form-slot-box.front {
+  border-left: 3px solid var(--acc-cyan);
+}
+
+.form-slot-box.back {
+  border-left: 3px solid var(--acc-violet);
+}
+
+.form-slot-box.high-aggro {
+  border-color: rgba(255, 210, 76, 0.65);
+  border-left: 3px solid var(--acc-gold);
+  background: linear-gradient(150deg, rgba(64, 46, 14, 0.55), rgba(12, 18, 36, 0.92));
+}
+
+.aggro-pill {
+  font-size: 8.5px;
+  font-weight: 900;
+  padding: 0 4px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.aggro-pill.high { background: rgba(255, 92, 122, 0.28); color: #ffa6b8; border: 1px solid rgba(255, 92, 122, 0.55); }
+.aggro-pill.mid { background: rgba(255, 210, 76, 0.2); color: #ffe38a; border: 1px solid rgba(255, 210, 76, 0.45); }
+.aggro-pill.low { background: rgba(56, 189, 248, 0.18); color: #8be0ff; border: 1px solid rgba(56, 189, 248, 0.42); }
+
+.form-mod-line {
+  font-size: 9px;
+  font-weight: 800;
+  color: #a9f5ff;
+  line-height: 1.25;
+}
+
+/* 戦技開眼ボックス（育成・固有＆開眼タブ） */
+.kaikan-gates {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.kaikan-gate {
+  background: rgba(15, 21, 40, 0.9);
+  border: 1px solid var(--line-dim);
+  border-radius: 7px;
+  padding: 3px 4px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.kaikan-gate.reached {
+  border-color: var(--acc-gold);
+  background: rgba(255, 210, 76, 0.16);
+}
+
+.kaikan-gate-t {
+  font-size: 9px;
+  font-weight: 900;
+  color: var(--acc-gold);
+}
+
+.kaikan-gate-d {
+  font-size: 8px;
+  color: var(--txt-sub);
+  line-height: 1.15;
+}
+
+.kaikan-gate.reached .kaikan-gate-d {
+  color: #ffffff;
+}
+
+/* 拠点：6種階位素材ミニグリッド＆探索均等スタック */
+.mat-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.mat-mini-pill {
+  background: rgba(12, 17, 32, 0.85);
+  border: 1px solid var(--line-dim);
+  border-radius: 6px;
+  padding: 2px 5px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 9.5px;
+  font-weight: 800;
+}
+
+.compact-card-stack {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.compact-card-stack .stage-card {
+  flex: 1 1 0;
+  min-height: 0;
+  margin-bottom: 0;
+  padding: 5px 9px;
+}
+
+/* 装備倉庫アクション4ボタン */
+.equip-action-bar {
+  display: grid;
+  grid-template-columns: 0.8fr 1fr 1fr 1.15fr;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.bulk-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.bulk-preset-btn {
+  min-height: 36px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 800;
+  background: var(--bg-card);
+  border: 1px solid var(--line-dim);
+  color: var(--txt-sub);
+}
+
+.bulk-preset-btn.active {
+  border-color: var(--acc-gold);
+  background: rgba(255, 210, 76, 0.2);
+  color: #ffe89e;
+}
+
+/* 育成ヘッダー2段構成（2種族キャラでも絶対見切れゼロ） */
+.preview-head-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.preview-head-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
 }
 
 .syn-chip {

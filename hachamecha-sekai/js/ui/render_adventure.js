@@ -117,8 +117,8 @@
         '<span style="font-size:11px;font-weight:900">BOSS: ' + HW.esc(boss.name) + '</span>' +
         '<span>' + HW.badgeElement(boss.element) + HW.badgeRole(boss.role, true) + '</span>' +
         '</div>' +
-        '<div style="font-size:10.5px;color:var(--txt-sub);margin-top:3px">ドロップ欠片: <strong style="color:var(--acc-cyan)">' + HW.esc(shardChar.name) + '</strong> / 装備: ' + HW.esc(setsText) + '</div>' +
-        '<div style="font-size:10px;color:var(--acc-gold);margin-top:2px">' + (!unlocked ? '解放条件: Area ' + (st.area - 1) + '-10 制覇' : '通常WAVE中に希少エネミー乱入あり・属性相性 炎>風>水>炎 / 光⇄闇') + '</div>' +
+        '<div style="font-size:10px;color:var(--txt-sub);margin-top:3px">欠片(低確率): <strong style="color:var(--acc-cyan)">' + HW.esc(shardChar.name) + '</strong> / 装備: ' + HW.esc(setsText) + '</div>' +
+        '<div style="font-size:9.5px;color:var(--acc-gold);margin-top:2px">' + (!unlocked ? '解放条件: ' + HW.esc(HW.State.getStageUnlockText(st.id)) : '超低確率で万能欠片・希少乱入あり ／ 炎>風>水>炎・光⇄闇') + '</div>' +
         '</div>' +
         '</div>'
       );
@@ -217,7 +217,7 @@
       '<div style="font-size:10.5px;color:var(--txt-sub);margin-bottom:4px">陣形: ' + HW.esc(oppForm.name) + '（' + HW.esc(oppForm.summary) + '）</div>' +
       '<div class="tag-row">' + membersHtml + '</div>' +
       '</div>' +
-      '<div style="font-size:10px;color:var(--txt-sub)">「相手詳細」から装備・技・5段階能力を全確認してメタ編成で挑めます</div>' +
+      '<div style="font-size:10px;color:var(--txt-sub)">「相手詳細」から装備・技・5段階能力を確認して有利な編成で挑めます</div>' +
       '</div>'
     );
   }
@@ -258,7 +258,7 @@
           );
         }).join('');
         const canLaunchNormal = HW.State.isStageUnlocked(advState.stageId);
-        middleHtml = '<div class="subtabs">' + areaBtns + '</div><div class="scroll-list">' + stageCards + '</div>';
+        middleHtml = '<div class="subtabs">' + areaBtns + '</div><div class="scroll-list" data-scroll-key="adv_normal_' + advState.area + '">' + stageCards + '</div>';
         actionHtml =
           '<div class="battle-ctrl-row">' +
           '<button type="button" id="adv-go-once" class="btn btn-primary"' + (!canLaunchNormal ? ' disabled' : '') + '>' + (canLaunchNormal ? '出撃' : '未解放') + '</button>' +
@@ -269,13 +269,14 @@
           const cl = sd.progress.towerCleared[t.id] || 0;
           const locked = t.id === 'tower_2' && (sd.progress.towerCleared.tower_1 || 0) < 100;
           const sel = advState.towerId === t.id;
+          const doneAll = cl >= t.maxFloor;
           return (
             '<button type="button" class="stage-card' + (sel ? ' selected' : '') + '" data-tower="' + t.id + '"' + (locked ? ' disabled' : '') + '>' +
             '<div class="stage-card-left">' +
             '<span class="stage-card-title">' + HW.esc(t.name) + '</span>' +
             '<span class="stage-card-sub">' + (locked ? '異界塔Ⅰ 100F制覇で解放' : '到達 ' + cl + ' / ' + t.maxFloor + 'F') + '</span>' +
             '</div>' +
-            '<span class="b-pill num">次 ' + Math.min(t.maxFloor, cl + 1) + 'F</span>' +
+            '<span class="b-pill num">' + (doneAll ? '制覇済' : '次 ' + (cl + 1) + 'F') + '</span>' +
             '</button>'
           );
         }).join('');
@@ -299,7 +300,7 @@
             '</button>'
           );
         }).join('');
-        middleHtml = '<div class="scroll-list">' + cards + '</div>';
+        middleHtml = '<div class="scroll-list" data-scroll-key="adv_raid">' + cards + '</div>';
         actionHtml = '<button type="button" id="adv-go-once" class="btn btn-primary" style="min-height:40px">総力戦 複数部隊リレー出撃</button>';
       } else if (advState.mode === 'restriction') {
         const cards = HW.RESTRICTIONS.map((rs) => {
@@ -315,7 +316,7 @@
             '</button>'
           );
         }).join('');
-        middleHtml = '<div class="scroll-list">' + cards + '</div>';
+        middleHtml = '<div class="scroll-list" data-scroll-key="adv_res">' + cards + '</div>';
         actionHtml =
           '<div class="battle-ctrl-row">' +
           '<button type="button" id="adv-go-once" class="btn btn-primary">出撃</button>' +
@@ -336,7 +337,7 @@
             '</button>'
           );
         }).join('');
-        middleHtml = '<div class="fixed-area">' + cards + '</div>';
+        middleHtml = '<div class="compact-card-stack">' + cards + '</div>';
         actionHtml =
           '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;flex-shrink:0">' +
           '<button type="button" id="arena-inspect" class="btn btn-gold">相手詳細</button>' +
@@ -356,7 +357,7 @@
         btn.addEventListener('click', () => {
           advState.mode = btn.getAttribute('data-adv-mode');
           HW.Audio.tap();
-          HW.App.render();
+          HW.App.render({ resetScroll: true });
         });
       });
 
@@ -374,7 +375,7 @@
           }
           advState.stageId = target.id;
           HW.Audio.tap();
-          HW.App.render();
+          HW.App.render({ resetScroll: true });
         });
       });
 

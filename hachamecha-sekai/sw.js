@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hachamecha-world-v2';
+const CACHE_NAME = 'hachamecha-world-v3';
 const ASSETS = [
   './',
   './index.html',

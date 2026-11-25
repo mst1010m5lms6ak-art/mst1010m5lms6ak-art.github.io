@@ -133,10 +133,11 @@
       if (this.onUpdate) this.onUpdate(true);
     },
 
-    addLog: function (text, kind) {
-      this.logs.push({ id: HW.uid('lg'), text: text, kind: kind || 'system' });
+    addLog: function (text, kind, badge) {
+      // 最新ログを先頭（一番上）に追加することで、上端の見切れを根本防止
+      this.logs.unshift({ id: HW.uid('lg'), text: text, kind: kind || 'system', badge: badge || '' });
       if (this.logs.length > MAX_LOGS) {
-        this.logs.splice(0, this.logs.length - MAX_LOGS);
+        this.logs.length = MAX_LOGS;
       }
     },
 
@@ -317,10 +318,15 @@
       this.isIntruderWave = false;
       this.enemies = [];
 
-      // 味方のWAVE開始効果
-      this.allies.forEach((u) => {
+      // 味方のWAVE開始効果＋テンポ改善（WAVE間でゲージ維持＆最低28%ブースト）
+      this.allies.forEach((u, idx) => {
         if (!u.alive) return;
         u.firstWaveHit = true;
+        if (waveNum === 1) {
+          u.gauge = Math.min(0.95, Math.max(0.24 + (3 - idx) * 0.04, u.gauge || 0));
+        } else {
+          u.gauge = Math.min(0.95, Math.max(0.32, u.gauge || 0));
+        }
         if (u.mod.waveShieldPct) {
           u.shield = Math.max(u.shield, Math.round(u.maxHp * u.mod.waveShieldPct));
         }
@@ -356,7 +362,7 @@
             this.enemies.push(this.makeEnemyUnit(pick, st.scale * 1.05, 0, false, true));
             this.bannerText = '乱入警報！希少エネミー出現！';
             this.bannerCls = 'spark-act';
-            this.addLog('【乱入発生！】' + this.enemies[0].name + ' が割り込んできた！', 'drop');
+            this.addLog(this.enemies[0].name + ' が乱入！', 'drop', '乱入');
             HW.Audio.spark();
           } else {
             // 通常敵 1〜4体ランダム出現
@@ -415,6 +421,13 @@
         this.bannerText = '異界闘技場 ' + opp.rank + '位 ' + opp.teamName;
         this.bannerCls = 'enemy-act';
       }
+
+      // 敵側の開幕ゲージも少しだけ事前チャージしてWAVE切り替え直後のダレを解消
+      this.enemies.forEach((e, idx) => {
+        if (e.alive) {
+          e.gauge = Math.min(0.85, Math.max(e.gauge || 0, 0.14 + idx * 0.05));
+        }
+      });
 
       // 開戦敵デバフパッシブ
       this.allies.forEach((a) => {
@@ -517,7 +530,7 @@
         if (this.currentAction && this.currentAction.unit === u) return;
         if (this.actionQueue.includes(u)) return;
         const spdMult = (this.hasEffect(u, 'spdUp') ? 1.25 : 1) * (this.hasEffect(u, 'spdDown') ? 0.75 : 1);
-        const rate = (u.spd * spdMult) / 195; // 1倍速で約1.6秒周期
+        const rate = (u.spd * spdMult) / 172; // テンポ良くキレのあるATB速度
         u.gauge += dt * rate;
         if (u.gauge >= 1) {
           u.gauge = 1;
@@ -601,25 +614,27 @@
       }
 
       this.currentAction = { unit: unit, targets: targets, skill: skill };
-      this.actionTimer = (skill.slot === 3 ? 0.56 : 0.42) / Math.min(2.3, 0.7 + this.speed * 0.55);
+      this.actionTimer = (skill.slot === 3 ? 0.46 : 0.34) / Math.min(2.6, 0.72 + this.speed * 0.62);
 
       const tLabel = (HW.TARGET_LABELS[skill.target] || HW.TARGET_LABELS.single).text;
-      this.bannerText = unit.name + ' の「' + skill.name + '」[' + tLabel + ']';
+      this.bannerText = unit.name + '「' + skill.name + '」[' + tLabel + ']';
       this.bannerCls = unit.side === 'ally' ? 'ally-act' : 'enemy-act';
 
       this.resolveSkill(unit, skill, targets, false);
 
-      // サガ式「戦闘中の閃き（極意開花）」判定（味方のみ、低確率で永続強化！）
+      // サガ式「戦技開眼」判定（味方のみ、戦闘中に低確率で永続開花＋10/20/30/40節目ボーナス）
       if (unit.side === 'ally' && Math.random() < 0.012) {
         const cs = HW.State.data.chars[unit.charId];
-        if (cs && cs.masteryCount < 40) {
+        if (cs && cs.masteryCount < HW.KAIKAN_MAX) {
           cs.masteryCount += 1;
-          this.loopSummary.sparks.push(unit.name + '（極意+' + cs.masteryCount + '）');
-          this.bannerText = '閃き！' + unit.name + ' が新たな極意を開花！';
+          const msHit = HW.getKaikanMilestones(unit.role).find((m) => m.need === cs.masteryCount);
+          const msNote = msHit ? '【' + msHit.title + '解放:' + msHit.desc + '】' : '';
+          this.loopSummary.sparks.push(unit.name + '（開眼' + cs.masteryCount + msNote + '）');
+          this.bannerText = '戦技開眼！' + unit.name + '（開眼 ' + cs.masteryCount + '/' + HW.KAIKAN_MAX + '）';
           this.bannerCls = 'spark-act';
-          HW.VFX.spawnPopup(unit.domId, '極意閃き!', '#ffd24c', true);
+          HW.VFX.spawnPopup(unit.domId, msHit ? msHit.title + '開眼!' : '戦技開眼!', '#ffd24c', true, 'kaikan');
           HW.Audio.spark();
-          this.addLog('【閃き】' + unit.name + ' が戦闘中に極意を開花した！(極意' + cs.masteryCount + ')', 'drop');
+          this.addLog(unit.name + ' 開眼 ' + cs.masteryCount + '/' + HW.KAIKAN_MAX + (msNote ? ' ' + msNote : ''), 'drop', '開眼');
           HW.State.save();
         }
       }
@@ -777,8 +792,8 @@
           // 回避判定
           const evaRate = Math.min(0.65, tgt.eva + (this.hasEffect(tgt, 'evade') ? 0.35 : 0));
           if (Math.random() < evaRate) {
-            HW.VFX.spawnPopup(tgt.domId, 'MISS', '#94a3b8', false);
-            this.addLog(caster.name + ' の' + skill.name + ' → ' + tgt.name + ' は回避！', caster.side);
+            HW.VFX.spawnPopup(tgt.domId, 'MISS', '#cbd5e1', false, 'miss');
+            this.addLog(caster.name + '「' + skill.name + '」▶ ' + tgt.name + ' 回避', caster.side, '回避');
             if (tgt.mod.evaHeal) this.applyHeal(tgt, tgt, Math.round(tgt.maxHp * tgt.mod.evaHeal));
             if (!isFollowUp && tgt.mod.counterChance && Math.random() < tgt.mod.counterChance && caster.alive) {
               this.triggerCounter(tgt, caster);
@@ -919,8 +934,8 @@
           deadOne.hp = Math.round(deadOne.maxHp * skill.reviveOne);
           deadOne.gauge = 0.25;
           HW.VFX.spawnHeal(deadOne.domId);
-          HW.VFX.spawnPopup(deadOne.domId, '蘇生!', '#47f59a', true);
-          this.addLog(caster.name + ' が ' + deadOne.name + ' を蘇生！', 'heal');
+          HW.VFX.spawnPopup(deadOne.domId, '蘇生!', '#47f59a', true, 'heal');
+          this.addLog(caster.name + ' ▶ ' + deadOne.name + ' 蘇生!', 'heal', '蘇生');
         }
       }
 
@@ -933,7 +948,7 @@
         });
         if (totalHeal > 0) {
           HW.Audio.heal();
-          this.addLog(caster.name + ' の' + skill.name + ' → 味方を計' + HW.formatNum(totalHeal) + '回復', 'heal');
+          this.addLog(caster.name + '「' + skill.name + '」▶ 味方 +' + HW.formatNum(totalHeal), 'heal', '回復');
         }
       }
 
@@ -941,7 +956,7 @@
         const low = this.getAlive(caster.side).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
         if (low) {
           const h = this.applyHeal(caster, low, Math.round(caster.atk * skill.healLowest * 1.15));
-          this.addLog(caster.name + ' → ' + low.name + ' を' + HW.formatNum(h) + '回復', 'heal');
+          this.addLog(caster.name + ' ▶ ' + low.name + ' +' + HW.formatNum(h), 'heal', '回復');
         }
       }
 
@@ -955,11 +970,11 @@
         friendTargets.forEach((f) => {
           if (f && f.alive) {
             f.shield += Math.round(f.maxHp * skill.shieldPct);
-            HW.VFX.spawnPopup(f.domId, 'SHIELD', '#7dd3fc', false);
+            HW.VFX.spawnPopup(f.domId, 'SHIELD', '#7dd3fc', false, 'buff');
           }
         });
         if (!isOffensive && !skill.healMult) {
-          this.addLog(caster.name + ' の' + skill.name + ' → 味方へシールド展開！', caster.side);
+          this.addLog(caster.name + '「' + skill.name + '」▶ 味方シールド展開', caster.side, '支援');
         }
       }
 
@@ -984,7 +999,7 @@
           if (f && f.alive) f.gauge = Math.min(1, f.gauge + skill.gaugeAlly);
         });
         if (!isOffensive && !skill.healMult) {
-          this.addLog(caster.name + ' の' + skill.name + ' → 味方を加速＆強化！', caster.side);
+          this.addLog(caster.name + '「' + skill.name + '」▶ 味方加速＆強化', caster.side, '支援');
         }
       }
       if (skill.gaugeAllyLowest) {
@@ -1028,9 +1043,9 @@
         this.raidTotalDamage += amount;
       }
 
-      const popColor = isCrit ? '#ffd24c' : elMult > 1 ? '#ff7ab6' : elMult < 1 ? '#94a3b8' : '#ffffff';
-      const popText = (isCrit ? 'CRIT ' : '') + HW.formatNum(amount);
-      HW.VFX.spawnPopup(target.domId, popText, popColor, isCrit);
+      const popColor = isCrit ? '#ffd24c' : elMult > 1 ? '#ff69b4' : elMult < 1 ? '#94a3b8' : '#ffffff';
+      const popText = (isCrit ? '★' : '') + HW.formatNum(amount);
+      HW.VFX.spawnPopup(target.domId, popText, popColor, isCrit, isCrit ? 'crit' : 'normal');
 
       const domEl = document.getElementById(target.domId);
       if (domEl) {
@@ -1039,10 +1054,11 @@
         domEl.classList.add('hit-shake');
       }
 
-      const tag = isCrit ? '【会心】' : elMult > 1 ? '【弱点】' : '';
+      const badge = isCrit ? '会心' : elMult > 1 ? '弱点' : '';
       this.addLog(
-        (caster ? caster.name + ' の' + skillName + ' → ' : '') + target.name + ' に ' + HW.formatNum(amount) + 'ダメ' + tag,
-        caster ? caster.side : 'system'
+        (caster ? caster.name + '「' + skillName + '」▶ ' : '') + target.name + ' -' + HW.formatNum(amount),
+        caster ? caster.side : 'system',
+        badge
       );
 
       this.handleDeathCheck(target);
@@ -1053,8 +1069,8 @@
       if (caster && caster.side === 'ally' && this.dps[caster.charId]) this.dps[caster.charId].dmg += amount;
       if (target.side === 'ally' && this.dps[target.charId]) this.dps[target.charId].taken += amount;
       if (this.config.mode === 'raid' && target.side === 'enemy') this.raidTotalDamage += amount;
-      HW.VFX.spawnPopup(target.domId, label + ' ' + HW.formatNum(amount), '#c084fc', false);
-      this.addLog(target.name + ' は' + label + 'で ' + HW.formatNum(amount) + 'ダメ', 'system');
+      HW.VFX.spawnPopup(target.domId, '-' + HW.formatNum(amount), '#d8b4fe', false, 'dot');
+      this.addLog(target.name + ' ' + label + ' -' + HW.formatNum(amount), 'system', label.slice(0, 2));
       this.handleDeathCheck(target);
     },
 
@@ -1064,14 +1080,14 @@
       if (unit.gutsLeft > 0) {
         unit.gutsLeft--;
         unit.hp = Math.max(1, Math.round(unit.maxHp * (unit.mod.guts || 0.25)));
-        HW.VFX.spawnPopup(unit.domId, '不屈!', '#ffd24c', true);
-        this.addLog(unit.name + ' は不屈の闘志で踏みとどまった！', unit.side);
+        HW.VFX.spawnPopup(unit.domId, '不屈!', '#ffd24c', true, 'crit');
+        this.addLog(unit.name + ' 不屈で踏みとどまった!', unit.side, '不屈');
         return;
       }
       unit.alive = false;
       unit.effects = [];
       unit.shield = 0;
-      this.addLog(unit.name + ' が戦闘不能になった！', unit.side === 'ally' ? 'enemy' : 'ally');
+      this.addLog(unit.name + ' 戦闘不能!', unit.side === 'ally' ? 'enemy' : 'ally', '撃破');
 
       // 味方ヒーラーの自動蘇生チェック
       if (unit.side === 'ally') {
@@ -1082,9 +1098,12 @@
           unit.hp = Math.round(unit.maxHp * (reviver.mod.autoRevive || 0.45));
           unit.gauge = 0.25;
           HW.VFX.spawnHeal(unit.domId);
-          HW.VFX.spawnPopup(unit.domId, '自動蘇生!', '#47f59a', true);
-          this.addLog(reviver.name + ' の奇跡で ' + unit.name + ' が自動蘇生！', 'heal');
+          HW.VFX.spawnPopup(unit.domId, '自動蘇生!', '#47f59a', true, 'heal');
+          this.addLog(reviver.name + ' ▶ ' + unit.name + ' 自動蘇生!', 'heal', '蘇生');
         }
+      } else if (this.getAlive('enemy').length === 0 && this.currentAction) {
+        // 敵全滅時は残余演出時間を即短縮してWAVE遷移をテンポ良く！
+        this.actionTimer = Math.min(this.actionTimer, 0.13 / Math.min(2.5, this.speed));
       }
     },
 
@@ -1129,7 +1148,7 @@
       }
 
       HW.VFX.spawnHeal(target.domId);
-      HW.VFX.spawnPopup(target.domId, '+' + HW.formatNum(finalHeal), '#47f59a', false);
+      HW.VFX.spawnPopup(target.domId, '+' + HW.formatNum(finalHeal), '#47f59a', false, 'heal');
       return finalHeal;
     },
 
@@ -1143,8 +1162,8 @@
           this.grantIntruderBonus();
         }
         if (this.wave < this.maxWaves) {
-          this.waveTransitionTimer = 0.45 / Math.min(2, this.speed * 0.7);
-          this.bannerText = 'WAVE ' + this.wave + ' クリア！次へ進行…';
+          this.waveTransitionTimer = 0.20 / Math.min(2.4, this.speed * 0.85);
+          this.bannerText = 'WAVE ' + this.wave + ' クリア ▶ 次WAVEへ';
           this.bannerCls = 'ally-act';
           return;
         }
@@ -1178,14 +1197,14 @@
 
     grantIntruderBonus: function () {
       const st = HW.getStageDef(this.config.stageId);
-      const omni = 6 + st.area * 2;
+      const omni = 3 + Math.min(3, Math.floor((st.area + 1) / 2)); // 3〜6個
       HW.State.data.omniShards += omni;
       this.loopSummary.omniShards += omni;
       this.loopSummary.intruderCount += 1;
       const setId = st.equipSets[Math.floor(Math.random() * st.equipSets.length)];
       const drop = HW.State.grantEquipmentDrop(setId, Math.min(92, st.minQuality + 28));
       this.recordEquipDrop(drop);
-      this.addLog('【乱入撃破ボーナス】万能欠片×' + omni + '＋高品質装備獲得！', 'drop');
+      this.addLog('万能欠片×' + omni + '＋高品質装備獲得!', 'drop', '乱入賞');
     },
 
     recordEquipDrop: function (drop) {
@@ -1193,14 +1212,14 @@
       if (drop.autoSold) {
         this.loopSummary.autoSoldCount += 1;
         this.loopSummary.autoSoldGold += drop.gold;
-        this.addLog('自動売却: ' + tpl.name + ' (品質' + drop.item.quality + '%) → +' + drop.gold + 'G', 'system');
+        this.addLog(tpl.name + ' (' + drop.item.quality + '%) ▶ +' + drop.gold + 'G', 'system', '売却');
       } else {
         this.loopSummary.equips.push(drop.item);
         if (drop.item.quality >= 100) {
           this.loopSummary.maxQualityCount += 1;
-          this.addLog('【極品質ドロップ！】' + tpl.name + ' (品質100%・極) を獲得！', 'drop');
+          this.addLog(tpl.name + ' (品質100%・極) 獲得!', 'drop', '極装備');
         } else {
-          this.addLog('ドロップ: ' + tpl.name + ' (品質' + drop.item.quality + '%)', 'drop');
+          this.addLog(tpl.name + ' (品質' + drop.item.quality + '%)', 'drop', '獲得');
         }
       }
     },
@@ -1265,10 +1284,24 @@
         sd.gold += gold;
         sum.gold += gold;
 
-        // キャラ欠片ドロップ
-        const shardAmt = firstClear ? 8 : 2 + (Math.random() < 0.35 ? 1 : 0);
-        sd.chars[st.shardCharId].shards += shardAmt;
-        sum.shards[st.shardCharId] = (sum.shards[st.shardCharId] || 0) + shardAmt;
+        // キャラ欠片ドロップ（初回は確定8個、通常周回は低確率25%で1〜2個）
+        const shardAmt = firstClear ? 8 : Math.random() < 0.25 ? (Math.random() < 0.35 ? 2 : 1) : 0;
+        if (shardAmt > 0) {
+          sd.chars[st.shardCharId].shards += shardAmt;
+          sum.shards[st.shardCharId] = (sum.shards[st.shardCharId] || 0) + shardAmt;
+          const sc = HW.getCharDef(st.shardCharId);
+          this.addLog((sc ? sc.name : '') + 'の欠片×' + shardAmt + ' 獲得!', 'drop', '欠片');
+        }
+
+        // 万能欠片ドロップ（初回は確定3個、通常周回は超低確率3%で1個）
+        if (firstClear) {
+          sd.omniShards += 3;
+          sum.omniShards += 3;
+        } else if (Math.random() < 0.03) {
+          sd.omniShards += 1;
+          sum.omniShards += 1;
+          this.addLog('万能欠片×1 獲得!', 'drop', '超稀');
+        }
 
         // 階位素材ドロップ
         const matId = st.matIds[Math.floor(Math.random() * st.matIds.length)];
@@ -1289,10 +1322,6 @@
           if (area && area.unlockForm && HW.State.unlockFormation(area.unlockForm)) {
             sum.unlockedFormations.push(HW.getFormation(area.unlockForm).name);
           }
-        }
-        if (firstClear) {
-          sd.omniShards += 3;
-          sum.omniShards += 3;
         }
       } else if (this.config.mode === 'tower') {
         const tf = HW.getTowerFloorDef(this.config.towerId, this.config.floor);
@@ -1326,9 +1355,15 @@
         sd.gold += gold;
         sum.gold += gold;
         const pickChar = rs.shardPool[Math.floor(Math.random() * rs.shardPool.length)];
-        const sAmt = first ? 10 : 4;
-        sd.chars[pickChar].shards += sAmt;
-        sum.shards[pickChar] = (sum.shards[pickChar] || 0) + sAmt;
+        const sAmt = first ? 10 : Math.random() < 0.30 ? (Math.random() < 0.4 ? 2 : 1) : 0;
+        if (sAmt > 0) {
+          sd.chars[pickChar].shards += sAmt;
+          sum.shards[pickChar] = (sum.shards[pickChar] || 0) + sAmt;
+        }
+        if (!first && Math.random() < 0.03) {
+          sd.omniShards += 1;
+          sum.omniShards += 1;
+        }
         sd.materials[rs.matId] = (sd.materials[rs.matId] || 0) + 3;
         sum.materials[rs.matId] = (sum.materials[rs.matId] || 0) + 3;
         const setId = rs.equipSets[Math.floor(Math.random() * rs.equipSets.length)];

@@ -151,10 +151,17 @@
     getUnlockedAbilityTiers: function (charId) {
       const cs = this.data.chars[charId];
       if (!cs || !cs.unlocked) return 0;
-      // 覚醒★またはRANKの進行で1〜5段階まで解放（初期1、RANK2または★2で2…最大5）
-      const byStar = Math.min(5, cs.star);
-      const byRank = Math.min(5, 1 + Math.floor((cs.rank - 1) / 2));
-      return Math.max(1, Math.min(5, Math.max(byStar, byRank)));
+      // 覚醒★とRANKの両方が条件に達した段階のみ解放（T1:初期 / T2:★2&R-III / T3:★3&R-V / T4:★4&R-VII / T5:★5&R-IX）
+      let unlocked = 1;
+      for (let i = 1; i < HW.ABILITY_TIER_REQ.length; i++) {
+        const req = HW.ABILITY_TIER_REQ[i];
+        if (cs.star >= req.star && cs.rank >= req.rank) {
+          unlocked = req.tier;
+        } else {
+          break;
+        }
+      }
+      return unlocked;
     },
 
     getRankSlotMaterialId: function (charId, slotIdx) {
@@ -336,6 +343,33 @@
       return { ok: true, gold: gold };
     },
 
+    // 一括売却候補を抽出（装備中・保護中・品質100%「極」は常に安全除外）
+    getBulkSellCandidates: function (belowQuality, slotFilter) {
+      const maxQ = Number(belowQuality) || 100;
+      const sf = slotFilter || 'all';
+      return this.data.inventory.filter((item) => {
+        if (item.locked || item.quality >= 100) return false;
+        if (item.quality >= maxQ) return false;
+        if (this.getEquipOwner(item.id)) return false;
+        if (sf !== 'all' && HW.getEquipTemplate(item.tplId).slot !== sf) return false;
+        return true;
+      });
+    },
+
+    bulkSellEquips: function (belowQuality, slotFilter) {
+      const targets = this.getBulkSellCandidates(belowQuality, slotFilter);
+      if (!targets.length) return { ok: false, count: 0, gold: 0 };
+      const removeSet = new Set(targets.map((t) => t.id));
+      let totalGold = 0;
+      targets.forEach((t) => {
+        totalGold += HW.getEquipSellValue(t);
+      });
+      this.data.inventory = this.data.inventory.filter((i) => !removeSet.has(i.id));
+      this.data.gold += totalGold;
+      this.save();
+      return { ok: true, count: targets.length, gold: totalGold };
+    },
+
     /**
      * 装備ドロップ生成＆自動売却判定（品質100%「極」は自動売却しない保護つき）
      */
@@ -389,6 +423,15 @@
         return Boolean(this.data.progress.clearedStages['st_' + st.area + '_' + (st.stageNum - 1)]);
       }
       return Boolean(this.data.progress.clearedStages['st_' + (st.area - 1) + '_10']);
+    },
+
+    getStageUnlockText: function (stageId) {
+      if (stageId === 'st_1_1') return '';
+      const st = HW.getStageDef(stageId);
+      if (st.stageNum > 1) {
+        return st.area + '-' + (st.stageNum - 1) + ' 制覇で解放';
+      }
+      return (st.area - 1) + '-10 エリア決戦 制覇で解放';
     },
 
     getBusyDispatchChars: function () {

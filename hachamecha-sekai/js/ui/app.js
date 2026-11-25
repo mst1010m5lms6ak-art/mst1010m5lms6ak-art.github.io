@@ -16,6 +16,7 @@
     screen: 'adventure', // 'adventure' | 'party' | 'roster' | 'equip' | 'hub' | 'codex' | 'battle'
     lastBattleConfig: null,
     dispatchTickTimer: null,
+    scrollMemory: {},
 
     boot: async function () {
       HW.DOM.setupMobileGuard();
@@ -30,9 +31,10 @@
         }).catch(() => {});
       }
 
+      // 拠点画面の探索残り時間だけピンポイント更新（全DOM再描画によるタップ阻害・スクロール戻りを根絶）
       this.dispatchTickTimer = setInterval(() => {
-        if (this.screen === 'hub' && !HW.Battle.active) {
-          this.render();
+        if (this.screen === 'hub' && !HW.Battle.active && HW.RenderHub && HW.RenderHub.tickTimers) {
+          HW.RenderHub.tickTimers();
         }
       }, 1000);
 
@@ -120,11 +122,19 @@
       }
     },
 
-    render: function () {
+    render: function (opts) {
       const frame = document.getElementById('app-frame');
       const topEl = document.getElementById('top-stage');
       const bottomEl = document.getElementById('bottom-dock');
       if (!frame || !topEl || !bottomEl) return;
+
+      // 再描画前に現在のスクロール位置をキーごとに記憶（リストタップ時に先頭へ戻らないようにする）
+      const prevScrolls = {};
+      bottomEl.querySelectorAll('.scroll-list').forEach((el, idx) => {
+        const key = el.getAttribute('data-scroll-key') || (this.screen + '_' + idx);
+        prevScrolls[key] = el.scrollTop;
+        this.scrollMemory[key] = el.scrollTop;
+      });
 
       frame.classList.toggle('mode-battle', this.screen === 'battle');
       this.renderNav();
@@ -136,6 +146,19 @@
       else if (this.screen === 'equip') HW.RenderEquip.render(topEl, bottomEl);
       else if (this.screen === 'hub') HW.RenderHub.render(topEl, bottomEl);
       else if (this.screen === 'codex') HW.RenderCodex.render(topEl, bottomEl);
+
+      // 同一リストキーのスクロール位置を復元（明示リセット時を除く）
+      if (!(opts && opts.resetScroll)) {
+        bottomEl.querySelectorAll('.scroll-list').forEach((el, idx) => {
+          const key = el.getAttribute('data-scroll-key') || (this.screen + '_' + idx);
+          const saved = Object.prototype.hasOwnProperty.call(prevScrolls, key)
+            ? prevScrolls[key]
+            : this.scrollMemory[key];
+          if (typeof saved === 'number' && saved > 0) {
+            el.scrollTop = saved;
+          }
+        });
+      }
     }
   };
 

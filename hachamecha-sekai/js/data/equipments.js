@@ -15,7 +15,7 @@
       color: '#ff5744',
       bonus2: { desc: '攻撃力+14%', mod: { atkPct: 0.14 } },
       bonus4: { desc: '与ダメージ+18%、会心ダメ+18%', mod: { dmgUp: 0.18, critDmg: 0.18 } },
-      lore: '異界の火山鍛冶炉と宇宙ロケットの推進材を混ぜて鍛え上げた熱血装備群。着るだけで気温が3度上がる。'
+      lore: '異界の火山鍛冶炉で灼熱の業火を封じ込めて鍛え上げた武具群。纏うだけで周囲の気温が3度上がる。'
     },
     {
       id: 'set_aegis',
@@ -24,7 +24,7 @@
       color: '#38bdf8',
       bonus2: { desc: '最大HP+15%、防御力+12%', mod: { hpPct: 0.15, defPct: 0.12 } },
       bonus4: { desc: '被ダメ-14%、WAVE開始時HP16%盾', mod: { dmgRed: 0.14, waveShieldPct: 0.16 } },
-      lore: '天空城の城壁と最新型装甲車のプレートを溶接した超頑丈装備。見た目より軽く肩が凝らないと評判。'
+      lore: '天空城の城壁と星鉄の装甲板を鍛造した超頑丈な武具群。重厚な見た目より軽く肩が凝らないと評判。'
     },
     {
       id: 'set_gale',
@@ -33,7 +33,7 @@
       color: '#35e58f',
       bonus2: { desc: '速度+15', mod: { spdFlat: 15 } },
       bonus4: { desc: '速度+15、開戦時行動ゲージ+25%', mod: { spdFlat: 15, startGauge: 0.25 } },
-      lore: '妖精の羽根とリニアモーターのコイルを編み込んだ超加速装備。立ち止まると少しそわそわする。'
+      lore: '妖精の風羽と雷光の魔導糸を編み込んだ超加速装備。身につけると立ち止まるのが少しそわそわする。'
     },
     {
       id: 'set_photon',
@@ -42,7 +42,7 @@
       color: '#ffd54a',
       bonus2: { desc: '会心率+15%', mod: { crit: 0.15 } },
       bonus4: { desc: '会心ダメージ+42%、攻撃力+10%', mod: { critDmg: 0.42, atkPct: 0.10 } },
-      lore: '光学レーザーの照準器に神話の黄金レンズを載せた会心特化装備。当たればだいたい光り輝く。'
+      lore: '星光を収束させる神話の黄金結晶を仕込んだ会心特化武具。急所を穿つ瞬間、眩い閃光が迸る。'
     },
     {
       id: 'set_blossom',
@@ -51,7 +51,7 @@
       color: '#4ade80',
       bonus2: { desc: '与回復量+18%、最大HP+10%', mod: { healOutPct: 0.18, hpPct: 0.10 } },
       bonus4: { desc: '与回復量+24%、毎行動HP7%再生', mod: { healOutPct: 0.24, turnRegenPct: 0.07 } },
-      lore: '世界樹の若葉と高級ハーブティーの抽出液で仕立てた癒やし装備。戦場でもいい香りが漂う。'
+      lore: '世界樹の若葉と精霊泉の雫で仕立てた癒やしの礼装。戦場でも爽やかな森の香りが漂う。'
     },
     {
       id: 'set_abyss',
@@ -60,7 +60,7 @@
       color: '#b668ff',
       bonus2: { desc: '効果命中+25%、攻撃力+10%', mod: { effHit: 0.25, atkPct: 0.10 } },
       bonus4: { desc: '状態異常中の敵へ与ダメ+30%', mod: { ailmentBonus: 0.30 } },
-      lore: '魔王城の地下蔵で300年熟成された呪具にサイバー暗号を刻んだ装備。扱う者の笑い声が低くなる。'
+      lore: '魔王城の地下蔵で三百年熟成された呪具に禁呪の紋様を刻んだ武具。扱う者の笑い声が低くなる。'
     },
     {
       id: 'set_vamp',
@@ -69,7 +69,7 @@
       color: '#ff3e9d',
       bonus2: { desc: '吸血率+14%、最大HP+10%', mod: { lifesteal: 0.14, hpPct: 0.10 } },
       bonus4: { desc: '吸血率+16%、攻撃力+18%', mod: { lifesteal: 0.16, atkPct: 0.18 } },
-      lore: '吸血鬼の晩餐服と自動輸血ナノマシンが合体した異色装備。殴れば殴るほど顔色が良くなる。'
+      lore: '紅月の貴族が愛した晩餐礼装に生命還元の秘術を宿した異色装備。戦うほど顔色が良くなる。'
     },
     {
       id: 'set_chrono',
@@ -78,7 +78,7 @@
       color: '#2de2e6',
       bonus2: { desc: '速度+10、異常耐性+18%', mod: { spdFlat: 10, res: 0.18 } },
       bonus4: { desc: '行動時35%で技CT1短縮、与ダメ+12%', mod: { extraCtChance: 0.35, dmgUp: 0.12 } },
-      lore: '壊れた懐中時計と量子クロックを無理やり噛み合わせた装備。たまに昨日食べたメニューを思い出す。'
+      lore: '古代の星刻時計と異界の魔導歯車を組み上げた時間操作武具。たまに昨日食べた料理を思い出す。'
     },
     {
       id: 'set_gladiator',
@@ -87,7 +87,7 @@
       color: '#ff9248',
       bonus2: { desc: '攻撃力+18%、防御貫通+12%', mod: { atkPct: 0.18, defPen: 0.12 } },
       bonus4: { desc: '追撃率+22%、会心率+14%、与ダメ+16%', mod: { extraHitChance: 0.22, crit: 0.14, dmgUp: 0.16 } },
-      lore: '異界闘技場の頂点に立つ者だけに許される覇者の礼装。観客の歓声エネルギーをそのまま火力へ変換する。'
+      lore: '異界闘技場の頂点に立つ者だけに許される覇者の礼装。観客の歓声をそのまま闘気へ変換する。'
     },
     {
       id: 'set_paradox',
@@ -101,16 +101,16 @@
   ];
 
   const SLOT_NAMES = {
-    set_crimson: { weapon: '紅蓮大剣', armor: '轟炎外殻', accessory: '灼熱リング', core: '炎獄リアクタ' },
-    set_aegis: { weapon: '蒼穹戦盾', armor: '要塞重鎧', accessory: '守護腕輪', core: '蒼天ジェネ' },
-    set_gale: { weapon: '疾風双刃', armor: '電光スーツ', accessory: '羽根ブーツ', core: 'ターボ核' },
-    set_photon: { weapon: '閃光ライフル', armor: '光学マント', accessory: '必殺レンズ', core: '光子プリズム' },
-    set_blossom: { weapon: '聖樹の杖', armor: '慈愛ローブ', accessory: '花の首飾り', core: '生命の種核' },
-    set_abyss: { weapon: '深淵の大鎌', armor: '呪紋コート', accessory: '悪夢ブローチ', core: '虚無セル' },
-    set_vamp: { weapon: '鮮血レイピア', armor: '紅月ドレス', accessory: '輪廻ピアス', core: '紅血ポンプ' },
-    set_chrono: { weapon: '時空の針剣', armor: '歯車ジャケット', accessory: '懐中クロノ', core: '量子振り子' },
-    set_gladiator: { weapon: '覇王の戦斧', armor: '闘神プレート', accessory: '王者の冠輪', core: '闘気エンジン' },
-    set_paradox: { weapon: '万象ブレード', armor: '混沌オーバー', accessory: '歪みの指輪', core: '世界樹コア' }
+    set_crimson: { weapon: '紅蓮の魔剣', armor: '轟炎の重鎧', accessory: '灼熱の指輪', core: '炎獄の星核' },
+    set_aegis: { weapon: '蒼穹の戦盾', armor: '要塞の聖鎧', accessory: '守護の腕輪', core: '蒼天の宝珠' },
+    set_gale: { weapon: '疾風の双刃', armor: '電光の軽鎧', accessory: '天翼の靴', core: '嵐光の結晶' },
+    set_photon: { weapon: '閃光の光槍', armor: '極光の外套', accessory: '必殺の瞳石', core: '星光の輝核' },
+    set_blossom: { weapon: '聖樹の神杖', armor: '慈愛の法衣', accessory: '聖花の首飾', core: '生命の輝種' },
+    set_abyss: { weapon: '深淵の大鎌', armor: '呪紋の黒衣', accessory: '悪夢の胸飾', core: '虚無の魔核' },
+    set_vamp: { weapon: '鮮血の細剣', armor: '紅月の礼装', accessory: '輪廻の耳飾', core: '真紅の聖杯' },
+    set_chrono: { weapon: '時空の針剣', armor: '刻限の戦衣', accessory: '星刻の懐中', core: '永劫の振子' },
+    set_gladiator: { weapon: '覇王の戦斧', armor: '闘神の覇鎧', accessory: '王者の宝冠', core: '闘気の神核' },
+    set_paradox: { weapon: '万象の聖剣', armor: '混沌の冥鎧', accessory: '星界の指輪', core: '世界樹の核' }
   };
 
   const SLOT_BASE = {

@@ -70,6 +70,48 @@
 
   HW.RANK_NAMES = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 
+  // アビリティ5段階の解放条件（覚醒★とRANKの両方必須）
+  HW.ABILITY_TIER_REQ = [
+    { tier: 1, star: 1, rank: 1, label: '初期解放' },
+    { tier: 2, star: 2, rank: 3, label: '★2 & R-III' },
+    { tier: 3, star: 3, rank: 5, label: '★3 & R-V' },
+    { tier: 4, star: 4, rank: 7, label: '★4 & R-VII' },
+    { tier: 5, star: 5, rank: 9, label: '★5 & R-IX' }
+  ];
+
+  // 戦技開眼（最大40・戦闘中ランダム開花）のロール別節目ボーナス
+  HW.KAIKAN_MAX = 40;
+  HW.KAIKAN_MILESTONES = {
+    tank: [
+      { need: 10, title: '一門', desc: '被ダメ軽減+4%', mod: { dmgRed: 0.04 } },
+      { need: 20, title: '二門', desc: '異常耐性+10%', mod: { res: 0.10 } },
+      { need: 30, title: '三門', desc: '最大HP+10%', mod: { hpPct: 0.10 } },
+      { need: 40, title: '極門', desc: '味方被ダメ軽減+5%', mod: { teamDmgRed: 0.05 } }
+    ],
+    dealer: [
+      { need: 10, title: '一門', desc: '会心率+5%', mod: { crit: 0.05 } },
+      { need: 20, title: '二門', desc: '会心ダメ+14%', mod: { critDmg: 0.14 } },
+      { need: 30, title: '三門', desc: '防御貫通+8%', mod: { defPen: 0.08 } },
+      { need: 40, title: '極門', desc: '与ダメージ+12%', mod: { dmgUp: 0.12 } }
+    ],
+    supporter: [
+      { need: 10, title: '一門', desc: '効果命中+10%', mod: { effHit: 0.10 } },
+      { need: 20, title: '二門', desc: '速度+6', mod: { spdFlat: 6 } },
+      { need: 30, title: '三門', desc: '味方攻撃+5%', mod: { teamAtkPct: 0.05 } },
+      { need: 40, title: '極門', desc: '味方与ダメ+8%', mod: { teamDmgUp: 0.08 } }
+    ],
+    healer: [
+      { need: 10, title: '一門', desc: '与回復量+8%', mod: { healOutPct: 0.08 } },
+      { need: 20, title: '二門', desc: '異常耐性+10%', mod: { res: 0.10 } },
+      { need: 30, title: '三門', desc: '毎行動HP4%再生', mod: { turnRegenPct: 0.04 } },
+      { need: 40, title: '極門', desc: '与回復+14%・開戦加速', mod: { healOutPct: 0.14, startGauge: 0.15 } }
+    ]
+  };
+
+  HW.getKaikanMilestones = function (role) {
+    return HW.KAIKAN_MILESTONES[role] || HW.KAIKAN_MILESTONES.dealer;
+  };
+
   HW.STAR_SHARD_COST = {
     unlock: 30,
     2: 40,
@@ -143,6 +185,14 @@
     const v = Math.floor(Number(n) || 0);
     if (v >= 100000000) return (v / 100000000).toFixed(2).replace(/\.00$/, '') + '億';
     if (v >= 100000) return (v / 10000).toFixed(1).replace(/\.0$/, '') + '万';
+    return v.toLocaleString('ja-JP');
+  };
+
+  // バトルカード・通貨バー用の超コンパクト数値表記（桁膨張でも見切れゼロ）
+  HW.formatCompact = function (n) {
+    const v = Math.floor(Number(n) || 0);
+    if (v >= 100000000) return (v / 100000000).toFixed(1).replace(/\.0$/, '') + '億';
+    if (v >= 10000) return (v / 10000).toFixed(1).replace(/\.0$/, '') + '万';
     return v.toLocaleString('ja-JP');
   };
 

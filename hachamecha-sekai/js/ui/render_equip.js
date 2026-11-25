@@ -5,8 +5,91 @@
 
   const eqUi = {
     slotFilter: 'all',
-    selectedId: null
+    selectedId: null,
+    bulkThreshold: 75,
+    bulkOnlyFilter: false
   };
+
+  function openBulkSellSheet() {
+    const renderSheet = () => {
+      const scope = eqUi.bulkOnlyFilter ? eqUi.slotFilter : 'all';
+      const cands = HW.State.getBulkSellCandidates(eqUi.bulkThreshold, scope);
+      const totalGold = cands.reduce((s, it) => s + HW.getEquipSellValue(it), 0);
+      const presets = [
+        { val: 55, label: '55%未満' },
+        { val: 75, label: '75%未満' },
+        { val: 90, label: '90%未満' },
+        { val: 95, label: '95%未満' },
+        { val: 99, label: '99%未満' },
+        { val: 100, label: '極100%以外' }
+      ];
+      const slotName = eqUi.slotFilter === 'all'
+        ? '全部位'
+        : (HW.EQUIP_SLOTS.find((s) => s.id === eqUi.slotFilter) || { name: '全部位' }).name;
+
+      const sampleHtml = cands.length
+        ? '<div class="result-box" style="font-size:10px;color:var(--txt-sub)">対象例: ' +
+          cands.slice(0, 6).map((it) => HW.esc(HW.getEquipTemplate(it.tplId).name) + '(' + it.quality + '%)').join(' / ') +
+          (cands.length > 6 ? ' ほか' + (cands.length - 6) + '件' : '') +
+          '</div>'
+        : '';
+
+      const body =
+        '<div style="font-size:10.5px;color:var(--txt-sub)">装備中・保護中・品質100%「極」は自動で除外されます。</div>' +
+        '<div class="bulk-preset-grid">' +
+        presets.map((p) =>
+          '<button type="button" class="bulk-preset-btn' + (eqUi.bulkThreshold === p.val ? ' active' : '') + '" data-bulk-q="' + p.val + '">' + p.label + '</button>'
+        ).join('') +
+        '</div>' +
+        (eqUi.slotFilter !== 'all'
+          ? '<div class="subtabs">' +
+            '<button type="button" class="subtab' + (!eqUi.bulkOnlyFilter ? ' active' : '') + '" data-bulk-scope="all">全部位を対象</button>' +
+            '<button type="button" class="subtab' + (eqUi.bulkOnlyFilter ? ' active' : '') + '" data-bulk-scope="cur">' + HW.esc(slotName) + 'のみ</button>' +
+            '</div>'
+          : '') +
+        '<div class="result-grid">' +
+        '<div class="result-box"><div class="stat-k">売却対象</div><div class="stat-v num" style="color:var(--acc-cyan)">' + cands.length + ' 件</div></div>' +
+        '<div class="result-box"><div class="stat-k">合計獲得ゴールド</div><div class="stat-v num" style="color:var(--acc-gold)">+' + HW.formatNum(totalGold) + ' G</div></div>' +
+        '</div>' +
+        sampleHtml;
+
+      const actions =
+        '<button type="button" class="btn" data-sheet-close="1">キャンセル</button>' +
+        '<button type="button" class="btn btn-danger" id="bulk-sell-exec"' + (!cands.length ? ' disabled' : '') + '>' +
+        (cands.length ? cands.length + '件を一括売却' : '対象なし') +
+        '</button>';
+
+      HW.DOM.openSheet('装備の一括売却', body, actions, (panel) => {
+        panel.querySelectorAll('[data-bulk-q]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            eqUi.bulkThreshold = Number(btn.getAttribute('data-bulk-q'));
+            HW.Audio.tap();
+            renderSheet();
+          });
+        });
+        panel.querySelectorAll('[data-bulk-scope]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            eqUi.bulkOnlyFilter = btn.getAttribute('data-bulk-scope') === 'cur';
+            HW.Audio.tap();
+            renderSheet();
+          });
+        });
+        const execBtn = panel.querySelector('#bulk-sell-exec');
+        if (execBtn) {
+          execBtn.addEventListener('click', () => {
+            const res = HW.State.bulkSellEquips(eqUi.bulkThreshold, scope);
+            if (res.ok) {
+              HW.Audio.rankUp();
+              HW.DOM.closeSheet();
+              HW.DOM.toast(res.count + '件を一括売却 (+' + HW.formatNum(res.gold) + 'G)', 'gold');
+              HW.App.render();
+            }
+          });
+        }
+      });
+    };
+    renderSheet();
+  }
 
   HW.RenderEquip = {
     render: function (topEl, bottomEl) {
@@ -99,10 +182,11 @@
         '<div class="subtabs">' +
         filters.map((f) => '<button type="button" class="subtab' + (eqUi.slotFilter === f.id ? ' active' : '') + '" data-eq-f="' + f.id + '">' + f.label + '</button>').join('') +
         '</div>' +
-        '<div class="scroll-list">' + gridHtml + '</div>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr 1.25fr;gap:5px;flex-shrink:0">' +
-        '<button type="button" id="eq-lock-btn" class="btn btn-sm"' + (!selItem ? ' disabled' : '') + '>' + HW.icon('lock', 11) + ' ' + (selItem && selItem.locked ? '保護解除' : '保護') + '</button>' +
+        '<div class="scroll-list" data-scroll-key="equip_' + eqUi.slotFilter + '">' + gridHtml + '</div>' +
+        '<div class="equip-action-bar">' +
+        '<button type="button" id="eq-lock-btn" class="btn btn-sm"' + (!selItem ? ' disabled' : '') + '>' + HW.icon('lock', 11) + ' ' + (selItem && selItem.locked ? '解除' : '保護') + '</button>' +
         '<button type="button" id="eq-sell-btn" class="btn btn-sm btn-danger"' + (!canSellSel ? ' disabled' : '') + '>' + sellLabel + '</button>' +
+        '<button type="button" id="eq-bulk-btn" class="btn btn-sm btn-primary">一括売却</button>' +
         '<button type="button" id="eq-autosell-btn" class="btn btn-sm btn-gold">' + autoLabel + '</button>' +
         '</div>';
 
@@ -110,7 +194,7 @@
         btn.addEventListener('click', () => {
           eqUi.slotFilter = btn.getAttribute('data-eq-f');
           HW.Audio.tap();
-          HW.App.render();
+          HW.App.render({ resetScroll: true });
         });
       });
 
@@ -140,6 +224,14 @@
             eqUi.selectedId = null;
             HW.App.render();
           }
+        });
+      }
+
+      const bulkBtn = document.getElementById('eq-bulk-btn');
+      if (bulkBtn) {
+        bulkBtn.addEventListener('click', () => {
+          HW.Audio.tap();
+          openBulkSellSheet();
         });
       }
 

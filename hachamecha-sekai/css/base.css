@@ -102,10 +102,12 @@ button, input, select {
 
 button {
   cursor: pointer;
+  transition: transform 0.08s ease-out, filter 0.08s ease-out, border-color 0.12s, background 0.12s;
 }
 
 button:active:not(:disabled) {
   transform: scale(0.97);
+  filter: brightness(1.12);
 }
 
 button:disabled {

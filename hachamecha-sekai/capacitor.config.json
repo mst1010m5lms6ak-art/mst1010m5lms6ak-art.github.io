@@ -1,0 +1,11 @@
+{
+  "appId": "com.hachamecha.world",
+  "appName": "はちゃめちゃ世界",
+  "webDir": ".",
+  "bundledWebRuntime": false,
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#090c16",
+    "preferredContentMode": "mobile"
+  }
+}

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="はちゃめちゃ世界">
+  <meta name="theme-color" content="#090c16">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self';">
+  <title>はちゃめちゃ世界</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="./assets/icons/icon-192.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="./assets/icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="./css/base.css">
+  <link rel="stylesheet" href="./css/layout.css">
+  <link rel="stylesheet" href="./css/battle.css">
+  <link rel="stylesheet" href="./css/screens.css">
+</head>
+<body>
+  <div id="app-root" class="app-root">
+    <div id="safe-top" class="safe-top" aria-hidden="true"></div>
+
+    <div id="app-frame" class="app-frame">
+      <!-- 上半分：閲覧専用ビューポート（操作ボタンなし） -->
+      <section id="top-stage" class="top-stage" aria-label="表示エリア"></section>
+
+      <!-- 下半分：親指操作ドック -->
+      <section id="bottom-dock" class="bottom-dock" aria-label="操作エリア"></section>
+
+      <!-- メインボトムナビゲーション（最下部親指ゾーン） -->
+      <nav id="bottom-nav" class="bottom-nav" aria-label="メインメニュー"></nav>
+    </div>
+
+    <div id="safe-bottom" class="safe-bottom" aria-hidden="true"></div>
+
+    <!-- ボトムシートモーダル（操作・閉じるボタンは常に下半分） -->
+    <div id="sheet-overlay" class="sheet-overlay hidden" role="dialog" aria-modal="true">
+      <div id="sheet-panel" class="sheet-panel"></div>
+    </div>
+
+    <!-- 軽量トースト通知（上部非干渉） -->
+    <div id="toast-layer" class="toast-layer" aria-live="polite"></div>
+  </div>
+
+  <!-- Core -->
+  <script defer src="./js/core/namespace.js"></script>
+  <script defer src="./js/core/security.js"></script>
+  <script defer src="./js/core/storage.js"></script>
+  <script defer src="./js/core/audio.js"></script>
+  <script defer src="./js/core/icons.js"></script>
+
+  <!-- Data -->
+  <script defer src="./js/data/abilities.js"></script>
+  <script defer src="./js/data/equipments.js"></script>
+  <script defer src="./js/data/formations.js"></script>
+  <script defer src="./js/data/characters.js"></script>
+  <script defer src="./js/data/enemies.js"></script>
+  <script defer src="./js/data/contents.js"></script>
+
+  <!-- State & Engine -->
+  <script defer src="./js/core/state.js"></script>
+  <script defer src="./js/engine/stats.js"></script>
+  <script defer src="./js/engine/dispatch.js"></script>
+  <script defer src="./js/engine/vfx.js"></script>
+  <script defer src="./js/engine/battle.js"></script>
+
+  <!-- UI -->
+  <script defer src="./js/ui/dom.js"></script>
+  <script defer src="./js/ui/render_battle.js"></script>
+  <script defer src="./js/ui/render_adventure.js"></script>
+  <script defer src="./js/ui/render_party.js"></script>
+  <script defer src="./js/ui/render_roster.js"></script>
+  <script defer src="./js/ui/render_equip.js"></script>
+  <script defer src="./js/ui/render_hub.js"></script>
+  <script defer src="./js/ui/render_codex.js"></script>
+  <script defer src="./js/ui/app.js"></script>
+</body>
+</html>

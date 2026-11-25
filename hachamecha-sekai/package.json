@@ -1,0 +1,10 @@
+{
+  "name": "hachamecha-sekai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "はちゃめちゃ世界 — ビルド不要PWA・Capacitor対応ソロ周回RPG",
+  "scripts": {
+    "cap:prepare": "node scripts/sync-capacitor.mjs",
+    "cap:sync": "node scripts/sync-capacitor.mjs && npx cap sync ios"
+  }
+}

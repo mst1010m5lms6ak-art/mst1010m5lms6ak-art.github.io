@@ -4,7 +4,7 @@
   const IkaiApp = root.IkaiApp = root.IkaiApp || {};
 
   const GAUGE_MAX = 100;
-  const GAUGE_RATE = 0.45;
+  const GAUGE_RATE = 0.58;
   const SUB_TICK_MS = 100;
   const MAX_ACTIONS_PER_STEP = 20;
   const MAX_TOTAL_TURNS = 500;
@@ -16,6 +16,7 @@
   const VALID_PRIORITIES = new Set(['unique_first', 'collect_first', 'auto']);
 
   let activeBattle = null;
+  let battleSeq = 0;
 
   function hasOwn(obj, key) {
     return Boolean(obj) && Object.prototype.hasOwnProperty.call(obj, key);
@@ -1279,11 +1280,24 @@
     const isHealSkill = function (sk) {
       return Array.isArray(sk.effects) && sk.effects.some(function (e) { return e.type === 'heal'; });
     };
+    const isCleanseSkill = function (sk) {
+      return Array.isArray(sk.effects) && sk.effects.some(function (e) { return e.type === 'cleanse' || e.type === 'cleanseAll'; });
+    };
+    const isNonOffensiveSupportSkill = function (sk) {
+      return (sk.side === 'ally' || sk.side === 'self') &&
+        (!Array.isArray(sk.effects) || !sk.effects.some(function (e) { return e.type === 'damage'; }));
+    };
 
     if (policy === 'conserve') {
-      if (ally.role === 'ヒーラー' && minFriendHpPct < 50) {
+      if (ally.role === 'ヒーラー' && minFriendHpPct < 60) {
         const healSk = allReady.find(isHealSkill);
         if (healSk) return healSk;
+      }
+      if (minFriendHpPct < 65 || friends.some(function (f) { return f.shield <= 0 && (f.debuffs.length >= 2 || isIncapacitated(f)); })) {
+        const supportSk = allReady.find(isNonOffensiveSupportSkill);
+        if (supportSk && (minFriendHpPct < 60 || isCleanseSkill(supportSk) || (Array.isArray(supportSk.effects) && supportSk.effects.some(function (e) { return e.type === 'shield' || e.type === 'selfShield' || e.type === 'buff'; })))) {
+          return supportSk;
+        }
       }
       return null;
     }
@@ -1297,14 +1311,21 @@
 
     if (policy === 'balanced') {
       if (ally.role === 'ヒーラー') {
+        const preferredOrder = priority === 'collect_first'
+          ? collectReady.concat(uniqueReady ? [uniqueReady] : [])
+          : allReady;
+        const needsCleanse = friends.some(function (f) {
+          return f.debuffs.length >= 2 || isIncapacitated(f);
+        });
+        if (needsCleanse) {
+          const cleanseSk = preferredOrder.find(isCleanseSkill);
+          if (cleanseSk) return cleanseSk;
+        }
         if (minFriendHpPct >= 88) {
           const attackSk = allReady.find(function (sk) { return sk.side === 'enemy'; });
           if (attackSk) return attackSk;
           return null;
         }
-        const preferredOrder = priority === 'collect_first'
-          ? collectReady.concat(uniqueReady ? [uniqueReady] : [])
-          : allReady;
         const healSk = preferredOrder.find(isHealSkill);
         if (healSk) return healSk;
       }
@@ -1682,8 +1703,9 @@
     const defaultSpeed = state && state.settings ? state.settings.battleSpeed : 1;
     const defaultAuto = state && state.settings ? state.settings.autoRepeatCount : 0;
 
+    battleSeq += 1;
     const battle = {
-      id: 'bat_' + Date.now(),
+      id: 'bat_' + battleSeq + '_' + Date.now(),
       mode: cfg.mode || 'stage',
       stageId: waveSetup.stageId || cfg.stageId || '1-1',
       stageLabel: waveSetup.label,

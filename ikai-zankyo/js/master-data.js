@@ -357,7 +357,7 @@
           side: 'enemy',
           cooldown: 4,
           powerRatio: 1.35,
-          telegraph: makeTelegraph('零時の鐘鳴り', '全体', 2, '全体凍結攻撃の予兆：零時の鐘鳴り'),
+          telegraph: makeTelegraph('零時の鐘鳴り', '全体', 2, '全体気絶攻撃の予兆：零時の鐘鳴り'),
           effects: [
             { type: 'damage', ratio: 1.35 },
             { type: 'debuff', stat: 'stun', value: 1, duration: 1, chance: 0.35 }
@@ -1121,6 +1121,7 @@
           echoStones: (isBossStage ? 150 : 90) + (rewardMult - 1) * 30,
           starCoins: (isBossStage ? 1000 : 600) * rewardMult,
           emblemShards: (isBossStage ? 15 : 8) + (rewardMult - 1) * 4,
+          masteryBooks: isBossStage ? 2 : 1,
           skillId: sInfo.skillId,
           equipDropGuaranteed: isBossStage || s === 1
         },

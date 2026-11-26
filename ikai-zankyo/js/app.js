@@ -13,12 +13,16 @@
     codexQuery: '',
     codexSelectedId: 'char_todo_seiichi',
     rosterFilter: 'all',
-    selectedCharId: 'char_kiryu_takashi',
+    roleFilter: 'all',
+    equipSlotFilter: 'all',
+    equipSortMode: 'quality',
+    selectedCharId: 'char_todo_seiichi',
     selectedPartySlot: 0,
     selectedResonanceSlot: 0,
     selectedAreaId: 'area_1',
     selectedStageId: '1-1',
     selectedAbyssFloor: 1,
+    abyssAutoAdvance: false,
     selectedRaidId: 'raid_zerogo',
     selectedRaidDiff: 'easy',
     selectedTrialId: 'trial_1',
@@ -32,13 +36,18 @@
     lastSummonResult: null,
     hubGlobalPolicy: 'balanced',
     showDpsDetail: false,
+    battleDetailMode: 'dps', // 'dps' | 'logs' | 'buffs'
+    showResultLogs: false,
     autoRepeatDone: 0,
     autoRepeatRemaining: 0,
     autoRepeatPending: false,
+    autoRepeatSummary: null,
     activeBattleParams: { mode: 'stage', stageId: '1-1' },
     lastRewards: null,
     nextStageId: null,
     backupText: '',
+    backupBusy: false,
+    confirmResetArmed: false,
     notice: null,
     tamperWarning: null,
     booted: false
@@ -55,6 +64,58 @@
 
   function hasOwn(obj, key) {
     return Boolean(obj) && Object.prototype.hasOwnProperty.call(obj, key);
+  }
+
+  function syncExpCandidates(state) {
+    if (!state || !state.roster) {
+      uiState.expCandidateIds = [];
+      return;
+    }
+    const partySet = new Set((state.party || []).filter(Boolean));
+    const resSet = new Set((state.resonanceSlots || []).filter(Boolean));
+    const activeExpSet = new Set();
+    if (Array.isArray(state.expeditions)) {
+      for (let i = 0; i < state.expeditions.length; i += 1) {
+        const exp = state.expeditions[i];
+        if (exp && !exp.claimed && Array.isArray(exp.charIds)) {
+          for (let c = 0; c < exp.charIds.length; c += 1) {
+            activeExpSet.add(exp.charIds[c]);
+          }
+        }
+      }
+    }
+    const zone = IkaiApp.MasterData.EXPEDITION_ZONES.find(function (z) {
+      return z.id === uiState.selectedZoneId;
+    }) || IkaiApp.MasterData.EXPEDITION_ZONES[0];
+    const maxChars = zone ? zone.maxChars : 4;
+    const seen = new Set();
+    const filtered = [];
+    for (let i = 0; i < uiState.expCandidateIds.length; i += 1) {
+      const cid = uiState.expCandidateIds[i];
+      if (cid && hasOwn(state.roster, cid) && !partySet.has(cid) && !resSet.has(cid) && !activeExpSet.has(cid) && !seen.has(cid)) {
+        seen.add(cid);
+        filtered.push(cid);
+        if (filtered.length >= maxChars) {
+          break;
+        }
+      }
+    }
+    uiState.expCandidateIds = filtered;
+  }
+
+  function pruneEquipSelection(state) {
+    const uidSet = new Set((state && Array.isArray(state.equips))
+      ? state.equips.map(function (e) { return e.uid; })
+      : []);
+    if (uiState.selectedEquipUid && !uidSet.has(uiState.selectedEquipUid)) {
+      uiState.selectedEquipUid = null;
+    }
+    if (uiState.synthBaseUid && !uidSet.has(uiState.synthBaseUid)) {
+      uiState.synthBaseUid = null;
+    }
+    if (uiState.synthMatUid && !uidSet.has(uiState.synthMatUid)) {
+      uiState.synthMatUid = null;
+    }
   }
 
   function findAreaById(areaId) {
@@ -162,6 +223,30 @@
     return res.summary || null;
   }
 
+  function accumulateAutoRepeatSummary(rw, isVictory) {
+    if (!uiState.autoRepeatSummary) {
+      return;
+    }
+    uiState.autoRepeatSummary.runs += 1;
+    if (isVictory) {
+      uiState.autoRepeatSummary.victories += 1;
+    }
+    if (!rw || rw.retreated) {
+      return;
+    }
+    uiState.autoRepeatSummary.echoStones += rw.echoStones || 0;
+    uiState.autoRepeatSummary.starCoins += rw.starCoins || 0;
+    uiState.autoRepeatSummary.emblemShards += rw.emblemShards || 0;
+    uiState.autoRepeatSummary.masteryBooks += rw.masteryBooks || 0;
+    uiState.autoRepeatSummary.exchangeCrystals += rw.exchangeCrystals || 0;
+    uiState.autoRepeatSummary.universalShards += rw.universalShards || 0;
+    uiState.autoRepeatSummary.qualityCatalysts += rw.qualityCatalysts || 0;
+    uiState.autoRepeatSummary.autoSoldCoins += rw.autoSoldCoins || 0;
+    if (rw.equipText) {
+      uiState.autoRepeatSummary.equipDrops += 1;
+    }
+  }
+
   function finishBattle(snapshot) {
     stopBattleLoop();
     latestSnapshot = snapshot;
@@ -178,6 +263,25 @@
 
     const canRepeatMode = snapshot.mode === 'stage' || snapshot.mode === 'abyss' || snapshot.mode === 'raid';
 
+    if (canRepeatMode && (snapshot.autoRepeat > 0 || uiState.autoRepeatSummary)) {
+      if (!uiState.autoRepeatSummary) {
+        uiState.autoRepeatSummary = {
+          runs: 0,
+          victories: 0,
+          echoStones: 0,
+          starCoins: 0,
+          emblemShards: 0,
+          masteryBooks: 0,
+          exchangeCrystals: 0,
+          universalShards: 0,
+          qualityCatalysts: 0,
+          equipDrops: 0,
+          autoSoldCoins: 0
+        };
+      }
+      accumulateAutoRepeatSummary(uiState.lastRewards, snapshot.status === 'victory');
+    }
+
     if (snapshot.status === 'victory' && canRepeatMode && snapshot.autoRepeat > 0 && uiState.autoRepeatRemaining > 0) {
       uiState.autoRepeatRemaining -= 1;
     } else if (snapshot.status !== 'victory') {
@@ -190,6 +294,10 @@
       cancelAutoRepeatTimer();
       uiState.autoRepeatPending = true;
       const paramsCopy = Object.assign({}, uiState.activeBattleParams);
+      if (paramsCopy.mode === 'abyss' && uiState.abyssAutoAdvance) {
+        paramsCopy.floor = Math.max(1, (snapshot.floor || 1) + 1);
+        uiState.selectedAbyssFloor = paramsCopy.floor;
+      }
       autoRepeatTimer = root.setTimeout(function () {
         autoRepeatTimer = null;
         if (uiState.mode === 'result' && uiState.autoRepeatPending) {
@@ -267,9 +375,37 @@
 
     if (options.continueRepeat) {
       uiState.autoRepeatDone += 1;
+      if (!uiState.autoRepeatSummary) {
+        uiState.autoRepeatSummary = {
+          runs: 0,
+          victories: 0,
+          echoStones: 0,
+          starCoins: 0,
+          emblemShards: 0,
+          masteryBooks: 0,
+          exchangeCrystals: 0,
+          universalShards: 0,
+          qualityCatalysts: 0,
+          equipDrops: 0,
+          autoSoldCoins: 0
+        };
+      }
     } else {
       uiState.autoRepeatDone = repeatSetting > 0 ? 1 : 0;
       uiState.autoRepeatRemaining = repeatSetting;
+      uiState.autoRepeatSummary = repeatSetting > 0 ? {
+        runs: 0,
+        victories: 0,
+        echoStones: 0,
+        starCoins: 0,
+        emblemShards: 0,
+        masteryBooks: 0,
+        exchangeCrystals: 0,
+        universalShards: 0,
+        qualityCatalysts: 0,
+        equipDrops: 0,
+        autoSoldCoins: 0
+      } : null;
     }
 
     const cfg = {
@@ -355,7 +491,9 @@
       renderAll();
       return false;
     }
-    IkaiApp.StateStore.setState(res.state);
+    const nextState = IkaiApp.StateStore.setState(res.state);
+    syncExpCandidates(nextState);
+    pruneEquipSelection(nextState);
     if (successNoticeText) {
       uiState.notice = { type: 'ok', text: successNoticeText };
     } else {
@@ -376,6 +514,7 @@
 
     if (action === 'switch-tab') {
       uiState.activeTab = actionEl.dataset.tabId || 'roster';
+      uiState.confirmResetArmed = false;
       uiState.notice = null;
       AudioSE.play('ui_tab');
       renderAll();
@@ -384,6 +523,7 @@
 
     if (action === 'switch-areas-pillar') {
       uiState.areasPillar = actionEl.dataset.pillar || 'story';
+      uiState.confirmResetArmed = false;
       uiState.notice = null;
       AudioSE.play('ui_tap');
       renderAll();
@@ -392,6 +532,7 @@
 
     if (action === 'switch-enhance-sub') {
       uiState.enhanceSub = actionEl.dataset.sub || 'chars';
+      uiState.confirmResetArmed = false;
       uiState.notice = null;
       AudioSE.play('ui_tap');
       renderAll();
@@ -400,6 +541,7 @@
 
     if (action === 'switch-summon-sub') {
       uiState.summonSub = actionEl.dataset.sub || 'pull';
+      uiState.confirmResetArmed = false;
       uiState.notice = null;
       AudioSE.play('ui_tap');
       renderAll();
@@ -410,6 +552,7 @@
       const cat = actionEl.dataset.category || 'chars';
       uiState.codexCategory = cat;
       uiState.codexSelectedId = defaultCodexIdForCategory(cat);
+      uiState.confirmResetArmed = false;
       uiState.notice = null;
       AudioSE.play('ui_tap');
       renderAll();
@@ -420,6 +563,36 @@
       uiState.codexSelectedId = actionEl.dataset.id || uiState.codexSelectedId;
       AudioSE.play('ui_tap');
       renderAll();
+      return;
+    }
+
+    if (action === 'set-role-filter') {
+      const nextRole = actionEl.dataset.role || 'all';
+      uiState.roleFilter = nextRole;
+      AudioSE.play('ui_tap');
+      renderAll();
+      return;
+    }
+
+    if (action === 'set-equip-slot-filter') {
+      uiState.equipSlotFilter = actionEl.dataset.slot || 'all';
+      AudioSE.play('ui_tap');
+      renderAll();
+      return;
+    }
+
+    if (action === 'toggle-equip-sort') {
+      uiState.equipSortMode = uiState.equipSortMode === 'quality' ? 'recent' : 'quality';
+      AudioSE.play('ui_tap');
+      renderAll();
+      return;
+    }
+
+    if (action === 'auto-equip-char') {
+      const cid = actionEl.dataset.charId || uiState.selectedCharId;
+      const res = Progression.autoEquipBest(StateStore.getState(), cid);
+      AudioSE.play(res.ok ? 'battle_heal' : 'ui_tap');
+      applyProgressionResult(res, res.ok ? ('最適な装備を ' + res.equippedCount + ' 枠へ装着しました。') : null);
       return;
     }
 
@@ -526,6 +699,7 @@
 
     if (action === 'cycle-roster-skill') {
       const cid = actionEl.dataset.charId;
+      const slotIdx = Number(actionEl.dataset.slotIdx) === 1 ? 1 : 0;
       const state = StateStore.getState();
       if (!hasOwn(state.roster, cid)) return;
       const ownedSkills = Object.keys(state.skillInventory).filter(function (sid) {
@@ -533,10 +707,10 @@
       });
       if (ownedSkills.length === 0) return;
       const skills = state.roster[cid].skills;
-      const choices = [null].concat(ownedSkills.filter(function (s) { return s !== skills[1]; }));
-      const nextVal = cycleArrayValue(choices, skills[0]);
+      const choices = [null].concat(ownedSkills.filter(function (s) { return s !== skills[1 - slotIdx]; }));
+      const nextVal = cycleArrayValue(choices, skills[slotIdx]);
       AudioSE.play('ui_tap');
-      const res = Progression.equipCollectSkill(state, cid, 0, nextVal);
+      const res = Progression.equipCollectSkill(state, cid, slotIdx, nextVal);
       applyProgressionResult(res);
       return;
     }
@@ -544,8 +718,8 @@
     // Growth actions: Awaken, Emblem, Skills, Equips
     if (action === 'awaken-char') {
       const cid = actionEl.dataset.charId || uiState.selectedCharId;
-      AudioSE.play('ui_tap');
       const res = Progression.awakenCharacter(StateStore.getState(), cid);
+      AudioSE.play(res.ok ? 'summon_ssr' : 'ui_tap');
       const msg = res.ok
         ? ('覚醒段階 ' + res.newAwakening + ' / 3 に到達しました！' + (res.overflowCrystals > 0 ? ('（余剰欠片→交換結晶 +' + res.overflowCrystals + '）') : ''))
         : null;
@@ -579,8 +753,8 @@
 
     if (action === 'upgrade-skill-mastery') {
       const sid = actionEl.dataset.skillId || uiState.selectedSkillId;
-      AudioSE.play('ui_tap');
       const res = Progression.upgradeSkillMastery(StateStore.getState(), sid);
+      AudioSE.play(res.ok ? 'battle_heal' : 'ui_tap');
       applyProgressionResult(res, res.ok ? ('収集技の熟練度をランク' + IkaiApp.MasterData.SKILL_MASTERY_RANKS[res.newRank - 1].label + 'へ鍛錬しました。') : null);
       return;
     }
@@ -641,13 +815,13 @@
     }
 
     if (action === 'synthesize-equip') {
-      AudioSE.play('ui_tap');
       const res = Progression.synthesizeEquip(
         StateStore.getState(),
         uiState.synthBaseUid,
         uiState.synthMatUid,
         { useCatalyst: uiState.useCatalyst }
       );
+      AudioSE.play(res.ok && res.succeeded ? 'battle_heal' : 'ui_tap');
       if (res.ok) {
         uiState.synthMatUid = null;
         const qName = IkaiApp.MasterData.QUALITY_RANKS[res.newQualityIdx].name;
@@ -687,6 +861,7 @@
 
     if (action === 'toggle-exp-char') {
       const cid = actionEl.dataset.charId;
+      syncExpCandidates(StateStore.getState());
       const zone = IkaiApp.MasterData.EXPEDITION_ZONES.find(function (z) { return z.id === uiState.selectedZoneId; }) || IkaiApp.MasterData.EXPEDITION_ZONES[0];
       const idx = uiState.expCandidateIds.indexOf(cid);
       if (idx >= 0) {
@@ -700,6 +875,7 @@
     }
 
     if (action === 'start-expedition') {
+      syncExpCandidates(StateStore.getState());
       AudioSE.play('ui_tap');
       const res = Progression.startExpedition(StateStore.getState(), uiState.selectedZoneId, uiState.expCandidateIds);
       if (res.ok) {
@@ -711,8 +887,8 @@
 
     if (action === 'claim-expedition') {
       const slotIdx = Number(actionEl.dataset.slotIdx);
-      AudioSE.play('ui_tap');
       const res = Progression.claimExpedition(StateStore.getState(), slotIdx);
+      AudioSE.play(res.ok ? 'battle_heal' : 'ui_tap');
       if (res.ok) {
         const parts = [];
         if (res.rewards.echoStones) parts.push('残響石+' + res.rewards.echoStones);
@@ -830,6 +1006,13 @@
       return;
     }
 
+    if (action === 'toggle-abyss-auto-advance') {
+      uiState.abyssAutoAdvance = !uiState.abyssAutoAdvance;
+      AudioSE.play('ui_tap');
+      renderAll();
+      return;
+    }
+
     if (action === 'start-abyss') {
       AudioSE.play('ui_tap');
       startBattle('abyss', { floor: Number(actionEl.dataset.floor) || uiState.selectedAbyssFloor });
@@ -867,6 +1050,14 @@
       return;
     }
 
+    if (action === 'auto-fit-trial') {
+      const trialId = actionEl.dataset.trialId || uiState.selectedTrialId;
+      const res = Progression.autoFitTrialParty(StateStore.getState(), trialId);
+      AudioSE.play(res.ok ? 'battle_heal' : 'ui_tap');
+      applyProgressionResult(res, res.ok ? '試練制約に適合する仮編成へ切り替えました。' : null);
+      return;
+    }
+
     if (action === 'start-trial') {
       AudioSE.play('ui_tap');
       startBattle('trial', { trialId: actionEl.dataset.trialId || uiState.selectedTrialId });
@@ -890,13 +1081,31 @@
 
     if (action === 'toggle-battle-repeat') {
       const current = CombatEngine.getSnapshot();
-      const nextCount = current && current.autoRepeat > 0 ? 0 : 10;
+      if (!current || current.mode === 'trial') {
+        return;
+      }
+      const nextCount = current.autoRepeat > 0 ? 0 : 10;
       CombatEngine.setAutoRepeat(nextCount);
       if (nextCount > 0) {
         if (uiState.autoRepeatDone <= 0) {
           uiState.autoRepeatDone = 1;
         }
         uiState.autoRepeatRemaining = Math.max(1, nextCount - uiState.autoRepeatDone + 1);
+        if (!uiState.autoRepeatSummary) {
+          uiState.autoRepeatSummary = {
+            runs: 0,
+            victories: 0,
+            echoStones: 0,
+            starCoins: 0,
+            emblemShards: 0,
+            masteryBooks: 0,
+            exchangeCrystals: 0,
+            universalShards: 0,
+            qualityCatalysts: 0,
+            equipDrops: 0,
+            autoSoldCoins: 0
+          };
+        }
       } else {
         uiState.autoRepeatRemaining = 0;
       }
@@ -917,6 +1126,24 @@
       if (latestSnapshot) {
         UIRenderer.patchBattleFrame(upperEl, lowerEl, latestSnapshot, uiState);
       }
+      return;
+    }
+
+    if (action === 'switch-battle-detail') {
+      const mode = actionEl.dataset.detailMode || 'dps';
+      uiState.battleDetailMode = mode;
+      uiState.showDpsDetail = true;
+      AudioSE.play('ui_tap');
+      if (latestSnapshot) {
+        UIRenderer.patchBattleFrame(upperEl, lowerEl, latestSnapshot, uiState);
+      }
+      return;
+    }
+
+    if (action === 'toggle-result-logs') {
+      uiState.showResultLogs = !uiState.showResultLogs;
+      AudioSE.play('ui_tap');
+      renderAll();
       return;
     }
 
@@ -964,7 +1191,7 @@
       const snap = CombatEngine.getSnapshot();
       const ally = snap && snap.allies.find(function (a) { return a.id === uid; });
       if (ally) {
-        const nextVal = ally.reservedSkillId ? null : skId;
+        const nextVal = ally.reservedSkillId === skId ? null : skId;
         CombatEngine.reserveSkill(uid, nextVal);
         latestSnapshot = CombatEngine.getSnapshot();
         AudioSE.play('ui_tap');
@@ -995,6 +1222,20 @@
     }
 
     // Result actions
+    if (action === 'proceed-auto-repeat') {
+      if (uiState.mode === 'result' && uiState.autoRepeatPending) {
+        const paramsCopy = Object.assign({}, uiState.activeBattleParams);
+        if (paramsCopy.mode === 'abyss' && latestSnapshot && latestSnapshot.status === 'victory' && uiState.abyssAutoAdvance) {
+          paramsCopy.floor = Math.max(1, (latestSnapshot.floor || 1) + 1);
+          uiState.selectedAbyssFloor = paramsCopy.floor;
+        }
+        cancelAutoRepeatTimer();
+        AudioSE.play('ui_tap');
+        startBattle(paramsCopy.mode, paramsCopy, { continueRepeat: true });
+      }
+      return;
+    }
+
     if (action === 'cancel-auto-repeat') {
       cancelAutoRepeatTimer();
       uiState.autoRepeatRemaining = 0;
@@ -1062,47 +1303,120 @@
       return;
     }
 
-    if (action === 'export-backup') {
+    if (action === 'copy-backup') {
       AudioSE.play('ui_tap');
+      const textarea = lowerEl ? lowerEl.querySelector('#backup-json-input') : null;
+      const text = textarea ? textarea.value : uiState.backupText;
+      if (!text || !text.trim()) {
+        uiState.notice = { type: 'error', text: 'コピーするバックアップJSONがありません。先に「バックアップ書出」を実行してください。' };
+        renderAll();
+        return;
+      }
+      let copied = false;
+      if (root.navigator && root.navigator.clipboard && typeof root.navigator.clipboard.writeText === 'function') {
+        try {
+          await root.navigator.clipboard.writeText(text);
+          copied = true;
+        } catch (_) {
+          copied = false;
+        }
+      }
+      if (!copied && textarea && typeof textarea.select === 'function') {
+        try {
+          textarea.focus();
+          textarea.select();
+          if (typeof root.document !== 'undefined' && typeof root.document.execCommand === 'function') {
+            copied = Boolean(root.document.execCommand('copy'));
+          }
+        } catch (_) {
+          copied = false;
+        }
+      }
+      uiState.notice = copied
+        ? { type: 'ok', text: 'バックアップJSONをクリップボードへコピーしました。' }
+        : { type: 'ok', text: 'バックアップJSONを選択状態にしました。コピー操作で保存してください。' };
+      renderAll();
+      return;
+    }
+
+    if (action === 'export-backup') {
+      if (uiState.backupBusy) return;
+      AudioSE.play('ui_tap');
+      uiState.backupBusy = true;
+      uiState.confirmResetArmed = false;
+      renderAll();
       try {
         const exported = await SaveSecurity.exportBackup(StateStore.getState());
         uiState.backupText = exported;
         uiState.notice = { type: 'ok', text: '署名済みバックアップを書き出しました。' };
       } catch (err) {
         uiState.notice = { type: 'error', text: '書き出し失敗：' + (err && err.message ? err.message : '不明なエラー') };
+      } finally {
+        uiState.backupBusy = false;
       }
       renderAll();
       return;
     }
 
     if (action === 'import-backup') {
+      if (uiState.backupBusy) return;
       AudioSE.play('ui_tap');
       const textarea = lowerEl ? lowerEl.querySelector('#backup-json-input') : null;
       const inputJson = textarea ? textarea.value : uiState.backupText;
       uiState.backupText = inputJson;
-      const verified = await SaveSecurity.importBackup(inputJson);
-      if (!verified.ok) {
-        uiState.notice = { type: 'error', text: '復元拒否：' + (verified.reason || '改ざんまたは不正データです') };
-        renderAll();
-        return;
-      }
-      StateStore.setState(verified.state);
-      AudioSE.setVolume(verified.state.settings.soundVolume);
-      AudioSE.setMuted(verified.state.settings.soundMuted);
-      uiState.tamperWarning = null;
-      uiState.notice = { type: 'ok', text: '署名検証に成功し、記録を復元しました。' };
+      uiState.backupBusy = true;
+      uiState.confirmResetArmed = false;
       renderAll();
+      try {
+        const verified = await SaveSecurity.importBackup(inputJson);
+        if (!verified.ok) {
+          uiState.notice = { type: 'error', text: '復元拒否：' + (verified.reason || '改ざんまたは不正データです') };
+          return;
+        }
+        const restored = StateStore.setState(verified.state);
+        syncExpCandidates(restored);
+        pruneEquipSelection(restored);
+        AudioSE.setVolume(verified.state.settings.soundVolume);
+        AudioSE.setMuted(verified.state.settings.soundMuted);
+        uiState.tamperWarning = null;
+        uiState.notice = { type: 'ok', text: '署名検証に成功し、記録を復元しました。' };
+      } finally {
+        uiState.backupBusy = false;
+        renderAll();
+      }
       return;
     }
 
     if (action === 'reset-save') {
       AudioSE.play('ui_tap');
+      if (!uiState.confirmResetArmed) {
+        uiState.confirmResetArmed = true;
+        uiState.notice = { type: 'error', text: '初期化確認：すべての進行記録が初期状態へ戻ります。「初期化を確定」を押すと実行されます。' };
+        renderAll();
+        return;
+      }
+    }
+
+    if (action === 'cancel-reset-save') {
+      AudioSE.play('ui_tap');
+      uiState.confirmResetArmed = false;
+      uiState.notice = null;
+      renderAll();
+      return;
+    }
+
+    if (action === 'confirm-reset-save' || action === 'reset-save') {
+      AudioSE.play('ui_tap');
       const fresh = StateStore.createInitialState();
-      StateStore.setState(fresh);
+      const applied = StateStore.setState(fresh);
+      syncExpCandidates(applied);
+      pruneEquipSelection(applied);
       AudioSE.setVolume(fresh.settings.soundVolume);
       AudioSE.setMuted(fresh.settings.soundMuted);
       uiState.tamperWarning = null;
       uiState.lastSummonResult = null;
+      uiState.confirmResetArmed = false;
+      uiState.selectedCharId = 'char_todo_seiichi';
       uiState.notice = { type: 'ok', text: '初期記録を再生成し、署名保存しました。' };
       renderAll();
     }
@@ -1209,16 +1523,27 @@
       codexCategory: uiState.codexCategory,
       codexQuery: uiState.codexQuery,
       rosterFilter: uiState.rosterFilter,
+      roleFilter: uiState.roleFilter,
+      equipSlotFilter: uiState.equipSlotFilter,
+      equipSortMode: uiState.equipSortMode,
       selectedCharId: uiState.selectedCharId,
       selectedAreaId: uiState.selectedAreaId,
       selectedStageId: uiState.selectedStageId,
       selectedAbyssFloor: uiState.selectedAbyssFloor,
+      abyssAutoAdvance: uiState.abyssAutoAdvance,
       selectedRaidId: uiState.selectedRaidId,
       selectedRaidDiff: uiState.selectedRaidDiff,
       selectedTrialId: uiState.selectedTrialId,
+      expCandidateIds: uiState.expCandidateIds.slice(),
       showDpsDetail: uiState.showDpsDetail,
+      battleDetailMode: uiState.battleDetailMode,
+      showResultLogs: uiState.showResultLogs,
       autoRepeatDone: uiState.autoRepeatDone,
       autoRepeatRemaining: uiState.autoRepeatRemaining,
+      autoRepeatPending: uiState.autoRepeatPending,
+      autoRepeatSummary: uiState.autoRepeatSummary ? Object.assign({}, uiState.autoRepeatSummary) : null,
+      confirmResetArmed: uiState.confirmResetArmed,
+      backupBusy: uiState.backupBusy,
       tamperWarning: uiState.tamperWarning,
       notice: uiState.notice,
       booted: uiState.booted

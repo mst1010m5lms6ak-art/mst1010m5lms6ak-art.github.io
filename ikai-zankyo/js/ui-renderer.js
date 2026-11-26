@@ -58,8 +58,36 @@
     vuln: 'vuln'
   };
 
+  const BUFF_LEGEND = [
+    { stat: 'stun', iconKey: 'stun', label: '気絶（行動不能）', kind: 'debuff', crit: true },
+    { stat: 'freeze', iconKey: 'freeze', label: '凍結（行動不能）', kind: 'debuff', crit: true },
+    { stat: 'burn', iconKey: 'burn', label: '火傷（継続HP減少）', kind: 'debuff', crit: true },
+    { stat: 'taunt', iconKey: 'taunt', label: '挑発（単体攻撃誘導）', kind: 'buff', def: true },
+    { stat: 'counter', iconKey: 'counter', label: '反撃（被弾時反撃）', kind: 'buff', def: true },
+    { stat: 'shield', iconKey: 'shield', label: '障壁（ダメージ吸収）', kind: 'buff', def: true },
+    { stat: 'dmgDown', iconKey: 'dmg_down', label: '被ダメ軽減', kind: 'buff', def: true },
+    { stat: 'defUp', iconKey: 'def_up', label: 'DEF上昇', kind: 'buff', def: true },
+    { stat: 'atkUp', iconKey: 'atk_up', label: 'ATK上昇', kind: 'buff' },
+    { stat: 'spdUp', iconKey: 'spd_up', label: 'SPD上昇', kind: 'buff' },
+    { stat: 'critUp', iconKey: 'crit_up', label: '会心率上昇', kind: 'buff' },
+    { stat: 'regen', iconKey: 'regen', label: '再生（毎行動回復）', kind: 'buff' },
+    { stat: 'atkDown', iconKey: 'atk_down', label: 'ATK低下', kind: 'debuff' },
+    { stat: 'defDown', iconKey: 'def_down', label: 'DEF低下', kind: 'debuff' },
+    { stat: 'spdDown', iconKey: 'spd_down', label: 'SPD低下', kind: 'debuff' },
+    { stat: 'critDown', iconKey: 'crit_down', label: '会心率低下', kind: 'debuff' },
+    { stat: 'healDown', iconKey: 'heal_down', label: '被回復量低下', kind: 'debuff' },
+    { stat: 'vuln', iconKey: 'vuln', label: '脆弱（被ダメ増加）', kind: 'debuff' }
+  ];
+
+  const BUFF_META_MAP = {};
+  BUFF_LEGEND.forEach(function (item) {
+    BUFF_META_MAP[item.stat] = item;
+  });
+
   let battleRefs = null;
   let lastDpsDetailFlag = null;
+  let lastBattleDetailMode = null;
+  let lastHubScrollKey = '';
 
   function el(tag, opts, children) {
     return IkaiApp.Env.createEl(tag, opts, children);
@@ -170,26 +198,68 @@
     return nodes;
   }
 
+  function buffPriority(item) {
+    if (item.stat === 'stun' || item.stat === 'freeze') return 0;
+    if (item.stat === 'taunt' || item.stat === 'counter' || item.stat === 'shield') return 1;
+    if (item.stat === 'burn' || item.stat === 'healDown' || item.stat === 'vuln') return 2;
+    return item.isBuff ? 3 : 4;
+  }
+
   function buildBuffStrip(buffs, debuffs) {
     const SvgIcons = IkaiApp.SvgIcons;
-    const list = [];
-    const maxItems = 5;
+    const allItems = [];
+    for (let i = 0; i < buffs.length; i += 1) {
+      allItems.push({ stat: buffs[i].stat, value: buffs[i].value, duration: buffs[i].duration, isBuff: true });
+    }
+    for (let i = 0; i < debuffs.length; i += 1) {
+      allItems.push({ stat: debuffs[i].stat, value: debuffs[i].value, duration: debuffs[i].duration, isBuff: false });
+    }
+    allItems.sort(function (a, b) {
+      return buffPriority(a) - buffPriority(b);
+    });
 
-    for (let i = 0; i < buffs.length && list.length < maxItems; i += 1) {
-      const b = buffs[i];
-      list.push(el('span', { className: 'buff-badge is-buff' }, [
-        SvgIcons.createBuffIcon(mapBuffIconKey(b.stat), 'buff-svg'),
-        el('span', { className: 'buff-dur', text: String(b.duration) })
+    const maxItems = 4;
+    const list = [];
+    const shownCount = Math.min(allItems.length, maxItems);
+    for (let i = 0; i < shownCount; i += 1) {
+      const it = allItems[i];
+      const meta = hasOwn(BUFF_META_MAP, it.stat) ? BUFF_META_MAP[it.stat] : null;
+      let cls = it.isBuff ? 'buff-badge is-buff' : 'buff-badge is-debuff';
+      if (meta && meta.def) cls += ' is-buff-def';
+      if (meta && meta.crit) cls += ' is-debuff-crit';
+      list.push(el('span', { className: cls }, [
+        SvgIcons.createBuffIcon(mapBuffIconKey(it.stat), 'buff-svg'),
+        el('span', { className: 'buff-dur', text: String(it.duration) })
       ]));
     }
-    for (let i = 0; i < debuffs.length && list.length < maxItems; i += 1) {
-      const d = debuffs[i];
-      list.push(el('span', { className: 'buff-badge is-debuff' }, [
-        SvgIcons.createBuffIcon(mapBuffIconKey(d.stat), 'buff-svg'),
-        el('span', { className: 'buff-dur', text: String(d.duration) })
-      ]));
+    if (allItems.length > maxItems) {
+      list.push(el('span', {
+        className: 'buff-badge is-overflow',
+        text: '+' + (allItems.length - maxItems)
+      }));
     }
     return list;
+  }
+
+  function makeHpTrack(trackClass, fillClass, hpPct, shieldPct) {
+    const lagFill = el('div', { className: 'meter-lag' });
+    lagFill.style.width = hpPct + '%';
+    const hpFill = el('div', { className: 'meter-fill bar-smooth ' + fillClass });
+    hpFill.style.width = hpPct + '%';
+    const shieldFill = el('div', { className: 'meter-shield' });
+    shieldFill.style.width = (shieldPct || 0) + '%';
+    const track = el('div', { className: 'meter-track ' + trackClass }, [lagFill, hpFill, shieldFill]);
+    return { track, lagFill, hpFill, shieldFill };
+  }
+
+  function formatUnitHpText(u, includePct) {
+    const base = u.hp + '/' + u.maxHp + (includePct ? (' (' + Math.round(u.hpPct) + '%)') : '');
+    return u.shield > 0 ? (base + ' 盾+' + u.shield) : base;
+  }
+
+  function calcShieldPct(u) {
+    if (!u || !u.maxHp || u.shield <= 0) return 0;
+    return Math.min(100, Math.round((u.shield / u.maxHp) * 100));
   }
 
   function signatureOfEffects(buffs, debuffs) {
@@ -555,14 +625,18 @@
 
     if (uiState.lastSummonResult && Array.isArray(uiState.lastSummonResult.results)) {
       const res = uiState.lastSummonResult;
-      const chips = res.results.map(function (item) {
+      const chips = res.results.map(function (item, idx) {
         const outcomeLabel = item.outcome === 'new'
           ? '新規'
           : (item.outcome === 'crystal' ? ('結晶+' + item.crystalsGained) : '覚醒片+1');
-        return el('div', { className: 'summon-pull-chip rarity-' + item.rarity }, [
+        const chipCls = 'summon-pull-chip rarity-' + item.rarity +
+          ' summon-pop-chip stagger-' + (idx % 10) +
+          (item.rarity === 'SSR' ? ' is-ssr-glow' : '');
+        return el('div', { className: chipCls }, [
           el('div', { className: 'summon-pull-left' }, [
             SvgIcons.createRoleIcon(item.role, 'plate-role-svg'),
-            el('span', { className: 'unit-name', text: item.name })
+            el('span', { className: 'unit-name', text: item.name }),
+            item.outcome === 'new' ? el('span', { className: 'new-tag', text: 'NEW' }) : null
           ]),
           el('span', { className: 'rarity-badge rarity-' + item.rarity, text: item.rarity + ' ' + outcomeLabel })
         ]);
@@ -842,7 +916,11 @@
       const tac = selectedOwned.tactic;
       const skillId0 = selectedOwned.skills[0];
       const skillObj0 = skillId0 && hasOwn(MasterData.SKILL_MAP, skillId0) ? MasterData.SKILL_MAP[skillId0] : null;
+      const skillId1 = selectedOwned.skills[1];
+      const skillObj1 = skillId1 && hasOwn(MasterData.SKILL_MAP, skillId1) ? MasterData.SKILL_MAP[skillId1] : null;
       const awk = selectedOwned.awakening;
+      const tierDef = MasterData.AWAKENING_TIERS[awk];
+      const hasSlot2 = tierDef && tierDef.skillSlots >= 2;
       const nextTier = awk < 3 ? MasterData.AWAKENING_TIERS[awk + 1] : null;
 
       nodes.push(el('div', { className: 'tactic-config-card' }, [
@@ -882,8 +960,31 @@
             text: '収集技枠1：' + (skillObj0 ? skillObj0.name : '未装備（切替）'),
             attrs: { type: 'button' },
             dataset: { action: 'cycle-roster-skill', charId: selectedChar.id, slotIdx: '0' }
+          }),
+          el('button', {
+            className: 'btn ' + (hasSlot2 ? 'btn-primary' : 'btn-secondary'),
+            text: hasSlot2 ? ('収集技枠2：' + (skillObj1 ? skillObj1.name : '未装備（切替）')) : '収集技枠2（覚醒1で開放）',
+            attrs: { type: 'button' },
+            disabled: !hasSlot2,
+            dataset: { action: 'cycle-roster-skill', charId: selectedChar.id, slotIdx: '1' }
+          }),
+          el('button', {
+            className: 'btn btn-compact btn-secondary',
+            text: '収集技・熟練へ',
+            attrs: { type: 'button' },
+            dataset: { action: 'switch-enhance-sub', sub: 'skills' }
           })
         ])
+      ]));
+    } else {
+      nodes.push(el('div', { className: 'notice-banner' }, [
+        el('div', { text: '『' + selectedChar.name + '』は未契約です。召喚または所持済み仲間を選んで強化できます。' }),
+        el('button', {
+          className: 'btn btn-compact btn-primary',
+          text: '召喚画面で契約する',
+          attrs: { type: 'button' },
+          dataset: { action: 'switch-tab', tabId: 'summon' }
+        })
       ]));
     }
 
@@ -893,7 +994,23 @@
         return hasOwn(state.roster, c.id);
       });
     }
+    if (uiState.roleFilter && uiState.roleFilter !== 'all') {
+      sourceList = sourceList.filter(function (c) {
+        return c.role === uiState.roleFilter;
+      });
+    }
     const sorted = StateStore.sortUnits(sourceList);
+
+    const roleChips = ['all'].concat(MasterData.ROLE_ORDER).map(function (r) {
+      const label = r === 'all' ? '全役割' : r;
+      const active = (uiState.roleFilter || 'all') === r;
+      return el('button', {
+        className: 'btn btn-compact ' + (active ? 'btn-primary' : 'btn-secondary'),
+        text: label,
+        attrs: { type: 'button' },
+        dataset: { action: 'set-role-filter', role: r }
+      });
+    });
 
     const filterRow = el('div', { className: 'btn-row' }, [
       el('button', {
@@ -910,6 +1027,8 @@
       }),
       el('span', { className: 'muted-note', text: '並替：レア順→ロール順→五十音順' })
     ]);
+
+    const roleFilterRow = el('div', { className: 'area-pills' }, roleChips);
 
     const rows = sorted.map(function (c) {
       const owned = hasOwn(state.roster, c.id);
@@ -939,7 +1058,7 @@
       ]);
     });
 
-    return nodes.concat([filterRow], rows);
+    return nodes.concat([filterRow, roleFilterRow], rows);
   }
 
   function renderLowerRosterEmblem(state, uiState) {
@@ -1119,11 +1238,15 @@
 
     if (owned) {
       const tierDef = MasterData.AWAKENING_TIERS[owned.awakening];
+      const setCounts = {};
       const slotCards = MasterData.EQUIP_SLOTS.map(function (slot) {
         const unlocked = tierDef.unlockedSlots.indexOf(slot) >= 0;
         const uid = owned.equipped[slot];
         const eq = uid ? state.equips.find(function (e) { return e.uid === uid; }) : null;
         const eqDef = eq && hasOwn(MasterData.EQUIP_MAP, eq.equipId) ? MasterData.EQUIP_MAP[eq.equipId] : null;
+        if (unlocked && eqDef && eqDef.setId) {
+          setCounts[eqDef.setId] = (setCounts[eqDef.setId] || 0) + 1;
+        }
         const qRank = eq ? MasterData.QUALITY_RANKS[eq.qualityIdx] : null;
         return el('div', { className: 'equip-slot-card' }, [
           el('div', { className: 'm3-card-head' }, [
@@ -1140,6 +1263,35 @@
         ]);
       });
       nodes.push(el('div', { className: 'equip-slot-grid' }, slotCards));
+
+      const activeSetEffects = [];
+      Object.keys(setCounts).forEach(function (sid) {
+        const cnt = setCounts[sid];
+        const setDef = hasOwn(MasterData.SET_MAP, sid) ? MasterData.SET_MAP[sid] : null;
+        if (!setDef) return;
+        if (cnt >= 2) {
+          activeSetEffects.push(setDef.name + '(2)：' + setDef.twoSetDesc);
+        }
+        if (cnt >= 4) {
+          activeSetEffects.push(setDef.name + '(4)：' + setDef.fourSetDesc);
+        }
+      });
+
+      nodes.push(el('div', { className: 'm3-card' }, [
+        el('div', { className: 'm3-card-head' }, [
+          el('span', { className: 'm3-card-title', text: charDef.name + ' の装着セット効果' }),
+          el('button', {
+            className: 'btn btn-compact btn-primary',
+            text: 'おまかせ装備',
+            attrs: { type: 'button' },
+            dataset: { action: 'auto-equip-char', charId: charDef.id }
+          })
+        ]),
+        el('div', {
+          className: 'detail-desc',
+          text: activeSetEffects.length > 0 ? activeSetEffects.join(' ／ ') : '発動中のセット効果はありません（同種セット2/4部位で発動）'
+        })
+      ]));
     }
 
     // Synthesis panel
@@ -1182,23 +1334,73 @@
       ])
     ]));
 
-    // Bulk Sell bar (0..3, protects equipped & locked & 極4)
+    // Bulk Sell bar (0..3, protects equipped & locked & 極4) with count & coins preview
     nodes.push(el('div', { className: 'm3-card' }, [
       el('div', { className: 'm3-card-title', text: '不要品質 一括売却（装着中・保護中・極は自動保護）' }),
-      el('div', { className: 'btn-grid-4' }, [0, 1, 2, 3].map(function (qIdx) {
+      el('div', { className: 'btn-grid-2' }, [0, 1, 2, 3].map(function (qIdx) {
+        let sellCnt = 0;
+        let sellCoins = 0;
+        for (let i = 0; i < state.equips.length; i += 1) {
+          const eq = state.equips[i];
+          if (!eq.locked && !ownerMap.has(eq.uid) && eq.qualityIdx <= qIdx && eq.qualityIdx < 4) {
+            sellCnt += 1;
+            sellCoins += Progression.getEquipSellValue(eq.equipId, eq.qualityIdx);
+          }
+        }
         const label = qIdx === 0 ? '並のみ' : (MasterData.QUALITY_RANKS[qIdx].name + '以下');
         return el('button', {
           className: 'btn btn-compact btn-danger',
-          text: label,
+          text: label + '（' + sellCnt + '件 / +' + sellCoins + '）',
           attrs: { type: 'button' },
+          disabled: sellCnt === 0,
           dataset: { action: 'bulk-sell-equips', maxQuality: String(qIdx) }
         });
       }))
     ]));
 
-    // Equip inventory rows
-    nodes.push(el('div', { className: 'muted-note', text: '所持装備一覧（' + state.equips.length + '個）' }));
-    state.equips.forEach(function (eq) {
+    // Slot filter & sort bar
+    const slotFilterVal = uiState.equipSlotFilter || 'all';
+    const slotFilterBtns = ['all'].concat(MasterData.EQUIP_SLOTS).map(function (sl) {
+      return el('button', {
+        className: 'btn btn-compact ' + (slotFilterVal === sl ? 'btn-primary' : 'btn-secondary'),
+        text: sl === 'all' ? '全部位' : sl,
+        attrs: { type: 'button' },
+        dataset: { action: 'set-equip-slot-filter', slot: sl }
+      });
+    });
+    slotFilterBtns.push(el('button', {
+      className: 'btn btn-compact btn-secondary',
+      text: uiState.equipSortMode === 'recent' ? '並替：入手順' : '並替：品質順',
+      attrs: { type: 'button' },
+      dataset: { action: 'toggle-equip-sort' }
+    }));
+
+    const filteredEquips = state.equips.filter(function (eq) {
+      if (slotFilterVal === 'all') return true;
+      const eqDef = hasOwn(MasterData.EQUIP_MAP, eq.equipId) ? MasterData.EQUIP_MAP[eq.equipId] : null;
+      return Boolean(eqDef && eqDef.slot === slotFilterVal);
+    });
+
+    const isEligibleMat = function (eq) {
+      const ownerCid = ownerMap.get(eq.uid);
+      return Boolean(baseEq && !eq.locked && !ownerCid && baseEq.uid !== eq.uid && baseEq.equipId === eq.equipId && baseEq.qualityIdx === eq.qualityIdx && eq.qualityIdx < 4);
+    };
+
+    const sortedEquips = filteredEquips.slice().sort(function (a, b) {
+      if (baseEq) {
+        const matA = isEligibleMat(a) ? 1 : 0;
+        const matB = isEligibleMat(b) ? 1 : 0;
+        if (matA !== matB) return matB - matA;
+      }
+      if (uiState.equipSortMode !== 'recent') {
+        if (b.qualityIdx !== a.qualityIdx) return b.qualityIdx - a.qualityIdx;
+      }
+      return 0;
+    });
+
+    nodes.push(el('div', { className: 'area-pills' }, slotFilterBtns));
+    nodes.push(el('div', { className: 'muted-note', text: '所持装備一覧（表示 ' + sortedEquips.length + ' / 全 ' + state.equips.length + ' 個）' }));
+    sortedEquips.forEach(function (eq) {
       const eqDef = hasOwn(MasterData.EQUIP_MAP, eq.equipId) ? MasterData.EQUIP_MAP[eq.equipId] : null;
       if (!eqDef) return;
       const qRank = MasterData.QUALITY_RANKS[eq.qualityIdx];
@@ -1367,10 +1569,10 @@
             });
           }))),
           el('button', {
-            className: 'btn btn-primary btn-sortie',
-            text: '無限深淵 第' + curFloor + '層へ出撃',
+            className: 'btn btn-compact ' + (uiState.abyssAutoAdvance ? 'btn-primary' : 'btn-secondary'),
+            text: uiState.abyssAutoAdvance ? '周回時：勝利で自動で次層へ (ON)' : '周回時：同層を周回 (OFF)',
             attrs: { type: 'button' },
-            dataset: { action: 'start-abyss', floor: String(curFloor) }
+            dataset: { action: 'toggle-abyss-auto-advance' }
           })
         ])
       ]);
@@ -1399,13 +1601,7 @@
               attrs: { type: 'button' },
               dataset: { action: 'select-raid-diff', diffId: df.id }
             });
-          })),
-          el('button', {
-            className: 'btn btn-primary btn-sortie',
-            text: '『' + boss.name + '（' + diff.name + '）』へ討伐出撃',
-            attrs: { type: 'button' },
-            dataset: { action: 'start-raid', raidId: boss.id, diffId: diff.id }
-          })
+          }))
         ])
       ]);
     }
@@ -1430,30 +1626,40 @@
         ]);
       });
 
+      const violatingChips = (check.violatingCharIds || []).map(function (cid) {
+        const ch = hasOwn(MasterData.CHARACTER_MAP, cid) ? MasterData.CHARACTER_MAP[cid] : null;
+        return el('span', {
+          className: 'tag-chip tag-chip-boss',
+          text: '違反：' + (ch ? ch.name : cid)
+        });
+      });
+
       const validationPanel = !check.ok
         ? el('div', { className: 'notice-banner is-error' }, [
             el('div', { text: check.reasons.join(' ／ ') }),
-            el('button', {
-              className: 'btn btn-compact btn-secondary',
-              text: '編成タブで編成を変更',
-              attrs: { type: 'button' },
-              dataset: { action: 'switch-tab', tabId: 'party' }
-            })
+            violatingChips.length > 0 ? el('div', { className: 'area-pills' }, violatingChips) : null,
+            el('div', { className: 'btn-row' }, [
+              el('button', {
+                className: 'btn btn-compact btn-primary',
+                text: '条件に合う仮編成',
+                attrs: { type: 'button' },
+                dataset: { action: 'auto-fit-trial', trialId: trial.id }
+              }),
+              el('button', {
+                className: 'btn btn-compact btn-secondary',
+                text: '編成タブで編成を変更',
+                attrs: { type: 'button' },
+                dataset: { action: 'switch-tab', tabId: 'party' }
+              })
+            ])
           ])
-        : el('div', { className: 'notice-banner is-ok', text: '現在の4人枠は試練制約に適合しています。' });
+        : el('div', { className: 'notice-banner is-ok', text: '現在の編成は試練制約に適合しています。' });
 
       return notices.concat([
         pillarBar,
         validationPanel,
         el('div', { className: 'sortie-panel' }, [
-          el('div', { className: 'sortie-party-line', text: '出撃編成：' + partyNames }),
-          el('button', {
-            className: 'btn btn-primary btn-sortie',
-            text: '『' + trial.name + '』へ挑戦',
-            attrs: { type: 'button' },
-            disabled: !check.ok,
-            dataset: { action: 'start-trial', trialId: trial.id }
-          })
+          el('div', { className: 'sortie-party-line', text: '出撃編成：' + partyNames })
         ])
       ], trialCards);
     }
@@ -1461,8 +1667,6 @@
     // Default: story pillar
     const areas = MasterData.AREAS;
     const currentArea = findAreaById(uiState.selectedAreaId);
-    const currentStage = findStageInArea(currentArea, uiState.selectedStageId);
-    const stageUnlocked = Progression.isStageUnlocked(state, currentStage.id);
 
     const repeatChoices = [
       { count: 0, label: '単発' },
@@ -1474,7 +1678,7 @@
     const repeatBtns = repeatChoices.map(function (item) {
       const isActive = state.settings.autoRepeatCount === item.count;
       return el('button', {
-        className: isActive ? 'btn btn-primary' : 'btn btn-secondary',
+        className: 'btn btn-compact ' + (isActive ? 'btn-primary' : 'btn-secondary'),
         text: item.label,
         attrs: { type: 'button' },
         dataset: { action: 'set-auto-repeat', count: String(item.count) }
@@ -1483,7 +1687,7 @@
 
     const policyBtns = POLICY_ORDER.map(function (p) {
       return el('button', {
-        className: uiState.hubGlobalPolicy === p ? 'btn btn-primary' : 'btn btn-secondary',
+        className: 'btn btn-compact ' + (uiState.hubGlobalPolicy === p ? 'btn-primary' : 'btn-secondary'),
         text: POLICY_LABELS[p],
         attrs: { type: 'button' },
         dataset: { action: 'set-hub-policy', policy: p }
@@ -1497,14 +1701,7 @@
       ].concat(policyBtns)),
       el('div', { className: 'sortie-subrow' }, [
         el('span', { className: 'muted-note', text: '自動周回：' })
-      ].concat(repeatBtns)),
-      el('button', {
-        className: 'btn btn-primary btn-sortie',
-        text: stageUnlocked ? ('『' + currentStage.id + ' ' + currentStage.name + '』へ出撃開始') : ('『' + currentStage.id + '』未開放（前ステージ踏破で開放）'),
-        attrs: { type: 'button' },
-        disabled: !stageUnlocked,
-        dataset: { action: 'start-stage', stageId: currentStage.id }
-      })
+      ].concat(repeatBtns))
     ]);
 
     const areaBtns = areas.map(function (area) {
@@ -1548,6 +1745,80 @@
     ], stageBtns);
   }
 
+  function buildAreasStickyCta(state, uiState) {
+    const MasterData = IkaiApp.MasterData;
+    const Progression = IkaiApp.Progression;
+
+    if (uiState.areasPillar === 'abyss') {
+      const maxSelectable = Math.max(1, state.progress.abyssMaxFloor + 1);
+      const curFloor = Math.min(maxSelectable, Math.max(1, uiState.selectedAbyssFloor || 1));
+      return el('div', { className: 'lower-sticky-cta' }, [
+        el('div', { className: 'sticky-cta-info' }, [
+          el('div', { className: 'sticky-cta-title', text: '無限深淵 第' + curFloor + '層' }),
+          el('div', { className: 'sticky-cta-sub', text: state.settings.autoRepeatCount > 0 ? ('周回 ' + state.settings.autoRepeatCount + '回') : '単発挑戦' })
+        ]),
+        el('button', {
+          className: 'btn btn-primary sticky-cta-btn',
+          text: '深淵へ出撃',
+          attrs: { type: 'button' },
+          dataset: { action: 'start-abyss', floor: String(curFloor) }
+        })
+      ]);
+    }
+
+    if (uiState.areasPillar === 'raid') {
+      const boss = MasterData.RAID_BOSSES.find(function (b) { return b.id === uiState.selectedRaidId; }) || MasterData.RAID_BOSSES[0];
+      const diff = boss.difficulties.find(function (d) { return d.id === uiState.selectedRaidDiff; }) || boss.difficulties[0];
+      return el('div', { className: 'lower-sticky-cta' }, [
+        el('div', { className: 'sticky-cta-info' }, [
+          el('div', { className: 'sticky-cta-title', text: boss.name }),
+          el('div', { className: 'sticky-cta-sub', text: '難易度：' + diff.name })
+        ]),
+        el('button', {
+          className: 'btn btn-primary sticky-cta-btn',
+          text: '討伐出撃',
+          attrs: { type: 'button' },
+          dataset: { action: 'start-raid', raidId: boss.id, diffId: diff.id }
+        })
+      ]);
+    }
+
+    if (uiState.areasPillar === 'trial') {
+      const trial = MasterData.TRIALS.find(function (t) { return t.id === uiState.selectedTrialId; }) || MasterData.TRIALS[0];
+      const check = Progression.validateTrialEntry(state, trial.id, state.party);
+      return el('div', { className: 'lower-sticky-cta' }, [
+        el('div', { className: 'sticky-cta-info' }, [
+          el('div', { className: 'sticky-cta-title', text: trial.name }),
+          el('div', { className: 'sticky-cta-sub', text: check.ok ? '制約条件適合（出撃可能）' : '制約違反あり' })
+        ]),
+        el('button', {
+          className: 'btn btn-primary sticky-cta-btn',
+          text: check.ok ? '試練へ挑戦' : '条件未達',
+          attrs: { type: 'button' },
+          disabled: !check.ok,
+          dataset: { action: 'start-trial', trialId: trial.id }
+        })
+      ]);
+    }
+
+    const currentArea = findAreaById(uiState.selectedAreaId);
+    const currentStage = findStageInArea(currentArea, uiState.selectedStageId);
+    const stageUnlocked = Progression.isStageUnlocked(state, currentStage.id);
+    return el('div', { className: 'lower-sticky-cta' }, [
+      el('div', { className: 'sticky-cta-info' }, [
+        el('div', { className: 'sticky-cta-title', text: currentStage.id + ' ' + currentStage.name }),
+        el('div', { className: 'sticky-cta-sub', text: POLICY_LABELS[uiState.hubGlobalPolicy] + ' ／ ' + (state.settings.autoRepeatCount > 0 ? ('周回' + state.settings.autoRepeatCount + '回') : '単発') })
+      ]),
+      el('button', {
+        className: 'btn btn-primary sticky-cta-btn',
+        text: stageUnlocked ? '出撃開始' : '未開放',
+        attrs: { type: 'button' },
+        disabled: !stageUnlocked,
+        dataset: { action: 'start-stage', stageId: currentStage.id }
+      })
+    ]);
+  }
+
   function renderLowerParty(state, uiState) {
     const MasterData = IkaiApp.MasterData;
     const StateStore = IkaiApp.StateStore;
@@ -1579,8 +1850,21 @@
     });
 
     const ownedChars = StateStore.sortUnits(MasterData.CHARACTERS.filter(function (c) {
-      return hasOwn(state.roster, c.id);
+      if (!hasOwn(state.roster, c.id)) return false;
+      if (uiState.roleFilter && uiState.roleFilter !== 'all' && c.role !== uiState.roleFilter) return false;
+      return true;
     }));
+
+    const roleChips = ['all'].concat(MasterData.ROLE_ORDER).map(function (r) {
+      const label = r === 'all' ? '全役割' : r;
+      const active = (uiState.roleFilter || 'all') === r;
+      return el('button', {
+        className: 'btn btn-compact ' + (active ? 'btn-primary' : 'btn-secondary'),
+        text: label,
+        attrs: { type: 'button' },
+        dataset: { action: 'set-role-filter', role: r }
+      });
+    });
 
     const memberRows = ownedChars.map(function (c) {
       const partyIdx = state.party.indexOf(c.id);
@@ -1594,7 +1878,7 @@
             SvgIcons.createRoleIcon(c.role),
             el('div', { className: 'unit-text-col' }, [
               el('div', { className: 'unit-name', text: c.name }),
-              el('div', { className: 'unit-kana', text: c.rarity + '・' + c.role + ' ／ 方針：' + (POLICY_LABELS[entry.tactic.policy] || '均衡') })
+              el('div', { className: 'unit-kana', text: c.rarity + '・' + c.role + ' ／ 共鳴：' + c.resonance.description })
             ])
           ]),
           el('div', { className: 'unit-meta-right' }, [
@@ -1603,7 +1887,7 @@
                 : (resIdx >= 0 ? el('span', { className: 'tag-chip', text: '共鳴' + (resIdx + 1) }) : null))
           ])
         ]),
-        el('div', { className: 'btn-grid-3' }, [
+        el('div', { className: 'btn-grid-2' }, [
           el('button', {
             className: 'btn btn-compact btn-primary',
             text: '編成枠' + (activeSlot + 1) + 'へ配置',
@@ -1617,12 +1901,26 @@
             attrs: { type: 'button' },
             disabled: inExp || partyIdx >= 0,
             dataset: { action: 'set-resonance-char', charId: c.id }
+          })
+        ]),
+        el('div', { className: 'btn-grid-3' }, [
+          el('button', {
+            className: 'btn btn-compact btn-secondary',
+            text: '方針：' + (POLICY_LABELS[entry.tactic.policy] || '均衡'),
+            attrs: { type: 'button' },
+            dataset: { action: 'cycle-roster-policy', charId: c.id }
           }),
           el('button', {
             className: 'btn btn-compact btn-secondary',
-            text: '方針切替',
+            text: '標的：' + (TARGET_LABELS[entry.tactic.target] || 'HP最低'),
             attrs: { type: 'button' },
-            dataset: { action: 'cycle-roster-policy', charId: c.id }
+            dataset: { action: 'cycle-roster-target', charId: c.id }
+          }),
+          el('button', {
+            className: 'btn btn-compact btn-secondary',
+            text: '技順：' + (PRIORITY_LABELS[entry.tactic.skillPriority] || '固有優先'),
+            attrs: { type: 'button' },
+            dataset: { action: 'cycle-roster-priority', charId: c.id }
           })
         ])
       ]);
@@ -1652,6 +1950,7 @@
     return buildNoticeNodes(uiState).concat([
       el('div', { className: 'btn-grid-2' }, partySlots),
       resonancePanel,
+      el('div', { className: 'area-pills' }, roleChips),
       el('div', { className: 'muted-note', text: '所持仲間一覧（並替：レア順→ロール順→五十音順）' })
     ], memberRows);
   }
@@ -1699,7 +1998,12 @@
       return hasOwn(state.roster, c.id) && !partySet.has(c.id) && !resSet.has(c.id) && !activeExpSet.has(c.id);
     }));
 
-    const candidateSet = new Set(uiState.expCandidateIds || []);
+    const availableSet = new Set(availableChars.map(function (c) { return c.id; }));
+    const filteredCandidateIds = (uiState.expCandidateIds || []).filter(function (cid) {
+      return availableSet.has(cid);
+    }).slice(0, selectedZone.maxChars);
+    uiState.expCandidateIds = filteredCandidateIds;
+    const candidateSet = new Set(filteredCandidateIds);
     const pickerButtons = availableChars.length > 0
       ? el('div', { className: 'area-pills' }, availableChars.map(function (c) {
           const picked = candidateSet.has(c.id);
@@ -1779,12 +2083,17 @@
 
     const bannerCards = MasterData.BANNERS.map(function (b) {
       const active = b.id === state.summon.selectedBannerId;
+      const puNames = (b.pickupCharIds && b.pickupCharIds.length > 0)
+        ? b.pickupCharIds.map(function (cid) { return hasOwn(MasterData.CHARACTER_MAP, cid) ? MasterData.CHARACTER_MAP[cid].name : cid; }).join('・')
+        : '全SSR均等';
       return el('button', {
         className: 'btn btn-compact ' + (active ? 'btn-primary' : 'btn-secondary'),
-        text: b.name,
         attrs: { type: 'button' },
         dataset: { action: 'select-banner', bannerId: b.id }
-      });
+      }, [
+        el('div', { className: 'unit-name', text: b.name }),
+        el('div', { className: 'unit-kana', text: 'PU：' + puNames })
+      ]);
     });
 
     const pullBar = el('div', { className: 'btn-grid-2' }, [
@@ -1804,12 +2113,30 @@
       })
     ]);
 
+    const shortcutBar = uiState.lastSummonResult
+      ? el('div', { className: 'btn-grid-2' }, [
+          el('button', {
+            className: 'btn btn-compact btn-secondary',
+            text: '強化へ移動',
+            attrs: { type: 'button' },
+            dataset: { action: 'switch-tab', tabId: 'roster' }
+          }),
+          el('button', {
+            className: 'btn btn-compact btn-secondary',
+            text: '編成へ移動',
+            attrs: { type: 'button' },
+            dataset: { action: 'switch-tab', tabId: 'party' }
+          })
+        ])
+      : null;
+
     return notices.concat([
       subBar,
       el('div', { className: 'summon-banner-card' }, [
         el('div', { className: 'btn-grid-2' }, bannerCards),
         el('div', { className: 'detail-desc', text: '回数制限・時間制限なしでいつでも実行可能。最大覚醒超過時は交換結晶（SSR 50 / SR 15 / R 5）へ自動変換。' }),
-        pullBar
+        pullBar,
+        shortcutBar
       ])
     ]);
   }
@@ -1928,7 +2255,19 @@
     }
 
     rows.forEach(function (r) { listContainer.appendChild(r); });
-    return [catBar, searchInput, listContainer];
+
+    const legendTiles = BUFF_LEGEND.map(function (item) {
+      return el('span', { className: 'icon-tile' }, [
+        SvgIcons.createBuffIcon(item.iconKey, 'buff-svg'),
+        el('span', { text: item.label })
+      ]);
+    });
+    const legendCard = el('div', { className: 'm3-card' }, [
+      el('div', { className: 'm3-card-title', text: '戦闘 付与状態（強化・弱体）凡例' }),
+      el('div', { className: 'icon-gallery' }, legendTiles)
+    ]);
+
+    return [catBar, searchInput, listContainer, legendCard];
   }
 
   function renderLowerAudioIcons() {
@@ -2056,25 +2395,49 @@
           });
         }))
       ]),
-      el('div', { className: 'btn-grid-3' }, [
+      el('div', { className: 'btn-grid-2' }, [
         el('button', {
           className: 'btn btn-primary',
-          text: 'バックアップ書出',
+          text: uiState.backupBusy ? '処理中' : 'バックアップ書出',
           attrs: { type: 'button' },
+          disabled: Boolean(uiState.backupBusy),
           dataset: { action: 'export-backup' }
         }),
         el('button', {
           className: 'btn btn-secondary',
-          text: 'JSON復元実行',
+          text: 'JSONコピー',
           attrs: { type: 'button' },
-          dataset: { action: 'import-backup' }
+          disabled: Boolean(uiState.backupBusy),
+          dataset: { action: 'copy-backup' }
         }),
         el('button', {
-          className: 'btn btn-danger',
-          text: '初期記録を再生成',
+          className: 'btn btn-secondary',
+          text: uiState.backupBusy ? '復元中' : 'JSON復元実行',
           attrs: { type: 'button' },
-          dataset: { action: 'reset-save' }
-        })
+          disabled: Boolean(uiState.backupBusy),
+          dataset: { action: 'import-backup' }
+        }),
+        uiState.confirmResetArmed
+          ? el('div', { className: 'btn-grid-2' }, [
+              el('button', {
+                className: 'btn btn-danger',
+                text: '初期化を確定',
+                attrs: { type: 'button' },
+                dataset: { action: 'confirm-reset-save' }
+              }),
+              el('button', {
+                className: 'btn btn-secondary',
+                text: '取消',
+                attrs: { type: 'button' },
+                dataset: { action: 'cancel-reset-save' }
+              })
+            ])
+          : el('button', {
+              className: 'btn btn-danger',
+              text: '初期記録を再生成',
+              attrs: { type: 'button' },
+              dataset: { action: 'reset-save' }
+            })
       ]),
       textarea
     );
@@ -2111,6 +2474,13 @@
 
     if (lowerEl) {
       const prevScrollTop = lowerEl.querySelector('.lower-scroll') ? lowerEl.querySelector('.lower-scroll').scrollTop : 0;
+      const scrollKey = [
+        uiState.activeTab || '',
+        uiState.areasPillar || '',
+        uiState.enhanceSub || '',
+        uiState.summonSub || '',
+        uiState.codexCategory || ''
+      ].join(':');
       clearNode(lowerEl);
       const activeTabObj = TABS.find(function (t) { return t.id === uiState.activeTab; }) ||
         (uiState.activeTab === 'audio_icons' ? { id: 'audio_icons', label: '音響・紋章' } : TABS[2]);
@@ -2172,10 +2542,14 @@
 
       lowerEl.appendChild(header);
       lowerEl.appendChild(scrollArea);
+      if (uiState.activeTab === 'areas') {
+        lowerEl.appendChild(buildAreasStickyCta(state, uiState));
+      }
       lowerEl.appendChild(tabBar);
-      if (prevScrollTop > 0 && uiState.activeTab === 'codex') {
+      if (prevScrollTop > 0 && lastHubScrollKey === scrollKey) {
         scrollArea.scrollTop = prevScrollTop;
       }
+      lastHubScrollKey = scrollKey;
     }
   }
 
@@ -2184,20 +2558,25 @@
   // =========================================================================
 
   function createDpsCell(label, fillClass) {
+    const dot = el('span', { className: 'dps-dot ' + fillClass });
     const fill = el('div', { className: 'meter-fill bar-smooth ' + fillClass });
     fill.style.width = '0%';
     const valNode = el('span', { className: 'dps-val', text: '0' });
+    const rateNode = el('span', { className: 'dps-rate', text: '0/s' });
     const rootNode = el('div', { className: 'dps-cell' }, [
       el('div', { className: 'dps-cell-head' }, [
-        el('span', { className: 'dps-label', text: label }),
-        valNode
+        el('span', { className: 'dps-label-wrap' }, [
+          dot,
+          el('span', { className: 'dps-label', text: label })
+        ]),
+        el('span', { className: 'dps-val-wrap' }, [valNode, rateNode])
       ]),
       el('div', { className: 'meter-track dps-track' }, [fill])
     ]);
-    return { rootNode, fill, valNode };
+    return { rootNode, fill, valNode, rateNode };
   }
 
-  function buildEnemyZone(enemies, isBossWave) {
+  function buildEnemyZone(enemies, isBossWave, nextActorId) {
     const SvgIcons = IkaiApp.SvgIcons;
     const refs = {
       waveSignature: enemies.map(function (e) { return e.id; }).join(','),
@@ -2214,15 +2593,16 @@
       const boss = enemies.find(function (e) { return e.isBoss; }) || enemies[0];
       const minions = enemies.filter(function (e) { return e.id !== boss.id; });
 
-      const hpFill = el('div', { className: 'meter-fill fill-dmg bar-smooth' });
-      hpFill.style.width = boss.hpPct + '%';
+      const bossTrack = makeHpTrack('hp-track', 'fill-boss-hp', boss.hpPct, calcShieldPct(boss));
       const atbFill = el('div', { className: 'meter-fill fill-cyan bar-smooth' });
       atbFill.style.width = boss.gauge + '%';
-      const hpText = el('span', { className: 'plate-hp-num', text: boss.hp + '/' + boss.maxHp });
+      const hpText = el('span', { className: 'plate-hp-num', text: formatUnitHpText(boss, true) });
       const buffBox = el('div', { className: 'buff-strip' }, buildBuffStrip(boss.buffs, boss.debuffs));
 
       const bossBadgeText = boss.bossType === 'area' ? 'エリアボス' : (boss.bossType === 'raid' ? '討伐ボス' : '中ボス');
-      const bossFrame = el('div', { className: 'boss-frame is-boss' }, [
+      const bossFrame = el('div', {
+        className: 'boss-frame is-boss' + (boss.id === nextActorId && boss.hp > 0 ? ' is-acting-next' : '')
+      }, [
         el('div', { className: 'boss-head' }, [
           SvgIcons.createUiIcon('warning', 'icon-svg'),
           el('span', { className: 'tag-chip tag-chip-boss', text: bossBadgeText }),
@@ -2230,7 +2610,7 @@
           hpText
         ]),
         el('div', { className: 'boss-bars' }, [
-          el('div', { className: 'meter-track hp-track' }, [hpFill]),
+          bossTrack.track,
           el('div', { className: 'meter-track atb-track' }, [atbFill])
         ]),
         buffBox
@@ -2250,7 +2630,9 @@
       refs.bossTelegraphTurns = telegraphTurns;
       refs.units[boss.id] = {
         plate: bossFrame,
-        hpFill,
+        hpFill: bossTrack.hpFill,
+        lagFill: bossTrack.lagFill,
+        shieldFill: bossTrack.shieldFill,
         atbFill,
         hpText,
         buffBox,
@@ -2260,21 +2642,24 @@
       const children = [bossFrame, telegraphBar];
       if (minions.length > 0) {
         const minionPlates = minions.map(function (m) {
-          const mHp = el('div', { className: 'meter-fill fill-dmg bar-smooth' });
-          mHp.style.width = m.hpPct + '%';
-          const mHpTxt = el('span', { className: 'plate-hp-num', text: m.hp + '/' + m.maxHp });
+          const mTrack = makeHpTrack('hp-track-sm', 'fill-dmg', m.hpPct, calcShieldPct(m));
+          const mHpTxt = el('span', { className: 'plate-hp-num', text: formatUnitHpText(m, false) });
           const mBuff = el('div', { className: 'buff-strip' }, buildBuffStrip(m.buffs, m.debuffs));
-          const mPlate = el('div', { className: 'enemy-minion-plate' }, [
+          const mPlate = el('div', {
+            className: 'enemy-minion-plate' + (m.id === nextActorId && m.hp > 0 ? ' is-acting-next' : '')
+          }, [
             el('div', { className: 'plate-head' }, [
               el('span', { className: 'unit-name plate-name', text: m.name }),
               mHpTxt
             ]),
-            el('div', { className: 'meter-track hp-track-sm' }, [mHp]),
+            mTrack.track,
             mBuff
           ]);
           refs.units[m.id] = {
             plate: mPlate,
-            hpFill: mHp,
+            hpFill: mTrack.hpFill,
+            lagFill: mTrack.lagFill,
+            shieldFill: mTrack.shieldFill,
             atbFill: null,
             hpText: mHpTxt,
             buffBox: mBuff,
@@ -2290,21 +2675,22 @@
     }
 
     const plates = enemies.map(function (e) {
-      const hpFill = el('div', { className: 'meter-fill fill-dmg bar-smooth' });
-      hpFill.style.width = e.hpPct + '%';
+      const eTrack = makeHpTrack('hp-track-sm', 'fill-dmg', e.hpPct, calcShieldPct(e));
       const atbFill = el('div', { className: 'meter-fill fill-cyan bar-smooth' });
       atbFill.style.width = e.gauge + '%';
-      const hpText = el('span', { className: 'plate-hp-num', text: e.hp + '/' + e.maxHp });
+      const hpText = el('span', { className: 'plate-hp-num', text: formatUnitHpText(e, false) });
       const buffBox = el('div', { className: 'buff-strip' }, buildBuffStrip(e.buffs, e.debuffs));
 
-      const plate = el('div', { className: 'enemy-plate' }, [
+      const plate = el('div', {
+        className: 'enemy-plate' + (e.id === nextActorId && e.hp > 0 ? ' is-acting-next' : '')
+      }, [
         el('div', { className: 'plate-head' }, [
           SvgIcons.createRoleIcon(e.role, 'plate-role-svg'),
           el('span', { className: 'unit-name plate-name', text: e.name }),
           hpText
         ]),
         el('div', { className: 'plate-bars' }, [
-          el('div', { className: 'meter-track hp-track-sm' }, [hpFill]),
+          eTrack.track,
           el('div', { className: 'meter-track atb-track' }, [atbFill])
         ]),
         buffBox
@@ -2312,7 +2698,9 @@
 
       refs.units[e.id] = {
         plate,
-        hpFill,
+        hpFill: eTrack.hpFill,
+        lagFill: eTrack.lagFill,
+        shieldFill: eTrack.shieldFill,
         atbFill,
         hpText,
         buffBox,
@@ -2325,21 +2713,37 @@
     return { node: grid, refs };
   }
 
+  function formatRepeatPill(snapshot, uiState) {
+    if (snapshot.mode === 'trial') {
+      return '制約試練';
+    }
+    return snapshot.autoRepeat > 0
+      ? ('周回 ' + uiState.autoRepeatDone + '/' + snapshot.autoRepeat)
+      : '単発';
+  }
+
   function buildBattleScene(upperEl, lowerEl, snapshot, uiState) {
     const SvgIcons = IkaiApp.SvgIcons;
+    const isTrial = snapshot.mode === 'trial';
+    const nextActorId = (snapshot.timeline && snapshot.timeline[0]) ? snapshot.timeline[0].unitId : null;
 
     const stageTitle = el('span', { className: 'battle-stage-label', text: snapshot.stageLabel });
     const wavePill = el('span', { className: 'battle-pill', text: 'W ' + (snapshot.waveIndex + 1) + '/' + snapshot.totalWaves });
     const speedPill = el('span', { className: 'battle-pill', text: '×' + snapshot.speed });
     const repeatPill = el('span', {
       className: 'battle-pill',
-      text: snapshot.autoRepeat > 0 ? '周回 ' + uiState.autoRepeatDone + '/' + snapshot.autoRepeat : '単発'
+      text: formatRepeatPill(snapshot, uiState)
     });
 
     const topbar = el('header', { className: 'battle-topbar' }, [
       stageTitle,
       el('div', { className: 'battle-meta-pills' }, [wavePill, speedPill, repeatPill])
     ]);
+
+    const latestLog = (snapshot.logs && snapshot.logs.length > 0) ? snapshot.logs[snapshot.logs.length - 1] : '戦闘開始';
+    const tickerText = el('span', { className: 'battle-ticker-text', text: latestLog });
+    const elapsedText = el('span', { className: 'battle-elapsed', text: '経過 ' + ((snapshot.elapsedMs || 0) / 1000).toFixed(1) + 's' });
+    const tickerBar = el('div', { className: 'battle-ticker' }, [tickerText, elapsedText]);
 
     const timelineChips = [];
     for (let i = 0; i < 8; i += 1) {
@@ -2354,20 +2758,21 @@
     const timelineBar = el('div', { className: 'turn-timeline' }, timelineChips.map(function (c) { return c.chip; }));
 
     const enemyField = el('div', { className: 'enemy-field' });
-    const enemyBuilt = buildEnemyZone(snapshot.enemies, snapshot.isBossWave);
+    const enemyBuilt = buildEnemyZone(snapshot.enemies, snapshot.isBossWave, nextActorId);
     enemyField.appendChild(enemyBuilt.node);
 
     const allyRefs = {};
     const allyPlates = snapshot.allies.map(function (a) {
       const reservedTag = el('span', { className: 'reserved-tag', text: '予約' });
-      const hpFill = el('div', { className: 'meter-fill fill-heal bar-smooth' });
-      hpFill.style.width = a.hpPct + '%';
+      const aTrack = makeHpTrack('hp-track-sm', 'fill-heal', a.hpPct, calcShieldPct(a));
       const atbFill = el('div', { className: 'meter-fill fill-cyan bar-smooth' });
       atbFill.style.width = a.gauge + '%';
-      const hpText = el('span', { className: 'plate-hp-num', text: a.hp + '/' + a.maxHp });
+      const hpText = el('span', { className: 'plate-hp-num', text: formatUnitHpText(a, false) });
       const buffBox = el('div', { className: 'buff-strip' }, buildBuffStrip(a.buffs, a.debuffs));
 
-      const plate = el('div', { className: 'ally-plate rarity-' + a.rarity }, [
+      const plate = el('div', {
+        className: 'ally-plate rarity-' + a.rarity + (a.id === nextActorId && a.hp > 0 ? ' is-acting-next' : '')
+      }, [
         el('div', { className: 'plate-head' }, [
           SvgIcons.createRoleIcon(a.role, 'plate-role-svg'),
           el('span', { className: 'unit-name plate-name', text: a.name }),
@@ -2375,7 +2780,7 @@
         ]),
         el('div', { className: 'plate-bars' }, [
           el('div', { className: 'plate-hp-row' }, [
-            el('div', { className: 'meter-track hp-track-sm' }, [hpFill]),
+            aTrack.track,
             hpText
           ]),
           el('div', { className: 'meter-track atb-track' }, [atbFill])
@@ -2386,7 +2791,9 @@
       allyRefs[a.id] = {
         plate,
         reservedTag,
-        hpFill,
+        hpFill: aTrack.hpFill,
+        lagFill: aTrack.lagFill,
+        shieldFill: aTrack.shieldFill,
         atbFill,
         hpText,
         buffBox,
@@ -2411,6 +2818,7 @@
 
     const battleStage = el('div', { className: 'battle-stage' }, [
       topbar,
+      tickerBar,
       timelineBar,
       enemyField,
       allyGrid,
@@ -2435,15 +2843,16 @@
     });
 
     const autoBtn = el('button', {
-      className: 'btn btn-compact' + (snapshot.autoRepeat > 0 ? ' btn-primary' : ' btn-secondary'),
-      text: snapshot.autoRepeat > 0 ? '周回ON' : '周回OFF',
+      className: 'btn btn-compact' + (!isTrial && snapshot.autoRepeat > 0 ? ' btn-primary' : ' btn-secondary'),
+      text: isTrial ? '周回不可' : (snapshot.autoRepeat > 0 ? '周回ON' : '周回OFF'),
       attrs: { type: 'button' },
+      disabled: isTrial,
       dataset: { action: 'toggle-battle-repeat' }
     });
 
     const dpsToggleBtn = el('button', {
       className: 'btn btn-compact' + (uiState.showDpsDetail ? ' btn-primary' : ' btn-secondary'),
-      text: 'DPS詳細',
+      text: '詳細',
       attrs: { type: 'button' },
       dataset: { action: 'toggle-dps-detail' }
     });
@@ -2473,7 +2882,7 @@
     const targetBtns = {};
     TARGET_ORDER.forEach(function (t) {
       targetBtns[t] = el('button', {
-        className: 'btn btn-compact' + (snapshot.globalTargetPolicy === t ? ' btn-primary' : 'btn-secondary'),
+        className: 'btn btn-compact' + (snapshot.globalTargetPolicy === t ? ' btn-primary' : ' btn-secondary'),
         text: TARGET_LABELS[t],
         attrs: { type: 'button' },
         dataset: { action: 'battle-global-target', target: t }
@@ -2492,10 +2901,22 @@
       const skillName = a.uniqueSkill ? a.uniqueSkill.name : '固有技';
       const reserveBtn = el('button', {
         className: 'btn btn-compact btn-primary',
-        text: skillName + '（即発可）',
+        text: skillName + '（予約可）',
         attrs: { type: 'button' },
         dataset: { action: 'reserve-skill', unitId: a.id, skillId: 'unique' }
       });
+
+      const collectBtns = (a.collectSkills || []).map(function (sk) {
+        const cBtn = el('button', {
+          className: 'btn btn-compact btn-secondary',
+          text: sk.name + '（予約可）',
+          attrs: { type: 'button' },
+          dataset: { action: 'reserve-skill', unitId: a.id, skillId: sk.id }
+        });
+        return { skillId: sk.id, skillName: sk.name, btn: cBtn };
+      });
+
+      const reserveList = el('div', { className: 'ally-reserve-list' }, [reserveBtn].concat(collectBtns.map(function (c) { return c.btn; })));
 
       const card = el('div', { className: 'ally-control-card rarity-' + a.rarity }, [
         el('div', { className: 'ally-control-head' }, [
@@ -2503,10 +2924,10 @@
           el('span', { className: 'unit-name ally-ctrl-name', text: a.name }),
           tacticBtn
         ]),
-        reserveBtn
+        reserveList
       ]);
 
-      unitControls[a.id] = { card, tacticBtn, reserveBtn, skillName };
+      unitControls[a.id] = { card, tacticBtn, reserveBtn, skillName, collectBtns };
       return card;
     });
 
@@ -2539,6 +2960,8 @@
       wavePill,
       speedPill,
       repeatPill,
+      tickerText,
+      elapsedText,
       timelineChips,
       enemyField,
       enemyZone: enemyBuilt.refs,
@@ -2557,6 +2980,7 @@
       dpsDetailContainer
     };
     lastDpsDetailFlag = uiState.showDpsDetail;
+    lastBattleDetailMode = uiState.battleDetailMode;
   }
 
   function renderDpsDetailRows(container, dpsMeters) {
@@ -2582,6 +3006,71 @@
     }
   }
 
+  function renderBattleDetailBox(container, snapshot, uiState) {
+    clearNode(container);
+    const mode = uiState.battleDetailMode || 'dps';
+    const switcher = el('div', { className: 'btn-grid-3' }, [
+      el('button', {
+        className: 'btn btn-compact ' + (mode === 'dps' ? 'btn-primary' : 'btn-secondary'),
+        text: 'DPS詳細',
+        attrs: { type: 'button' },
+        dataset: { action: 'switch-battle-detail', detailMode: 'dps' }
+      }),
+      el('button', {
+        className: 'btn btn-compact ' + (mode === 'logs' ? 'btn-primary' : 'btn-secondary'),
+        text: '戦況ログ',
+        attrs: { type: 'button' },
+        dataset: { action: 'switch-battle-detail', detailMode: 'logs' }
+      }),
+      el('button', {
+        className: 'btn btn-compact ' + (mode === 'buffs' ? 'btn-primary' : 'btn-secondary'),
+        text: '付与状態',
+        attrs: { type: 'button' },
+        dataset: { action: 'switch-battle-detail', detailMode: 'buffs' }
+      })
+    ]);
+    container.appendChild(switcher);
+
+    if (mode === 'logs') {
+      const logs = (snapshot.logs || []).slice().reverse();
+      const logList = el('div', { className: 'battle-log-list' },
+        logs.length > 0
+          ? logs.map(function (ln) { return el('div', { className: 'battle-log-line', text: ln }); })
+          : [el('div', { className: 'muted-note', text: 'まだ行動ログはありません。' })]
+      );
+      container.appendChild(logList);
+      return;
+    }
+
+    if (mode === 'buffs') {
+      const units = snapshot.allies.concat(snapshot.enemies).filter(function (u) { return u.hp > 0; });
+      const rows = units.map(function (u) {
+        const effs = [];
+        if (u.shield > 0) effs.push('障壁+' + u.shield);
+        (u.buffs || []).forEach(function (b) {
+          if (b.stat === 'shield') return;
+          const m = BUFF_META_MAP[b.stat];
+          effs.push((m ? m.label.split('（')[0] : b.stat) + '(' + b.duration + 'T)');
+        });
+        (u.debuffs || []).forEach(function (d) {
+          const m = BUFF_META_MAP[d.stat];
+          effs.push('[' + (m ? m.label.split('（')[0] : d.stat) + '(' + d.duration + 'T)]');
+        });
+        return el('div', { className: 'battle-log-line', text: u.name + '：' + (effs.length > 0 ? effs.join(' ／ ') : '付与なし') });
+      });
+      container.appendChild(el('div', { className: 'battle-log-list' }, rows));
+      return;
+    }
+
+    const tableWrap = el('div');
+    renderDpsDetailRows(tableWrap, snapshot.dpsMeters);
+    container.appendChild(tableWrap);
+    container.appendChild(el('div', {
+      className: 'muted-note',
+      text: '経過 ' + ((snapshot.elapsedMs || 0) / 1000).toFixed(1) + '秒 ／ 累計 ' + snapshot.turnCount + '行動'
+    }));
+  }
+
   function spawnVfxForEvents(refs, snapshot) {
     if (!refs || !refs.vfxLayer || !Array.isArray(snapshot.events) || snapshot.events.length === 0) {
       return;
@@ -2592,6 +3081,24 @@
       if (ev.type !== 'damage' && ev.type !== 'heal' && ev.type !== 'endure') {
         continue;
       }
+      const targetId = ev.targetId || ev.unitId;
+      const targetRef = ev.targetSide === 'enemy'
+        ? (refs.enemyZone && refs.enemyZone.units ? refs.enemyZone.units[targetId] : null)
+        : (refs.allyRefs ? refs.allyRefs[targetId] : null);
+      if (targetRef && targetRef.plate) {
+        const animCls = ev.type === 'endure'
+          ? 'anim-endure-flash'
+          : (ev.type === 'heal' ? 'anim-heal' : (ev.isCrit ? 'anim-crit-flash' : 'anim-hit'));
+        targetRef.plate.classList.remove('anim-hit', 'anim-heal', 'anim-crit-flash', 'anim-endure-flash');
+        void targetRef.plate.offsetWidth;
+        targetRef.plate.classList.add(animCls);
+        if (typeof root.setTimeout === 'function') {
+          root.setTimeout(function () {
+            targetRef.plate.classList.remove(animCls);
+          }, 380);
+        }
+      }
+
       const floatEl = el('span', {
         className: 'vfx-float ' + (ev.type === 'heal' ? 'is-heal' : (ev.isCrit ? 'is-crit' : 'is-dmg')),
         text: ev.type === 'endure' ? '不屈!' : ((ev.type === 'heal' ? '+' : '-') + ev.value + (ev.isCrit ? '!' : ''))
@@ -2621,10 +3128,16 @@
 
     const SvgIcons = IkaiApp.SvgIcons;
     const refs = battleRefs;
+    const isTrial = snapshot.mode === 'trial';
+    const nextActorId = (snapshot.timeline && snapshot.timeline[0]) ? snapshot.timeline[0].unitId : null;
 
     refs.wavePill.textContent = 'W ' + (snapshot.waveIndex + 1) + '/' + snapshot.totalWaves;
     refs.speedPill.textContent = '×' + snapshot.speed;
-    refs.repeatPill.textContent = snapshot.autoRepeat > 0 ? '周回 ' + uiState.autoRepeatDone + '/' + snapshot.autoRepeat : '単発';
+    refs.repeatPill.textContent = formatRepeatPill(snapshot, uiState);
+
+    const latestLog = (snapshot.logs && snapshot.logs.length > 0) ? snapshot.logs[snapshot.logs.length - 1] : '戦闘進行中';
+    refs.tickerText.textContent = latestLog;
+    refs.elapsedText.textContent = '経過 ' + ((snapshot.elapsedMs || 0) / 1000).toFixed(1) + 's';
 
     for (let i = 0; i < 8; i += 1) {
       const slot = refs.timelineChips[i];
@@ -2649,7 +3162,7 @@
     const nextWaveSig = snapshot.enemies.map(function (e) { return e.id; }).join(',');
     if (refs.enemyZone.waveSignature !== nextWaveSig) {
       clearNode(refs.enemyField);
-      const rebuilt = buildEnemyZone(snapshot.enemies, snapshot.isBossWave);
+      const rebuilt = buildEnemyZone(snapshot.enemies, snapshot.isBossWave, nextActorId);
       refs.enemyField.appendChild(rebuilt.node);
       refs.enemyZone = rebuilt.refs;
     } else {
@@ -2658,11 +3171,18 @@
         const uRef = refs.enemyZone.units[e.id];
         if (!uRef) continue;
         uRef.plate.classList.toggle('is-ko', e.hp <= 0);
+        uRef.plate.classList.toggle('is-acting-next', e.id === nextActorId && e.hp > 0);
         uRef.hpFill.style.width = e.hpPct + '%';
+        if (uRef.lagFill) {
+          uRef.lagFill.style.width = e.hpPct + '%';
+        }
+        if (uRef.shieldFill) {
+          uRef.shieldFill.style.width = calcShieldPct(e) + '%';
+        }
         if (uRef.atbFill) {
           uRef.atbFill.style.width = e.gauge + '%';
         }
-        uRef.hpText.textContent = e.hp + '/' + e.maxHp;
+        uRef.hpText.textContent = formatUnitHpText(e, e.isBoss);
         const sig = signatureOfEffects(e.buffs, e.debuffs);
         if (sig !== uRef.effSig) {
           uRef.effSig = sig;
@@ -2692,10 +3212,17 @@
       const aRef = refs.allyRefs[a.id];
       if (aRef) {
         aRef.plate.classList.toggle('is-ko', a.hp <= 0);
+        aRef.plate.classList.toggle('is-acting-next', a.id === nextActorId && a.hp > 0);
         aRef.reservedTag.classList.toggle('is-visible', Boolean(a.reservedSkillId));
         aRef.hpFill.style.width = a.hpPct + '%';
+        if (aRef.lagFill) {
+          aRef.lagFill.style.width = a.hpPct + '%';
+        }
+        if (aRef.shieldFill) {
+          aRef.shieldFill.style.width = calcShieldPct(a) + '%';
+        }
         aRef.atbFill.style.width = a.gauge + '%';
-        aRef.hpText.textContent = a.hp + '/' + a.maxHp;
+        aRef.hpText.textContent = formatUnitHpText(a, false);
         const sig = signatureOfEffects(a.buffs, a.debuffs);
         if (sig !== aRef.effSig) {
           aRef.effSig = sig;
@@ -2711,32 +3238,57 @@
       if (cRef) {
         cRef.tacticBtn.textContent = POLICY_LABELS[a.tactic.policy] || '均衡';
         cRef.tacticBtn.disabled = a.hp <= 0;
-        const isRes = Boolean(a.reservedSkillId);
+        const isUniqueRes = a.reservedSkillId === 'unique';
         const cd = a.uniqueSkill ? a.uniqueSkill.currentCd : 0;
         cRef.reserveBtn.disabled = a.hp <= 0;
-        cRef.reserveBtn.classList.toggle('is-reserved', isRes);
+        cRef.reserveBtn.classList.toggle('is-reserved', isUniqueRes);
         if (a.hp <= 0) {
           cRef.reserveBtn.textContent = cRef.skillName + '（戦闘不能）';
-        } else if (isRes) {
+        } else if (isUniqueRes) {
           cRef.reserveBtn.textContent = cRef.skillName + '（予約済）';
         } else if (cd > 0) {
           cRef.reserveBtn.textContent = cRef.skillName + '（CT' + cd + '）';
         } else {
           cRef.reserveBtn.textContent = cRef.skillName + '（予約可）';
         }
+
+        if (Array.isArray(cRef.collectBtns)) {
+          for (let k = 0; k < cRef.collectBtns.length; k += 1) {
+            const cb = cRef.collectBtns[k];
+            const sk = (a.collectSkills || []).find(function (s) { return s.id === cb.skillId; });
+            const isSkRes = a.reservedSkillId === cb.skillId;
+            const skCd = sk ? sk.currentCd : 0;
+            cb.btn.disabled = a.hp <= 0;
+            cb.btn.classList.toggle('is-reserved', isSkRes);
+            if (a.hp <= 0) {
+              cb.btn.textContent = cb.skillName + '（戦闘不能）';
+            } else if (isSkRes) {
+              cb.btn.textContent = cb.skillName + '（予約済）';
+            } else if (skCd > 0) {
+              cb.btn.textContent = cb.skillName + '（CT' + skCd + '）';
+            } else {
+              cb.btn.textContent = cb.skillName + '（予約可）';
+            }
+          }
+        }
       }
     }
 
     const totals = snapshot.dpsMeters.totals;
     const maxMetric = Math.max(1, totals.damageDealt, totals.damageTaken, totals.healingDone, totals.healingReceived);
+    const sec = Math.max(0.1, (snapshot.elapsedMs || 0) / 1000);
     refs.dpsDealt.fill.style.width = Math.round((totals.damageDealt / maxMetric) * 100) + '%';
     refs.dpsDealt.valNode.textContent = String(totals.damageDealt);
+    refs.dpsDealt.rateNode.textContent = Math.round(totals.damageDealt / sec) + '/s';
     refs.dpsTaken.fill.style.width = Math.round((totals.damageTaken / maxMetric) * 100) + '%';
     refs.dpsTaken.valNode.textContent = String(totals.damageTaken);
+    refs.dpsTaken.rateNode.textContent = Math.round(totals.damageTaken / sec) + '/s';
     refs.dpsHeal.fill.style.width = Math.round((totals.healingDone / maxMetric) * 100) + '%';
     refs.dpsHeal.valNode.textContent = String(totals.healingDone);
+    refs.dpsHeal.rateNode.textContent = Math.round(totals.healingDone / sec) + '/s';
     refs.dpsHealed.fill.style.width = Math.round((totals.healingReceived / maxMetric) * 100) + '%';
     refs.dpsHealed.valNode.textContent = String(totals.healingReceived);
+    refs.dpsHealed.rateNode.textContent = Math.round(totals.healingReceived / sec) + '/s';
 
     [1, 2, 3].forEach(function (spd) {
       const active = snapshot.speed === spd;
@@ -2744,10 +3296,11 @@
       refs.speedBtns[spd].classList.toggle('btn-secondary', !active);
     });
 
-    const repeatOn = snapshot.autoRepeat > 0;
+    const repeatOn = !isTrial && snapshot.autoRepeat > 0;
+    refs.autoBtn.disabled = isTrial;
     refs.autoBtn.classList.toggle('btn-primary', repeatOn);
     refs.autoBtn.classList.toggle('btn-secondary', !repeatOn);
-    refs.autoBtn.textContent = repeatOn ? '周回ON' : '周回OFF';
+    refs.autoBtn.textContent = isTrial ? '周回不可' : (repeatOn ? '周回ON' : '周回OFF');
 
     refs.dpsToggleBtn.classList.toggle('btn-primary', Boolean(uiState.showDpsDetail));
     refs.dpsToggleBtn.classList.toggle('btn-secondary', !uiState.showDpsDetail);
@@ -2764,11 +3317,12 @@
       refs.targetBtns[t].classList.toggle('btn-secondary', !active);
     });
 
-    if (uiState.showDpsDetail || lastDpsDetailFlag !== uiState.showDpsDetail) {
+    if (uiState.showDpsDetail || lastDpsDetailFlag !== uiState.showDpsDetail || lastBattleDetailMode !== uiState.battleDetailMode) {
       lastDpsDetailFlag = uiState.showDpsDetail;
+      lastBattleDetailMode = uiState.battleDetailMode;
       refs.dpsDetailContainer.classList.toggle('is-hidden', !uiState.showDpsDetail);
       if (uiState.showDpsDetail) {
-        renderDpsDetailRows(refs.dpsDetailContainer, snapshot.dpsMeters);
+        renderBattleDetailBox(refs.dpsDetailContainer, snapshot, uiState);
       }
     }
 
@@ -2778,10 +3332,13 @@
   function renderResult(upperEl, lowerEl, snapshot, uiState) {
     battleRefs = null;
     lastDpsDetailFlag = null;
+    lastBattleDetailMode = null;
 
+    const MasterData = IkaiApp.MasterData;
     const isVictory = snapshot && snapshot.status === 'victory';
     const totals = snapshot ? snapshot.dpsMeters.totals : { damageDealt: 0, damageTaken: 0, healingDone: 0, healingReceived: 0 };
     const maxMetric = Math.max(1, totals.damageDealt, totals.damageTaken, totals.healingDone, totals.healingReceived);
+    const sec = Math.max(0.1, snapshot ? ((snapshot.elapsedMs || 0) / 1000) : 1);
 
     if (upperEl) {
       clearNode(upperEl);
@@ -2793,24 +3350,46 @@
 
       dpsDealt.fill.style.width = Math.round((totals.damageDealt / maxMetric) * 100) + '%';
       dpsDealt.valNode.textContent = String(totals.damageDealt);
+      dpsDealt.rateNode.textContent = Math.round(totals.damageDealt / sec) + '/s';
       dpsTaken.fill.style.width = Math.round((totals.damageTaken / maxMetric) * 100) + '%';
       dpsTaken.valNode.textContent = String(totals.damageTaken);
+      dpsTaken.rateNode.textContent = Math.round(totals.damageTaken / sec) + '/s';
       dpsHeal.fill.style.width = Math.round((totals.healingDone / maxMetric) * 100) + '%';
       dpsHeal.valNode.textContent = String(totals.healingDone);
+      dpsHeal.rateNode.textContent = Math.round(totals.healingDone / sec) + '/s';
       dpsHealed.fill.style.width = Math.round((totals.healingReceived / maxMetric) * 100) + '%';
       dpsHealed.valNode.textContent = String(totals.healingReceived);
+      dpsHealed.rateNode.textContent = Math.round(totals.healingReceived / sec) + '/s';
+
+      let mvpId = null;
+      let bestScore = -1;
+      const byUnit = snapshot && snapshot.dpsMeters ? snapshot.dpsMeters.byUnit : [];
+      const useDmg = totals.damageDealt > 0;
+      for (let i = 0; i < byUnit.length; i += 1) {
+        const sc = useDmg ? byUnit[i].damageDealt : byUnit[i].healingDone;
+        if (sc > bestScore) {
+          bestScore = sc;
+          mvpId = byUnit[i].unitId;
+        }
+      }
 
       const allyChips = (snapshot ? snapshot.allies : []).map(function (a) {
         return el('div', { className: 'result-ally-chip rarity-' + a.rarity }, [
-          el('span', { className: 'unit-name', text: a.name }),
+          el('div', { className: 'unit-ident' }, [
+            el('span', { className: 'unit-name', text: a.name }),
+            a.id === mvpId ? el('span', { className: 'mvp-chip', text: 'MVP' }) : null
+          ]),
           el('span', { className: 'muted-note', text: '残HP ' + a.hp + '/' + a.maxHp })
         ]);
       });
 
       const stage = el('div', { className: 'result-stage anim-fade-in' }, [
-        el('div', { className: 'result-banner ' + (isVictory ? 'is-victory' : 'is-defeat') }, [
+        el('div', { className: 'result-banner ' + (isVictory ? 'is-victory anim-victory-sweep' : 'is-defeat') }, [
           el('div', { className: 'result-status-title', text: isVictory ? '作戦成功' : '作戦失敗' }),
-          el('div', { className: 'result-stage-sub', text: (snapshot ? snapshot.stageLabel : '') + ' ・ 経過 ' + (snapshot ? snapshot.turnCount : 0) + ' 行動' })
+          el('div', {
+            className: 'result-stage-sub',
+            text: (snapshot ? snapshot.stageLabel : '') + ' ・ 経過 ' + (snapshot ? snapshot.turnCount : 0) + '行動（' + ((snapshot ? (snapshot.elapsedMs || 0) : 0) / 1000).toFixed(1) + 's）'
+          })
         ]),
         el('div', { className: 'dps-meter-panel is-result' }, [
           dpsDealt.rootNode,
@@ -2833,36 +3412,78 @@
       const scrollNodes = [];
       if (uiState.autoRepeatPending) {
         scrollNodes.push(el('div', { className: 'notice-banner is-ok' }, [
-          el('span', { text: '自動周回進行中：次戦まで待機中（残り ' + uiState.autoRepeatRemaining + ' 回） ' }),
-          el('button', {
-            className: 'btn btn-compact btn-danger',
-            text: '周回停止',
-            attrs: { type: 'button' },
-            dataset: { action: 'cancel-auto-repeat' }
-          })
+          el('div', { text: '自動周回進行中：次戦まで待機中（残り ' + uiState.autoRepeatRemaining + ' 回）' }),
+          el('div', { className: 'btn-row' }, [
+            el('button', {
+              className: 'btn btn-compact btn-primary',
+              text: 'すぐ次戦へ',
+              attrs: { type: 'button' },
+              dataset: { action: 'proceed-auto-repeat' }
+            }),
+            el('button', {
+              className: 'btn btn-compact btn-danger',
+              text: '周回停止',
+              attrs: { type: 'button' },
+              dataset: { action: 'cancel-auto-repeat' }
+            })
+          ])
         ]));
       }
 
       if (uiState.lastRewards && !uiState.lastRewards.retreated) {
         const rw = uiState.lastRewards;
-        const rewardParts = [];
-        if (rw.echoStones) rewardParts.push('残響石 +' + rw.echoStones);
-        if (rw.starCoins) rewardParts.push('星貨 +' + rw.starCoins);
-        if (rw.emblemShards) rewardParts.push('紋章片 +' + rw.emblemShards);
-        if (rw.masteryBooks) rewardParts.push('熟練の書 +' + rw.masteryBooks);
-        if (rw.exchangeCrystals) rewardParts.push('交換結晶 +' + rw.exchangeCrystals);
-        if (rw.universalShards) rewardParts.push('汎用結晶 +' + rw.universalShards);
-        if (rw.qualityCatalysts) rewardParts.push('昇格触媒 +' + rw.qualityCatalysts);
-        if (rw.skillName) rewardParts.push('収集技『' + rw.skillName + '』');
-        if (rw.equipText) rewardParts.push('装備『' + rw.equipText + '』');
-        if (rw.advancedExpeditions > 0) rewardParts.push('異界調査進行 +' + rw.advancedExpeditions + '枠');
+        const rewardPills = [];
+        if (rw.echoStones) rewardPills.push(el('span', { className: 'reward-pill', text: '残響石 +' + rw.echoStones }));
+        if (rw.starCoins) rewardPills.push(el('span', { className: 'reward-pill', text: '星貨 +' + rw.starCoins }));
+        if (rw.emblemShards) rewardPills.push(el('span', { className: 'reward-pill', text: '紋章片 +' + rw.emblemShards }));
+        if (rw.masteryBooks) rewardPills.push(el('span', { className: 'reward-pill', text: '熟練の書 +' + rw.masteryBooks }));
+        if (rw.exchangeCrystals) rewardPills.push(el('span', { className: 'reward-pill', text: '交換結晶 +' + rw.exchangeCrystals }));
+        if (rw.universalShards) rewardPills.push(el('span', { className: 'reward-pill', text: '汎用結晶 +' + rw.universalShards }));
+        if (rw.qualityCatalysts) rewardPills.push(el('span', { className: 'reward-pill', text: '昇格触媒 +' + rw.qualityCatalysts }));
+        if (rw.skillName) rewardPills.push(el('span', { className: 'reward-pill', text: '収集技『' + rw.skillName + '』' }));
+        if (rw.equipText) rewardPills.push(el('span', { className: 'reward-pill', text: '装備『' + rw.equipText + '』' }));
+        if (rw.advancedExpeditions > 0) rewardPills.push(el('span', { className: 'reward-pill', text: '異界調査進行 +' + rw.advancedExpeditions + '枠' }));
         if (rw.raidBestDamage !== null && rw.raidBestDamage !== undefined) {
-          rewardParts.push('討伐最大与ダメ ' + rw.raidBestDamage);
+          rewardPills.push(el('span', { className: 'reward-pill', text: '討伐最大与ダメ ' + rw.raidBestDamage }));
         }
 
         scrollNodes.push(el('div', { className: 'detail-block' }, [
           el('div', { className: 'detail-heading', text: rw.isFirstClear ? '初回踏破報酬を獲得' : (isVictory ? '戦闘報酬を獲得' : '戦闘記録を更新') }),
-          el('div', { className: 'detail-desc', text: rewardParts.join(' ／ ') || '報酬記録済み' })
+          rewardPills.length > 0
+            ? el('div', { className: 'reward-pill-grid' }, rewardPills)
+            : el('div', { className: 'detail-desc', text: '報酬記録済み' })
+        ]));
+
+        if (Array.isArray(rw.rankedUpSkills) && rw.rankedUpSkills.length > 0) {
+          const rankMsgs = rw.rankedUpSkills.map(function (rk) {
+            const rankInfo = MasterData.SKILL_MASTERY_RANKS[(rk.newRank || 1) - 1];
+            const rankLabel = rankInfo ? rankInfo.label : String(rk.newRank);
+            return el('div', {
+              className: 'detail-desc',
+              text: '『' + rk.name + '』が 熟練ランク' + rankLabel + ' に昇格しました'
+            });
+          });
+          scrollNodes.push(el('div', { className: 'notice-banner is-ok' }, [
+            el('div', { className: 'detail-heading', text: '収集技 熟練度昇格！' })
+          ].concat(rankMsgs)));
+        }
+      }
+
+      if (uiState.autoRepeatSummary && uiState.autoRepeatSummary.runs >= 1) {
+        const sum = uiState.autoRepeatSummary;
+        const sumPills = [
+          el('span', { className: 'reward-pill', text: sum.runs + '戦 ' + sum.victories + '勝' })
+        ];
+        if (sum.echoStones) sumPills.push(el('span', { className: 'reward-pill', text: '残響石 +' + sum.echoStones }));
+        if (sum.starCoins) sumPills.push(el('span', { className: 'reward-pill', text: '星貨 +' + sum.starCoins }));
+        if (sum.emblemShards) sumPills.push(el('span', { className: 'reward-pill', text: '紋章片 +' + sum.emblemShards }));
+        if (sum.masteryBooks) sumPills.push(el('span', { className: 'reward-pill', text: '熟練の書 +' + sum.masteryBooks }));
+        if (sum.exchangeCrystals) sumPills.push(el('span', { className: 'reward-pill', text: '交換結晶 +' + sum.exchangeCrystals }));
+        if (sum.equipDrops) sumPills.push(el('span', { className: 'reward-pill', text: '装備獲得 ' + sum.equipDrops + '個' }));
+
+        scrollNodes.push(el('div', { className: 'm3-card' }, [
+          el('div', { className: 'm3-card-title', text: '自動周回 累計獲得サマリー' }),
+          el('div', { className: 'reward-pill-grid' }, sumPills)
         ]));
       }
 
@@ -2872,43 +3493,82 @@
       }
       scrollNodes.push(unitDpsBox);
 
+      const logs = snapshot && Array.isArray(snapshot.logs) ? snapshot.logs : [];
+      if (logs.length > 0) {
+        scrollNodes.push(el('div', { className: 'm3-card' }, [
+          el('div', { className: 'm3-card-head' }, [
+            el('span', { className: 'm3-card-title', text: '戦況ログ（直近 ' + logs.length + ' 件）' }),
+            el('button', {
+              className: 'btn btn-compact btn-secondary',
+              text: uiState.showResultLogs ? '閉じる' : '開く',
+              attrs: { type: 'button' },
+              dataset: { action: 'toggle-result-logs' }
+            })
+          ]),
+          uiState.showResultLogs
+            ? el('div', { className: 'battle-log-list' }, logs.slice().reverse().map(function (ln) {
+                return el('div', { className: 'battle-log-line', text: ln });
+              }))
+            : null
+        ]));
+      }
+
       const scrollArea = el('div', { className: 'lower-scroll' }, scrollNodes);
 
       const mode = snapshot ? snapshot.mode : 'stage';
       const hasNextStage = mode === 'stage' && Boolean(uiState.nextStageId);
       const isAbyss = mode === 'abyss';
+      const isTwoCol = mode === 'raid' || mode === 'trial';
 
-      const middleBtn = isAbyss
-        ? el('button', {
+      let actionsBar;
+      if (isTwoCol) {
+        actionsBar = el('div', { className: 'result-actions btn-grid-2' }, [
+          el('button', {
             className: 'btn btn-primary',
-            text: '次の階層へ',
+            text: '再挑戦',
             attrs: { type: 'button' },
-            disabled: !isVictory,
-            dataset: { action: 'next-abyss-floor' }
+            dataset: { action: 'retry-battle' }
+          }),
+          el('button', {
+            className: 'btn btn-secondary',
+            text: '拠点へ戻る',
+            attrs: { type: 'button' },
+            dataset: { action: 'return-hub' }
           })
-        : el('button', {
-            className: 'btn btn-primary',
-            text: '次のステージ',
-            attrs: { type: 'button' },
-            disabled: !(isVictory && hasNextStage),
-            dataset: { action: 'next-stage' }
-          });
+        ]);
+      } else {
+        const middleBtn = isAbyss
+          ? el('button', {
+              className: 'btn btn-primary',
+              text: '次の階層へ',
+              attrs: { type: 'button' },
+              disabled: !isVictory,
+              dataset: { action: 'next-abyss-floor' }
+            })
+          : el('button', {
+              className: 'btn btn-primary',
+              text: '次のステージ',
+              attrs: { type: 'button' },
+              disabled: !(isVictory && hasNextStage),
+              dataset: { action: 'next-stage' }
+            });
 
-      const actionsBar = el('div', { className: 'result-actions btn-grid-3' }, [
-        el('button', {
-          className: 'btn btn-secondary',
-          text: '再戦',
-          attrs: { type: 'button' },
-          dataset: { action: 'retry-battle' }
-        }),
-        middleBtn,
-        el('button', {
-          className: 'btn btn-secondary',
-          text: '拠点へ戻る',
-          attrs: { type: 'button' },
-          dataset: { action: 'return-hub' }
-        })
-      ]);
+        actionsBar = el('div', { className: 'result-actions btn-grid-3' }, [
+          el('button', {
+            className: 'btn btn-secondary',
+            text: '再戦',
+            attrs: { type: 'button' },
+            dataset: { action: 'retry-battle' }
+          }),
+          middleBtn,
+          el('button', {
+            className: 'btn btn-secondary',
+            text: '拠点へ戻る',
+            attrs: { type: 'button' },
+            dataset: { action: 'return-hub' }
+          })
+        ]);
+      }
 
       lowerEl.appendChild(header);
       lowerEl.appendChild(scrollArea);
@@ -2931,6 +3591,7 @@
   function resetBattleCache() {
     battleRefs = null;
     lastDpsDetailFlag = null;
+    lastBattleDetailMode = null;
   }
 
   IkaiApp.UIRenderer = Object.freeze({

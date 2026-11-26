@@ -7,6 +7,7 @@ html, body {
   inset: 0;
   width: 100%;
   height: 100%;
+  height: 100dvh;
   margin: 0;
   padding: 0;
   overflow: hidden;
@@ -26,6 +27,7 @@ html, body {
   inset: 0;
   width: 100%;
   height: 100%;
+  height: 100dvh;
   display: grid;
   grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   grid-template-columns: minmax(0, 1fr);
@@ -41,10 +43,10 @@ html, body {
   overflow: hidden;
   pointer-events: none;
   touch-action: none;
-  padding: max(8px, var(--safe-top)) max(10px, var(--safe-right)) 8px max(10px, var(--safe-left));
+  padding: max(6px, var(--safe-top)) max(10px, var(--safe-right)) 4px max(10px, var(--safe-left));
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   background: radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.10), transparent 65%), var(--bg-abyss);
 }
 
@@ -72,6 +74,8 @@ html, body {
   justify-content: space-between;
   gap: 6px;
   padding-bottom: 6px;
+  box-shadow: 0 4px 10px -4px rgba(0, 0, 0, 0.68);
+  z-index: 2;
 }
 
 .lower-scroll {
@@ -81,10 +85,38 @@ html, body {
   overflow-x: hidden;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
-  padding-right: 2px;
+  padding: 2px 3px 4px 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.40) transparent;
+}
+
+.lower-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.lower-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.lower-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.40);
+  border-radius: 999px;
+}
+
+.lower-sticky-cta {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0 4px;
+  border-top: 1px solid var(--border-subtle);
+  background-color: var(--bg-surface);
+  box-shadow: 0 -4px 10px -4px rgba(0, 0, 0, 0.55);
+  z-index: 2;
 }
 
 .lower-tabs {
@@ -94,4 +126,6 @@ html, body {
   gap: 3px;
   padding-top: 6px;
   border-top: 1px solid var(--border-subtle);
+  box-shadow: 0 -4px 12px -4px rgba(0, 0, 0, 0.68);
+  z-index: 2;
 }

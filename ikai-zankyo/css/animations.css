@@ -59,6 +59,58 @@
   }
 }
 
+@keyframes ikai-crit-flash {
+  0%, 100% {
+    box-shadow: 0 0 0 rgba(251, 191, 36, 0);
+  }
+  45% {
+    box-shadow: 0 0 12px rgba(251, 191, 36, 0.72), inset 0 0 8px rgba(251, 191, 36, 0.35);
+  }
+}
+
+@keyframes ikai-endure-flash {
+  0%, 100% {
+    box-shadow: 0 0 0 rgba(94, 234, 212, 0);
+  }
+  45% {
+    box-shadow: 0 0 14px rgba(94, 234, 212, 0.80), inset 0 0 10px rgba(94, 234, 212, 0.40);
+  }
+}
+
+@keyframes ikai-ssr-shimmer {
+  0%, 100% {
+    box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.28), 0 0 0 rgba(251, 191, 36, 0);
+  }
+  50% {
+    box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.45), 0 0 10px rgba(251, 191, 36, 0.22);
+  }
+}
+
+@keyframes ikai-victory-sweep {
+  0% {
+    transform: translateX(-110%);
+    opacity: 0;
+  }
+  30% {
+    opacity: 0.65;
+  }
+  100% {
+    transform: translateX(140%);
+    opacity: 0;
+  }
+}
+
+@keyframes ikai-card-pop {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .anim-pulse {
   animation: ikai-pulse-glow 2.4s ease-in-out infinite;
 }
@@ -74,6 +126,49 @@
 .anim-heal {
   animation: ikai-heal-pulse 360ms ease-out;
 }
+
+.anim-crit-flash {
+  animation: ikai-hit-shake 180ms ease-out, ikai-crit-flash 320ms ease-out;
+}
+
+.anim-endure-flash {
+  animation: ikai-endure-flash 520ms ease-out;
+}
+
+.unit-preview-card.rarity-SSR,
+.summon-pull-chip.is-ssr-glow {
+  animation: ikai-ssr-shimmer 3s ease-in-out infinite;
+}
+
+.result-banner.is-victory.anim-victory-sweep {
+  position: relative;
+  overflow: hidden;
+}
+
+.result-banner.is-victory.anim-victory-sweep::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(52, 211, 153, 0.28), transparent);
+  animation: ikai-victory-sweep 950ms ease-out 1 both;
+  pointer-events: none;
+}
+
+.summon-pop-chip {
+  animation: ikai-card-pop 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.stagger-0 { animation-delay: 0ms; }
+.stagger-1 { animation-delay: 35ms; }
+.stagger-2 { animation-delay: 70ms; }
+.stagger-3 { animation-delay: 105ms; }
+.stagger-4 { animation-delay: 140ms; }
+.stagger-5 { animation-delay: 175ms; }
+.stagger-6 { animation-delay: 210ms; }
+.stagger-7 { animation-delay: 245ms; }
+.stagger-8 { animation-delay: 280ms; }
+.stagger-9 { animation-delay: 315ms; }
 
 .boss-telegraph-bar.is-telegraph-active {
   animation: ikai-telegraph-pulse 1.2s ease-in-out infinite;
@@ -92,12 +187,27 @@
   .anim-fade-in,
   .anim-hit,
   .anim-heal,
+  .anim-crit-flash,
+  .anim-endure-flash,
+  .unit-preview-card.rarity-SSR,
+  .summon-pull-chip.is-ssr-glow,
+  .result-banner.is-victory.anim-victory-sweep::after,
+  .summon-pop-chip,
   .boss-telegraph-bar.is-telegraph-active,
   .vfx-float {
     animation-duration: 1ms;
+    animation-delay: 0ms;
     animation-iteration-count: 1;
   }
-  .bar-smooth {
+  .bar-smooth,
+  .meter-lag,
+  .btn,
+  .tab-btn,
+  .roster-row,
+  .stage-card-btn,
+  .party-slot-btn,
+  .emblem-node-card {
     transition-duration: 1ms;
+    transition-delay: 0ms;
   }
 }

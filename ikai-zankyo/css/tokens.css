@@ -5,16 +5,20 @@ html, body {
 
 :root {
   --bg-abyss: #090C12;
-  --bg-surface: #111722;
-  --bg-plate: #182132;
-  --bg-elevated: #1E293D;
-  --bg-glass: rgba(17, 23, 34, 0.90);
+  --bg-surface: #101622;
+  --bg-plate: #172030;
+  --bg-elevated: #202D44;
+  --bg-glass: rgba(16, 22, 34, 0.92);
 
-  --border-subtle: #243044;
+  --border-subtle: rgba(148, 163, 184, 0.20);
+  --border-highlight: rgba(94, 234, 212, 0.38);
   --border-focus: #38BDF8;
   --border-ssr: #FBBF24;
   --border-sr: #A78BFA;
   --border-r: #64748B;
+
+  --shadow-recessed: inset 0 1px 3px rgba(4, 7, 13, 0.65);
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 
   --c-cyan: #5EEAD4;
   --c-sky: #38BDF8;
@@ -25,7 +29,7 @@ html, body {
 
   --text-primary: #E2E8F0;
   --text-secondary: #94A3B8;
-  --text-muted: #64748B;
+  --text-muted: #8D9EB5;
 
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);

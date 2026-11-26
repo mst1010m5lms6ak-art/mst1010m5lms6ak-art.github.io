@@ -1295,6 +1295,157 @@
     return { ok: true, slotIdx: idx, charId, state: draft };
   }
 
+  function autoEquipBest(state, charId) {
+    const MasterData = IkaiApp.MasterData;
+    if (!state || !state.roster || !hasOwn(state.roster, charId)) {
+      return { ok: false, reason: '指定された仲間を所持していません', state };
+    }
+    const draft = cloneState(state);
+    const entry = draft.roster[charId];
+    const tierDef = MasterData.AWAKENING_TIERS[entry.awakening];
+    const unlockedSlots = tierDef ? tierDef.unlockedSlots : ['主器', '護符'];
+    const owners = buildEquippedUidOwnerMap(draft.roster);
+
+    const freeEquips = draft.equips.filter(function (eq) {
+      const ow = owners.get(eq.uid);
+      return !ow || ow.charId === charId;
+    });
+
+    const setCountAvailable = {};
+    for (let i = 0; i < freeEquips.length; i += 1) {
+      const def = MasterData.EQUIP_MAP[freeEquips[i].equipId];
+      if (def && def.setId) {
+        setCountAvailable[def.setId] = (setCountAvailable[def.setId] || 0) + 1;
+      }
+    }
+
+    let equippedCount = 0;
+    let changedCount = 0;
+    const chosenSetCounts = {};
+
+    for (let s = 0; s < unlockedSlots.length; s += 1) {
+      const slot = unlockedSlots[s];
+      const currentUid = entry.equipped[slot];
+      const candidates = freeEquips.filter(function (eq) {
+        const def = MasterData.EQUIP_MAP[eq.equipId];
+        return def && def.slot === slot;
+      });
+      if (candidates.length === 0) {
+        continue;
+      }
+
+      candidates.sort(function (a, b) {
+        if (b.qualityIdx !== a.qualityIdx) {
+          return b.qualityIdx - a.qualityIdx;
+        }
+        const defA = MasterData.EQUIP_MAP[a.equipId];
+        const defB = MasterData.EQUIP_MAP[b.equipId];
+        const stA = getEquipStats(a.equipId, a.qualityIdx);
+        const stB = getEquipStats(b.equipId, b.qualityIdx);
+        const sumA = (stA.hp || 0) * 0.15 + (stA.atk || 0) * 1.4 + (stA.def || 0) * 1.1 + (stA.spd || 0) * 5 + (stA.crit || 0) * 8;
+        const sumB = (stB.hp || 0) * 0.15 + (stB.atk || 0) * 1.4 + (stB.def || 0) * 1.1 + (stB.spd || 0) * 5 + (stB.crit || 0) * 8;
+        const synA = (defA && defA.setId ? (chosenSetCounts[defA.setId] || 0) * 100 + (setCountAvailable[defA.setId] || 0) * 5 : 0);
+        const synB = (defB && defB.setId ? (chosenSetCounts[defB.setId] || 0) * 100 + (setCountAvailable[defB.setId] || 0) * 5 : 0);
+        const scoreA = sumA + synA + (a.uid === currentUid ? 0.5 : 0);
+        const scoreB = sumB + synB + (b.uid === currentUid ? 0.5 : 0);
+        return scoreB - scoreA;
+      });
+
+      const best = candidates[0];
+      const bestDef = MasterData.EQUIP_MAP[best.equipId];
+      if (bestDef && bestDef.setId) {
+        chosenSetCounts[bestDef.setId] = (chosenSetCounts[bestDef.setId] || 0) + 1;
+      }
+      if (entry.equipped[slot] !== best.uid) {
+        entry.equipped[slot] = best.uid;
+        changedCount += 1;
+      }
+      equippedCount += 1;
+    }
+
+    if (equippedCount === 0) {
+      return { ok: false, reason: '開放済み部位に装着できる空き装備がありません', state };
+    }
+
+    return {
+      ok: true,
+      equippedCount,
+      changedCount,
+      state: draft
+    };
+  }
+
+  function autoFitTrialParty(state, trialId) {
+    const MasterData = IkaiApp.MasterData;
+    const trial = MasterData.TRIALS.find(function (t) { return t.id === trialId; });
+    if (!trial) {
+      return { ok: false, reason: '指定された制約試練が存在しません', state };
+    }
+    const rules = trial.rules || {};
+    const maxSize = Math.min(4, typeof rules.maxPartySize === 'number' ? rules.maxPartySize : 4);
+    const activeExpSet = buildActiveExpeditionCharSet(state.expeditions);
+
+    const isEligible = function (c) {
+      if (!c || !state.roster || !hasOwn(state.roster, c.id)) return false;
+      if (activeExpSet.has(c.id)) return false;
+      if (rules.noSSR && c.rarity === 'SSR') return false;
+      if (rules.onlyR && c.rarity !== 'R') return false;
+      if (rules.noHealer && c.role === 'ヒーラー') return false;
+      if (rules.noTank && c.role === 'タンク') return false;
+      return true;
+    };
+
+    const currentValid = (state.party || []).filter(Boolean)
+      .map(function (cid) { return MasterData.CHARACTER_MAP[cid]; })
+      .filter(isEligible);
+
+    const allOwned = MasterData.CHARACTERS.filter(isEligible);
+    const sortedAll = (IkaiApp.StateStore && typeof IkaiApp.StateStore.sortUnits === 'function')
+      ? IkaiApp.StateStore.sortUnits(allOwned)
+      : allOwned;
+
+    const picked = [];
+    const seen = new Set();
+    for (let i = 0; i < currentValid.length && picked.length < maxSize; i += 1) {
+      if (!seen.has(currentValid[i].id)) {
+        seen.add(currentValid[i].id);
+        picked.push(currentValid[i].id);
+      }
+    }
+    for (let i = 0; i < sortedAll.length && picked.length < maxSize; i += 1) {
+      if (!seen.has(sortedAll[i].id)) {
+        seen.add(sortedAll[i].id);
+        picked.push(sortedAll[i].id);
+      }
+    }
+
+    if (picked.length === 0) {
+      return { ok: false, reason: '調査派遣中を除く所持仲間の中に、この制約試練に適合する仲間がいません', state };
+    }
+
+    const draft = cloneState(state);
+    const newParty = [null, null, null, null];
+    for (let i = 0; i < picked.length; i += 1) {
+      newParty[i] = picked[i];
+      const resIdx = draft.resonanceSlots.indexOf(picked[i]);
+      if (resIdx >= 0) {
+        draft.resonanceSlots[resIdx] = null;
+      }
+    }
+    draft.party = newParty;
+
+    const check = validateTrialEntry(draft, trialId, newParty);
+    if (!check.ok) {
+      return { ok: false, reason: check.reasons.join(' ／ '), state };
+    }
+
+    return {
+      ok: true,
+      party: newParty,
+      state: draft
+    };
+  }
+
   IkaiApp.Progression = Object.freeze({
     getEquipStats,
     getEquipSellValue,
@@ -1320,6 +1471,8 @@
     advanceExpeditionsOnBattle,
     claimExpedition,
     setResonance,
-    setPartySlot
+    setPartySlot,
+    autoEquipBest,
+    autoFitTrialParty
   });
 })(typeof window !== 'undefined' ? window : globalThis);

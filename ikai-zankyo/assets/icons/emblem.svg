@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="異界残響録 紋章">
+  <rect x="4" y="4" width="120" height="120" rx="26" fill="#090C12" stroke="#243044" stroke-width="3"/>
+  <polygon points="64,14 99,29 114,64 99,99 64,114 29,99 14,64 29,29" fill="none" stroke="#1E293D" stroke-width="2"/>
+  <circle cx="64" cy="64" r="40" fill="none" stroke="#38BDF8" stroke-width="2.5" stroke-dasharray="18 6"/>
+  <circle cx="64" cy="64" r="30" fill="none" stroke="#A78BFA" stroke-width="2"/>
+  <path d="M36 44 H92 M42 52 H86 M48 52 V92 M80 52 V92" fill="none" stroke="#5EEAD4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M48 92 A20 20 0 0 1 80 92" fill="none" stroke="#5EEAD4" stroke-width="2" stroke-opacity="0.7"/>
+  <polygon points="64,46 74,64 64,82 54,64" fill="#090C12" stroke="#FBBF24" stroke-width="2.5"/>
+  <circle cx="64" cy="64" r="3.5" fill="#FBBF24"/>
+</svg>

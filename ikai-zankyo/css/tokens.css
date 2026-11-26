@@ -1,0 +1,36 @@
+html, body {
+  background-color: #090C12;
+  color: #E2E8F0;
+}
+
+:root {
+  --bg-abyss: #090C12;
+  --bg-surface: #111722;
+  --bg-plate: #182132;
+  --bg-elevated: #1E293D;
+  --bg-glass: rgba(17, 23, 34, 0.90);
+
+  --border-subtle: #243044;
+  --border-focus: #38BDF8;
+  --border-ssr: #FBBF24;
+  --border-sr: #A78BFA;
+  --border-r: #64748B;
+
+  --c-cyan: #5EEAD4;
+  --c-sky: #38BDF8;
+  --c-violet: #A78BFA;
+  --c-amber: #FBBF24;
+  --c-crimson: #FB7185;
+  --c-emerald: #34D399;
+
+  --text-primary: #E2E8F0;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  --font-sans: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic UI", "Meiryo", system-ui, -apple-system, sans-serif;
+}

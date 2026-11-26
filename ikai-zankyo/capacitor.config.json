@@ -1,0 +1,9 @@
+{
+  "appId": "jp.ikai.zankyo",
+  "appName": "異界残響録",
+  "webDir": ".",
+  "bundledWebRuntime": false,
+  "server": {
+    "iosScheme": "capacitor"
+  }
+}

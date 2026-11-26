@@ -1,0 +1,26 @@
+{
+  "name": "境界回廊：クロノ・レゾナンス",
+  "short_name": "境界回廊",
+  "description": "交錯する五つの世界を巡る完全自動戦闘・遺物厳選RPG",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d111a",
+  "theme_color": "#0d111a",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "./assets/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./assets/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

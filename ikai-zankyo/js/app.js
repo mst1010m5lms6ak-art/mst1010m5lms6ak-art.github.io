@@ -23,10 +23,10 @@
     selectedTowerFloor: 1,
     selectedTowerBand: 0,
     selectedTrialId: 't1',
+    charSub: 'party',
     partySub: 'main',
     gauntletTeamIdx: 0,
     selectedPartySlot: 0,
-    growSub: 'board',
     selectedCharId: 'c_n_2',
     equipSub: 'wear',
     selectedEquipSlot: 'weapon',
@@ -54,16 +54,18 @@
     toast: ''
   };
 
-  /* iPhone PWAスタンドアロン起動時のenv(safe-area-inset)未解決対策（実機iOS保護） */
+  /* iPhone PWAスタンドアロン時の下部謎余白＆上部見切れを実測値で完全防止 */
   function syncIosSafeAreaGuard() {
+    const root = document.documentElement;
     const shell = document.getElementById('app-shell');
     if (!shell) return;
     const isStandalone = window.navigator.standalone === true ||
       (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
     const isTouchPhone = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-    const isNotchIphone = /iPhone|iPod/i.test(navigator.userAgent) && Math.max(window.screen.width, window.screen.height) >= 812;
+    const isIphone = /iPhone|iPod/i.test(navigator.userAgent);
+    const isNotchIphone = isIphone && Math.max(window.screen.width, window.screen.height) >= 812;
 
-    if (!isStandalone || !isTouchPhone || !isNotchIphone) return;
+    if (!isStandalone || !isTouchPhone || !isIphone) return;
 
     const probe = document.createElement('div');
     probe.style.cssText = 'position:fixed;top:0;left:0;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);';
@@ -73,15 +75,26 @@
     const bottomPx = parseFloat(cs.paddingBottom) || 0;
     probe.remove();
 
-    if (topPx < 20) {
-      shell.style.setProperty('--safe-top-min', '54px');
+    const screenH = Math.max(window.screen.width, window.screen.height);
+    const innerH = window.innerHeight || screenH;
+
+    /* WebKitのstatusBar分高さ欠損（下部謎余白）を検知した場合のみ実画面高へ補正 */
+    if (topPx >= 20 && innerH < screenH - 20 && (innerH + topPx) <= (screenH + 4)) {
+      root.style.setProperty('--app-vh', `${screenH}px`);
+      shell.style.setProperty('--safe-top-min', '4px');
+      shell.style.setProperty('--safe-top-pad', topPx >= 40 ? '6px' : '0px');
     } else {
-      shell.style.setProperty('--safe-top-min', '6px');
+      root.style.setProperty('--app-vh', '100dvh');
+      /* blackモード等でOSがステータスバーを外出し済み(topPx=0)のときは二重余白を作らない */
+      shell.style.setProperty('--safe-top-min', '4px');
+      shell.style.setProperty('--safe-top-pad', topPx >= 40 ? '6px' : '0px');
     }
-    if (bottomPx < 16) {
+
+    /* ホームバー領域：cold-start未解決時のみ34px保護、解決済みならenv()値をそのまま適用 */
+    if (isNotchIphone && bottomPx < 10) {
       shell.style.setProperty('--safe-bottom-min', '34px');
     } else {
-      shell.style.setProperty('--safe-bottom-min', '6px');
+      shell.style.setProperty('--safe-bottom-min', '4px');
     }
   }
 
@@ -225,9 +238,10 @@
 
     /* 戦闘中操作（倍速・自動周回ON/停止予約のみ・撤退なし） */
     if (act === 'cycleSpeed') {
-      const cur = STATE.getSnapshot().settings.speed;
+      const cur = STATE.getBattleSpeed();
       const next = cur === 1 ? 2 : (cur === 2 ? 3 : 1);
       STATE.setSpeed(next);
+      BATTLE.forceUpdate();
       return;
     }
     if (act === 'toggleAutoLoop') {
@@ -243,8 +257,15 @@
       case 'setTab':
         clearToast();
         finishSummonAnim(true);
+        /* タブ切り替え時は必ず召喚陣表示へリセット */
+        ui.lastSummonResults = [];
         ui.tab = val;
+        if (btn.dataset.sub) ui.charSub = btn.dataset.sub;
         ui.resultReport = null;
+        break;
+      case 'setCharSub':
+        clearToast();
+        ui.charSub = val;
         break;
       case 'setFilterEl':
         ui.filterEl = val;
@@ -292,7 +313,8 @@
         break;
       case 'gotoGauntletParty':
         clearToast();
-        ui.tab = 'party';
+        ui.tab = 'char';
+        ui.charSub = 'party';
         ui.partySub = 'gauntlet';
         ui.gauntletTeamIdx = 0;
         break;
@@ -328,7 +350,7 @@
         ui.resultReport = null;
         break;
 
-      /* 編成 */
+      /* 編成（キャラ統合タブ内：選択枠・配置キャラを育成対象へ自動同期） */
       case 'setPartySub':
         ui.partySub = val;
         break;
@@ -336,10 +358,15 @@
         ui.partySub = 'gauntlet';
         ui.gauntletTeamIdx = Number(val);
         break;
-      case 'selectPartySlot':
+      case 'selectPartySlot': {
         ui.selectedPartySlot = Number(val);
+        const snap = STATE.getSnapshot();
+        const tp = ui.partySub === 'main' ? snap.party : snap.gauntletParties[ui.gauntletTeamIdx];
+        if (tp[ui.selectedPartySlot]) ui.selectedCharId = tp[ui.selectedPartySlot];
         break;
+      }
       case 'assignPartyChar': {
+        ui.selectedCharId = val;
         const res = ui.partySub === 'main'
           ? STATE.setPartySlot(ui.selectedPartySlot, val)
           : STATE.setGauntletSlot(ui.gauntletTeamIdx, ui.selectedPartySlot, val);
@@ -358,11 +385,7 @@
         break;
       }
 
-      /* 育成 */
-      case 'setGrowSub':
-        clearToast();
-        ui.growSub = val;
-        break;
+      /* 育成（キャラ統合タブ内） */
       case 'selectChar':
         ui.selectedCharId = val;
         break;
@@ -482,6 +505,7 @@
       case 'setSummonSub':
         clearToast();
         finishSummonAnim(true);
+        ui.lastSummonResults = [];
         ui.summonSub = val;
         if (val === 'raidChar') ui.selectedExchangeCharId = 'c_ur_1';
         if (val === 'raidBoss') ui.selectedExchangeCharId = 'c_ur_ignis';
@@ -510,7 +534,9 @@
         const res = STATE.exchangeRaidChar(val);
         if (res.ok) {
           AUDIO.play('rare');
-          showToast(`${res.result.name} を解放・強化しました！`);
+          showToast(res.result.status === 'convert'
+            ? `${res.result.name} を魂晶+${res.result.gainSoul}・結晶+${res.result.gainCry}へ変換！`
+            : `${res.result.name} を解放しました！`);
         } else {
           showToast(res.msg);
         }
@@ -521,7 +547,9 @@
         const res = STATE.exchangeRaidBoss(val);
         if (res.ok) {
           AUDIO.play('summonUR');
-          showToast(`UR「${res.result.name}」が降臨しました！`);
+          showToast(res.result.status === 'convert'
+            ? `UR「${res.result.name}」を魂晶+${res.result.gainSoul}・結晶+${res.result.gainCry}へ変換！`
+            : `UR「${res.result.name}」が降臨しました！`);
         } else {
           showToast(res.msg);
         }
@@ -563,6 +591,10 @@
         break;
       case 'toggleSound':
         STATE.setSound(!STATE.getSnapshot().settings.sound);
+        break;
+      case 'setBattleSpeed':
+        STATE.setSpeed(Number(val));
+        showToast(`戦闘速度を ×${Number(val)} に設定しました`);
         break;
       case 'exportCode': {
         const code = STATE.exportCode();
@@ -616,6 +648,7 @@
     setTimeout(syncIosSafeAreaGuard, 220);
     window.addEventListener('resize', syncIosSafeAreaGuard);
     window.addEventListener('orientationchange', () => setTimeout(syncIosSafeAreaGuard, 180));
+    window.addEventListener('focusout', () => setTimeout(syncIosSafeAreaGuard, 120));
 
     STATE.init();
     const notice = STATE.consumeLoadNotice();

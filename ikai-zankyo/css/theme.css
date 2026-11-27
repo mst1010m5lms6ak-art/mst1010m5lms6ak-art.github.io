@@ -185,9 +185,48 @@
   align-items: center;
   padding: 1px 5px;
   border-radius: 4px;
-  font-size: 9.5px;
+  font-size: 9.2px;
   font-weight: 800;
   border: 1px solid;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+/* 技倍率・CTバッジ */
+.mult-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1.15;
+  white-space: nowrap;
+  border: 1px solid;
+}
+
+.mult-badge.atk {
+  color: #ffb899;
+  background: rgba(232, 92, 56, 0.2);
+  border-color: rgba(255, 138, 102, 0.55);
+}
+
+.mult-badge.heal {
+  color: #82ffbd;
+  background: rgba(34, 178, 102, 0.2);
+  border-color: rgba(94, 236, 160, 0.55);
+}
+
+.ct-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 8.8px;
+  font-weight: 800;
+  color: var(--text-sub);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   line-height: 1.15;
   white-space: nowrap;
 }

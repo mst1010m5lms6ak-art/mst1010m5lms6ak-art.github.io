@@ -107,6 +107,8 @@
   border-radius: 6px;
   padding: 3px 3px;
   text-align: center;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .stat-lbl {
@@ -117,10 +119,79 @@
 }
 
 .stat-val {
-  font-size: 11px;
+  font-size: 10.6px;
   font-weight: 900;
   color: var(--text-main);
   white-space: nowrap;
+}
+
+/* リザルト数値セル（絶対枠貫通ゼロ・コンパクト整列） */
+.result-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.result-stat-cell {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+  padding: 3px 3px;
+  text-align: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.result-stat-cell.gold-glow {
+  border-color: rgba(255, 216, 102, 0.55);
+  background: linear-gradient(180deg, rgba(216, 181, 100, 0.16), rgba(100, 74, 24, 0.1));
+}
+
+.result-stat-val {
+  font-size: 10.2px;
+  font-weight: 900;
+  color: var(--text-main);
+  white-space: nowrap;
+}
+
+.result-sub-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.038);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 9.5px;
+  font-weight: 800;
+  color: var(--text-sub);
+}
+
+/* 出現敵内ボスチップ強調 */
+.enemy-mini-chip.boss-chip {
+  color: #fff2cc;
+  background: linear-gradient(90deg, rgba(168, 22, 40, 0.85), rgba(216, 62, 34, 0.85));
+  border-color: #ffd67a;
+}
+
+/* 召喚通常UR6体コンパクトグリッド */
+.summon-ur-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.summon-ur-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.042);
+  border: 1px solid rgba(255, 148, 230, 0.34);
+  border-left: 2.5px solid #ff94e6;
 }
 
 .stat-diff-up   { color: #6ef7ad; font-weight: 900; }
@@ -527,14 +598,14 @@
   min-height: 36px;
 }
 
-/* 最下部メインナビゲーションバー */
+/* 最下部メインナビゲーションバー（5タブ：出撃・キャラ・召喚・図鑑・設定） */
 .bottom-nav {
   flex: 0 0 52px;
   height: 52px;
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 2px;
-  padding: 4px 5px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 3px;
+  padding: 4px 6px;
   background: linear-gradient(180deg, #101627 0%, #070a13 100%);
   border-top: 1px solid color-mix(in srgb, var(--world-accent) 26%, var(--border-subtle));
 }

@@ -1,15 +1,18 @@
-/* ノンストップ速度ATBバトル・攻撃軌跡エフェクト連携・自動周回フリーズ完全修正エンジン */
+/* ノンストップ速度ATBバトル・行動順キュー・DPS計測・至宝通知・低発熱スロットリングエンジン */
 (function () {
   'use strict';
 
+  const SEC = window.__IZ_SEC__;
   const WDATA = window.__IZ_WORLDS__;
   const CDATA = window.__IZ_CHARS__;
+  const EDATA = window.__IZ_EQUIP__;
   const STATE = window.__IZ_STATE__;
   const AUDIO = window.__IZ_AUDIO__;
 
   let session = null;
   let rafId = null;
   let lastTs = 0;
+  let lastRenderTs = 0;
   let onUpdateCb = null;
   let onFinishCb = null;
   let fxSeq = 0;
@@ -81,7 +84,7 @@
       (units.some((u) => u.charId === 'c_tw_100') ? 12 : 0);
     units.forEach((u) => {
       if (teamStartBonus > 0) u.atb = Math.min(98, u.atb + teamStartBonus);
-      if (u.charId === 'c_ur_4') {
+      if (u.charId === 'c_ur_4' || u.charId === 'c_ur_10') {
         addStatus(u.buffs, 'taunt', 1, 2);
         addStatus(u.buffs, 'defUp', 0.2, 2);
       }
@@ -173,10 +176,24 @@
           if (sk.scope === 'passive' && sk.passiveType === 'teamSpd') bonus += sk.val;
         });
         if (m.charId === 'c_ur_chrono') bonus += 10;
+        if (m.charId === 'c_ur_8') bonus += 8;
       });
     }
     const mult = 1 + getStatusSum(u.buffs, 'spdUp') - getStatusSum(u.debuffs, 'spdDown');
     return Math.max(40, (u.spd + bonus) * Math.max(0.5, mult));
+  }
+
+  /* 敵味方混合・行動順キュー予測（残り到達時間が短い順に最大limit体） */
+  function computeActionOrder(sess, limit) {
+    const alive = sess.allies.concat(sess.enemies).filter((u) => !u.dead);
+    const items = alive.map((u) => {
+      const team = u.side === 'ally' ? sess.allies : sess.enemies;
+      const spd = effSpd(u, team);
+      const rem = Math.max(0, 100 - u.atb) / spd;
+      return { u, spd, rem };
+    });
+    items.sort((a, b) => (a.rem - b.rem) || (b.spd - a.spd));
+    return items.slice(0, limit || 5).map((x) => x.u);
   }
 
   /* WAVE敵編成生成（ボス・乱入は必ず単独出現） */
@@ -470,7 +487,9 @@
         if (actor.side === 'ally' && t.kind !== 'normal') extraDmg += (actor.bossPct || 0);
         if (actor.charId === 'c_ur_2' && (t.hp / t.maxHp) >= 0.7) extraDmg += 0.20;
         if (actor.charId === 'c_ur_ignis' && hasStatus(t.debuffs, 'burn')) extraDmg += 0.25;
+        if (actor.charId === 'c_ur_7' && hasStatus(t.debuffs, 'burn')) extraDmg += 0.22;
         if (actor.charId === 'c_ur_kuchi' && t.debuffs.length > 0) extraDmg += 0.24;
+        if (actor.charId === 'c_ur_9' && t.debuffs.length > 0) extraDmg += 0.22;
         if (actor.charId === 'c_ur_5' && t.el === 'dark') extraDmg += 0.18;
         if (actor.charId === 'c_ssr_2' && hasStatus(t.debuffs, 'burn')) extraDmg += 0.22;
         if (actor.charId === 'c_ssr_4' && sk.scope === 'single') extraDmg += 0.20;
@@ -582,6 +601,7 @@
     const cfg = session.cfg;
     const agg = session.aggregate;
     agg.runs += 1;
+    agg.totalBattleTime += Math.max(0.5, session.battleTime || 0);
     if (won) agg.wins += 1; else agg.losses += 1;
     if (session.runHadIntruder && won) agg.intruders += 1;
 
@@ -622,6 +642,7 @@
         reward.clearKey = { mode: 'main', id: stageKey };
 
         const dropCount = (stage.isBoss ? 2 : 1) + (session.runHadIntruder ? 1 : 0);
+        let droppedTreasure = null;
         for (let i = 0; i < dropCount; i++) {
           const sid = world.drops[Math.floor(Math.random() * world.drops.length)];
           const bonus = wIdx + (stage.isBoss ? 1.2 : 0) + (session.runHadIntruder ? 1.8 : 0);
@@ -631,7 +652,26 @@
             agg.autoSoldGold += dr.gold;
           } else {
             agg.equips.push(dr.equip);
+            if (dr.equip.quality === 4) {
+              agg.treasureCount += 1;
+              const ser = EDATA.SERIES_MAP[dr.equip.seriesId];
+              const sl = EDATA.SLOT_MAP[dr.equip.slotId];
+              const val = STATE.getEquipStatValue(dr.equip);
+              const shortMap = { atk: '攻', def: '防', hp: 'HP', spd: '速' };
+              const partName = ser ? ser.partNames[dr.equip.slotId] : '至宝装備';
+              const statText = `${shortMap[sl ? sl.baseStat : 'atk'] || ''}+${SEC.formatNum(val)}`;
+              const rec = { name: partName, statText, runNum: agg.runs };
+              agg.treasures.push(rec);
+              droppedTreasure = rec;
+            }
           }
+        }
+        if (droppedTreasure) {
+          session.treasureFlash = {
+            text: `至宝獲得！ ${droppedTreasure.name}（${droppedTreasure.statText}）`,
+            timer: 2.6,
+            seq: ++fxSeq
+          };
         }
       } else if (cfg.mode === 'raid') {
         const raid = WDATA.RAIDS.find((r) => r.id === cfg.raidId);
@@ -684,7 +724,7 @@
       Object.entries(reward.shards).forEach(([k, v]) => { agg.shards[k] = (agg.shards[k] || 0) + v; });
       Object.entries(reward.bossMarks).forEach(([k, v]) => { agg.bossMarks[k] = (agg.bossMarks[k] || 0) + v; });
       if (reward.unlockAbility) agg.unlockedAbilities.push(reward.unlockAbility);
-      AUDIO.play('win');
+      AUDIO.play(session.treasureFlash ? 'rare' : 'win');
     }
 
     const applied = STATE.applyBattleReward(reward);
@@ -731,6 +771,7 @@
     session.transitionTimer = 0;
     session.waveWaitTimer = 0;
     session.turnCooldown = 0.22;
+    session.battleTime = 0;
     session.actionBanner = null;
     session.activeFx = null;
 
@@ -748,23 +789,37 @@
     session.enemies = spawnWave(cfg, 1);
   }
 
-  /* メインバトルティック（ノンストップATB進行＋周回フリーズ完全防止） */
+  /* メインバトルティック（ノンストップATB進行＋30fps描画スロットリング低発熱制御） */
   function tick(ts) {
     if (!session) return;
     if (!lastTs) lastTs = ts;
     const rawDt = Math.min(0.08, Math.max(0.001, (ts - lastTs) / 1000));
     lastTs = ts;
-    const speed = STATE.getSnapshot().settings.speed || 2;
+    const speed = STATE.getBattleSpeed();
     const dt = rawDt * speed;
+    let forceRender = false;
 
     /* 演出タイマー減衰 */
     if (session.encounterBanner) {
       session.encounterBanner.timer -= rawDt;
-      if (session.encounterBanner.timer <= 0) session.encounterBanner = null;
+      if (session.encounterBanner.timer <= 0) {
+        session.encounterBanner = null;
+        forceRender = true;
+      }
+    }
+    if (session.treasureFlash) {
+      session.treasureFlash.timer -= rawDt;
+      if (session.treasureFlash.timer <= 0) {
+        session.treasureFlash = null;
+        forceRender = true;
+      }
     }
     if (session.activeFx) {
       session.activeFx.ttl -= rawDt;
-      if (session.activeFx.ttl <= 0) session.activeFx = null;
+      if (session.activeFx.ttl <= 0) {
+        session.activeFx = null;
+        forceRender = true;
+      }
     }
 
     const updateFx = (u) => {
@@ -784,10 +839,18 @@
     session.allies.forEach(updateFx);
     session.enemies.forEach(updateFx);
 
+    const maybeRender = () => {
+      if (!session || !onUpdateCb) return;
+      if (forceRender || (ts - lastRenderTs) >= 33) {
+        lastRenderTs = ts;
+        session.actionOrder = computeActionOrder(session, 5);
+        onUpdateCb(session);
+      }
+    };
+
     if (session.pendingRestart) {
       session.transitionTimer -= rawDt;
       if (session.transitionTimer <= 0) {
-        /* 待機中に停止予約された場合は即座にリザルトへ終了 */
         if (session.stopRequested) {
           const finalReport = {
             cfg: { ...session.cfg },
@@ -801,8 +864,9 @@
           return;
         }
         startRunInstance();
+        forceRender = true;
       }
-      if (session && onUpdateCb) onUpdateCb(session);
+      maybeRender();
       if (session) rafId = requestAnimationFrame(tick);
       return;
     }
@@ -825,13 +889,15 @@
         }
         session.enemies = spawnWave(session.cfg, nextWave);
         session.turnCooldown = 0.2;
+        forceRender = true;
       }
-      if (session && onUpdateCb) onUpdateCb(session);
+      maybeRender();
       if (session) rafId = requestAnimationFrame(tick);
       return;
     }
 
-    /* ノンストップATB：攻撃演出中も全生存ユニットのゲージと行動順が止まらず進行する！ */
+    /* ノンストップATB進行＆戦闘秒数カウント（倍速に左右されない×1基準DPS用） */
+    session.battleTime += dt;
     const allAlive = session.allies.concat(session.enemies).filter((u) => !u.dead);
     let ready = null;
     for (const u of allAlive) {
@@ -851,6 +917,7 @@
     if (session.turnCooldown <= 0 && ready) {
       executeTurn(ready);
       session.turnCooldown = 0.36;
+      forceRender = true;
 
       const enemiesAlive = session.enemies.some((e) => !e.dead);
       const alliesAlive = session.allies.some((a) => !a.dead);
@@ -859,7 +926,7 @@
           session.waveWaitTimer = 0.42;
         } else {
           finishSingleRun(true);
-          if (!session) return; /* 通常終了時はここで安全離脱。周回継続時は下段でRAF継続！ */
+          if (!session) return;
         }
       } else if (!alliesAlive) {
         finishSingleRun(false);
@@ -867,7 +934,7 @@
       }
     }
 
-    if (session && onUpdateCb) onUpdateCb(session);
+    maybeRender();
     if (session) rafId = requestAnimationFrame(tick);
   }
 
@@ -877,6 +944,7 @@
       rafId = null;
     }
     lastTs = 0;
+    lastRenderTs = 0;
   }
 
   function start(cfg, autoLoop, onUpdate, onFinish) {
@@ -896,8 +964,11 @@
       allies: [],
       enemies: [],
       dps: [],
+      battleTime: 0,
+      actionOrder: [],
       actionBanner: null,
       encounterBanner: null,
+      treasureFlash: null,
       activeFx: null,
       turnCooldown: 0.22,
       waveWaitTimer: 0,
@@ -908,6 +979,9 @@
         wins: 0,
         losses: 0,
         intruders: 0,
+        totalBattleTime: 0,
+        treasureCount: 0,
+        treasures: [],
         stone: 0,
         crystal: 0,
         gold: 0,
@@ -924,8 +998,15 @@
       }
     };
     startRunInstance();
+    session.actionOrder = computeActionOrder(session, 5);
     if (onUpdateCb) onUpdateCb(session);
     rafId = requestAnimationFrame(tick);
+  }
+
+  function forceUpdate() {
+    if (!session || !onUpdateCb) return;
+    session.actionOrder = computeActionOrder(session, 5);
+    onUpdateCb(session);
   }
 
   function toggleAutoLoop() {
@@ -936,7 +1017,7 @@
     } else {
       session.stopRequested = !session.stopRequested;
     }
-    if (onUpdateCb) onUpdateCb(session);
+    forceUpdate();
   }
 
   function isActive() {
@@ -951,6 +1032,7 @@
     value: Object.freeze({
       start,
       toggleAutoLoop,
+      forceUpdate,
       isActive,
       getSession,
       scopeLabel

@@ -70,6 +70,30 @@
     return `<span class="scope-badge scope-passive">常時</span>`;
   }
 
+  /* 技倍率・CT・範囲バッジ統合表示（キャラ・召喚・図鑑・討伐・試練の全技へ統一適用） */
+  function skillMetaHtml(sk) {
+    const parts = [];
+    if (sk.scope !== 'passive') {
+      if (sk.kind === 'heal' && sk.mult) {
+        parts.push(`<span class="mult-badge heal num">回復${Math.round(sk.mult * 100)}%</span>`);
+      } else if (sk.kind === 'allyBuff' && sk.healMult) {
+        parts.push(`<span class="mult-badge heal num">回復${Math.round(sk.healMult * 100)}%</span>`);
+      } else if (sk.mult && sk.kind !== 'allyBuff') {
+        parts.push(`<span class="mult-badge atk num">倍率${Math.round(sk.mult * 100)}%</span>`);
+      }
+      if (sk.ct > 0) {
+        parts.push(`<span class="ct-badge num">CT${sk.ct}</span>`);
+      }
+    }
+    parts.push(scopeBadge(sk.scope));
+    return `<div class="row-left" style="gap:3px;flex-shrink:0">${parts.join('')}</div>`;
+  }
+
+  function formatDps(val) {
+    const v = Math.max(0, Math.round(val || 0));
+    return v >= 10000 ? fnum(v) : v.toLocaleString('ja-JP');
+  }
+
   function powerJudgeBadge(partyPower, recPower) {
     const ratio = recPower > 0 ? partyPower / recPower : 1;
     if (ratio >= 1.15) return `<span class="power-badge safe">余裕</span>`;
@@ -81,7 +105,7 @@
     return `
       <div class="currency-bar">
         <span class="curr-pill num" title="残響石">${ICON.svg('stone', 11)} ${fnum(snap.stone)}</span>
-        <span class="curr-pill num" title="共鳴結晶">${ICON.svg('crystal', 11)} ${fnum(snap.crystal)}</span>
+        <span class="curr-pill num" title="結晶">${ICON.svg('crystal', 11)} ${fnum(snap.crystal)}</span>
         <span class="curr-pill num" title="金貨">${ICON.svg('coin', 11)} ${fnum(snap.gold)}</span>
       </div>`;
   }
@@ -169,10 +193,11 @@
   }
 
   /* =========================================================
-   * 戦闘画面（めり込み0px 3段内部完結カード＋SVG攻撃軌跡＋中央アタックレーン）
+   * 戦闘画面（行動順キュー・HP数値削除・余剰枠解消・DPS＆至宝サマリー・完全キャッシュ低発熱）
    * ========================================================= */
   let battleDomKey = '';
   let lastRenderedFxSeq = 0;
+  let battleCache = null;
 
   function buildStatusChipsHtml(u) {
     const chips = [];
@@ -187,6 +212,19 @@
     return chips.slice(0, 3).join('');
   }
 
+  function buildCtsHtml(u) {
+    if (u.side === 'ally') {
+      return u.skills.map((sk, idx) => {
+        if (sk.scope === 'passive') return `<span class="ct-dot ready">常時</span>`;
+        if (idx === 0) return '';
+        const cd = u.cds[idx];
+        return `<span class="ct-dot ${cd <= 0 ? 'ready' : ''}">技${idx + 1}${cd > 0 ? ':' + cd : ''}</span>`;
+      }).join('');
+    }
+    const readyStrong = u.cds[1] <= 0;
+    return readyStrong ? `<span class="enemy-charge-warn">強技構え</span>` : `<span class="ct-dot">強技:${u.cds[1]}</span>`;
+  }
+
   function buildBattleUnitCardHtml(u) {
     const isBossSolo = u.side === 'enemy' && u.isSolo && (u.kind === 'boss' || u.kind === 'raid');
     const isIntSolo = u.side === 'enemy' && u.isSolo && u.kind === 'intruder';
@@ -198,8 +236,8 @@
       isIntSolo ? 'intruder-solo' : ''
     ].filter(Boolean).join(' ');
 
-    const roleChip = u.side === 'ally'
-      ? `<span class="unit-role-mini role-${u.role}">${esc(WDATA.ROLES[u.role].short)}</span>`
+    const rightTag = u.side === 'ally'
+      ? `<span class="unit-role-mini role-${u.role}">${ICON.svg(u.role, 8)}${esc(WDATA.ROLES[u.role].name)}</span>`
       : (isBossSolo
         ? `<span class="encounter-badge boss">${ICON.svg('crown', 9)} 強敵</span>`
         : (isIntSolo ? `<span class="encounter-badge intruder">${ICON.svg('warn', 9)} 乱入</span>` : ''));
@@ -210,17 +248,16 @@
           <div class="unit-ident">
             <span class="unit-el-dot el-${u.el}">${ICON.svg(u.el, 9)}</span>
             <span class="unit-name">${esc(u.name)}</span>
-            ${roleChip}
           </div>
-          <span class="hp-text num" data-role="hptext">${fnum(u.hp)}/${fnum(u.maxHp)}</span>
+          ${rightTag}
         </div>
         <div class="gauge-stack">
           <div class="hp-bar-bg">
-            <div class="hp-bar-trail" data-role="trail" style="width:100%"></div>
-            <div class="hp-bar-fill" data-role="hpfill" style="width:100%"></div>
+            <div class="hp-bar-trail" data-role="trail"></div>
+            <div class="hp-bar-fill" data-role="hpfill"></div>
           </div>
           <div class="atb-bar-bg">
-            <div class="atb-bar-fill" data-role="atb" style="width:0%"></div>
+            <div class="atb-bar-fill" data-role="atb"></div>
           </div>
         </div>
         <div class="unit-foot-row">
@@ -258,18 +295,9 @@
   }
 
   function mountBattleDom(sess, upperEl, lowerEl) {
-    const snap = STATE.getSnapshot();
+    const speed = STATE.getBattleSpeed();
     const enemyGridCls = sess.enemies.length === 1 ? 'grid-1' : (sess.enemies.length === 2 ? 'grid-2' : 'grid-2x2');
     const allyGridCls = sess.allies.length <= 2 ? 'grid-2' : 'grid-2x2';
-
-    const allyPips = sess.allies.map((u) =>
-      `<span class="timeline-pip ally" data-pip="${esc(u.uid)}" style="left:10%">${ICON.svg(u.el, 8)}${esc(timelineCallName(u))}</span>`
-    ).join('');
-
-    const enemyPips = sess.enemies.map((u) => {
-      const pCls = (u.kind === 'boss' || u.kind === 'raid') ? 'boss' : (u.kind === 'intruder' ? 'intruder' : 'enemy');
-      return `<span class="timeline-pip ${pCls}" data-pip="${esc(u.uid)}" style="left:10%">${ICON.svg(u.el, 8)}${esc(timelineCallName(u))}</span>`;
-    }).join('');
 
     upperEl.innerHTML = `
       <div class="upper-bg-ornament"></div>
@@ -283,21 +311,9 @@
             <span class="auto-pill num" data-b="auto" style="display:none"></span>
           </div>
         </div>
-        <div class="timeline-box">
-          <div class="timeline-meta">
-            <span class="timeline-label">行動順</span>
-            <span class="timeline-next" data-b="nextAct">次:準備</span>
-          </div>
-          <div class="timeline-dual">
-            <div class="timeline-track ally-lane">
-              ${allyPips}
-              <span class="timeline-finish"></span>
-            </div>
-            <div class="timeline-track enemy-lane">
-              ${enemyPips}
-              <span class="timeline-finish"></span>
-            </div>
-          </div>
+        <div class="action-queue-box">
+          <span class="action-queue-lbl">行動順</span>
+          <div class="action-queue-list" data-b="queueList"></div>
         </div>
         <div class="unit-zone enemy-zone ${enemyGridCls}">
           ${sess.enemies.map(buildBattleUnitCardHtml).join('')}
@@ -310,36 +326,41 @@
         </div>
         <svg class="battle-fx-layer" data-b="fxSvg" aria-hidden="true"></svg>
         <div data-b="flash"></div>
+        <div data-b="treasureFlash"></div>
       </div>`;
 
     const dpsRows = [];
     for (let i = 0; i < 4; i++) {
       const a = sess.allies[i];
       if (!a) {
-        dpsRows.push(`<div class="dps-row" style="opacity:0.25"><span class="item-sub">空き枠</span></div>`);
+        dpsRows.push(`<div class="dps-row" style="opacity:0.22"><span class="item-sub">空き枠</span></div>`);
       } else {
         dpsRows.push(`
           <div class="dps-row" data-dps-row="${esc(a.charId)}">
             <div class="dps-row-top">
-              <span class="dps-char-name">${elBadge(a.el)}<span>${esc(a.name)}</span></span>
-              ${roleBadge(a.role)}
+              <span class="dps-char-name">${elBadge(a.el)}<span>${esc(a.name)}</span>${roleBadge(a.role)}</span>
+              <div class="dps-hero-right">
+                <span class="dps-rate-val num" data-m="rate">DPS 0/s</span>
+                <span class="dps-share-pct num" data-m="pct">0%</span>
+              </div>
             </div>
+            <div class="dps-main-bar-bg"><div class="dps-main-bar-fill ${a.role === 'healer' ? 'heal-bar' : ''}" data-mb="main"></div></div>
             <div class="dps-metrics-grid">
               <div class="dps-metric">
                 <div class="dps-metric-top"><span class="dps-m-lbl">与ダメ</span><span class="dps-num lg-dmg" data-m="dmg">0</span></div>
-                <div class="dps-bar-bg"><div class="dps-bar-fill dmg" data-mb="dmg" style="width:0%"></div></div>
+                <div class="dps-bar-bg"><div class="dps-bar-fill dmg" data-mb="dmg"></div></div>
               </div>
               <div class="dps-metric">
                 <div class="dps-metric-top"><span class="dps-m-lbl">被ダメ</span><span class="dps-num lg-tkn" data-m="tkn">0</span></div>
-                <div class="dps-bar-bg"><div class="dps-bar-fill tkn" data-mb="tkn" style="width:0%"></div></div>
+                <div class="dps-bar-bg"><div class="dps-bar-fill tkn" data-mb="tkn"></div></div>
               </div>
               <div class="dps-metric">
-                <div class="dps-metric-top"><span class="dps-m-lbl">回復量</span><span class="dps-num lg-heal" data-m="heal">0</span></div>
-                <div class="dps-bar-bg"><div class="dps-bar-fill heal" data-mb="heal" style="width:0%"></div></div>
+                <div class="dps-metric-top"><span class="dps-m-lbl">回復</span><span class="dps-num lg-heal" data-m="heal">0</span></div>
+                <div class="dps-bar-bg"><div class="dps-bar-fill heal" data-mb="heal"></div></div>
               </div>
               <div class="dps-metric">
                 <div class="dps-metric-top"><span class="dps-m-lbl">被回復</span><span class="dps-num lg-rcvd" data-m="rcvd">0</span></div>
-                <div class="dps-bar-bg"><div class="dps-bar-fill rcvd" data-mb="rcvd" style="width:0%"></div></div>
+                <div class="dps-bar-bg"><div class="dps-bar-fill rcvd" data-mb="rcvd"></div></div>
               </div>
             </div>
           </div>`);
@@ -349,46 +370,136 @@
     lowerEl.innerHTML = `
       <div class="battle-lower-wrap">
         <div class="dps-panel">
-          <div class="dps-head">
-            <span class="dps-title">リアルタイム戦績メーター</span>
-            <div class="dps-legend">
-              <span class="lg-dmg">与ダメ</span>
-              <span class="lg-tkn">被ダメ</span>
-              <span class="lg-heal">回復</span>
-              <span class="lg-rcvd">被回復</span>
+          <div class="dps-summary-bar">
+            <div class="dps-summary-left">
+              <span class="dps-total-lbl">合計DPS</span>
+              <span class="dps-total-val num" data-b="dpsTotal">0/s</span>
+              <span class="dps-time-val num" data-b="dpsTime">0.0s</span>
+            </div>
+            <div class="dps-summary-right">
+              <span class="treasure-pill num" data-b="treasurePill">与ダメ 0</span>
             </div>
           </div>
           <div class="dps-grid">${dpsRows.join('')}</div>
         </div>
         <div class="battle-ctrl-bar">
-          <button class="btn-secondary battle-ctrl-btn" data-act="cycleSpeed" data-b="speedBtn">速度 ×${snap.settings.speed}</button>
+          <button class="btn-secondary battle-ctrl-btn" data-act="cycleSpeed" data-b="speedBtn">速度 ×${speed}</button>
           <button class="btn-primary battle-ctrl-btn" data-act="toggleAutoLoop" data-b="autoBtn">自動周回</button>
         </div>
       </div>`;
+
+    /* 全DOMノード参照を1回だけキャッシュ（毎フレーム querySelector 0回・発熱激減） */
+    const units = {};
+    sess.allies.concat(sess.enemies).forEach((u) => {
+      const card = upperEl.querySelector(`[data-uid="${u.uid}"]`);
+      if (!card) return;
+      units[u.uid] = {
+        card,
+        fill: card.querySelector('[data-role="hpfill"]'),
+        trail: card.querySelector('[data-role="trail"]'),
+        atb: card.querySelector('[data-role="atb"]'),
+        status: card.querySelector('[data-role="status"]'),
+        cts: card.querySelector('[data-role="cts"]'),
+        pop: card.querySelector('[data-role="pop"]'),
+        prevStatus: '',
+        prevCts: '',
+        prevPopSeq: '',
+        prevHpScale: -1,
+        prevTrailScale: -1,
+        prevAtbScale: -1
+      };
+    });
+
+    const dpsRowCache = {};
+    sess.allies.forEach((a) => {
+      const row = lowerEl.querySelector(`[data-dps-row="${a.charId}"]`);
+      if (!row) return;
+      dpsRowCache[a.charId] = {
+        rate: row.querySelector('[data-m="rate"]'),
+        pct: row.querySelector('[data-m="pct"]'),
+        mainBar: row.querySelector('[data-mb="main"]'),
+        dmg: row.querySelector('[data-m="dmg"]'),
+        tkn: row.querySelector('[data-m="tkn"]'),
+        heal: row.querySelector('[data-m="heal"]'),
+        rcvd: row.querySelector('[data-m="rcvd"]'),
+        bDmg: row.querySelector('[data-mb="dmg"]'),
+        bTkn: row.querySelector('[data-mb="tkn"]'),
+        bHeal: row.querySelector('[data-mb="heal"]'),
+        bRcvd: row.querySelector('[data-mb="rcvd"]')
+      };
+    });
+
+    battleCache = {
+      stage: upperEl.querySelector('[data-b="stage"]'),
+      fxSvg: upperEl.querySelector('[data-b="fxSvg"]'),
+      waveEl: upperEl.querySelector('[data-b="wave"]'),
+      autoPill: upperEl.querySelector('[data-b="auto"]'),
+      queueList: upperEl.querySelector('[data-b="queueList"]'),
+      bannerEl: upperEl.querySelector('[data-b="banner"]'),
+      flashEl: upperEl.querySelector('[data-b="flash"]'),
+      treasureFlashEl: upperEl.querySelector('[data-b="treasureFlash"]'),
+      dpsTotal: lowerEl.querySelector('[data-b="dpsTotal"]'),
+      dpsTime: lowerEl.querySelector('[data-b="dpsTime"]'),
+      treasurePill: lowerEl.querySelector('[data-b="treasurePill"]'),
+      speedBtn: lowerEl.querySelector('[data-b="speedBtn"]'),
+      autoBtn: lowerEl.querySelector('[data-b="autoBtn"]'),
+      units,
+      dpsRows: dpsRowCache,
+      cardCenters: null,
+      stageW: 0,
+      stageH: 0,
+      prevWave: '',
+      prevAutoText: '',
+      prevAutoCls: '',
+      prevBannerKey: '',
+      prevQueueKey: '',
+      prevFlashKey: '',
+      prevTreasureFlashSeq: 0,
+      prevSpeed: -1,
+      prevAutoBtnKey: ''
+    };
   }
 
-  /* 攻撃者→対象への光弾・軌跡ライン＆着弾リング描画（誰が誰に何をしているか即視認！） */
-  function updateBattleFxSvg(sess, upperEl) {
-    const svg = upperEl.querySelector('[data-b="fxSvg"]');
-    const stage = upperEl.querySelector('[data-b="stage"]');
-    if (!svg || !stage) return;
+  /* カード中心座標を波ごとに1回だけ計測キャッシュ（毎攻撃の同期レイアウト強制ゼロ） */
+  function ensureCardCenters(cache) {
+    if (cache.cardCenters) return;
+    const sr = cache.stage.getBoundingClientRect();
+    if (sr.width <= 0 || sr.height <= 0) return;
+    cache.stageW = sr.width;
+    cache.stageH = sr.height;
+    cache.cardCenters = {};
+    Object.entries(cache.units).forEach(([uid, uRef]) => {
+      const r = uRef.card.getBoundingClientRect();
+      cache.cardCenters[uid] = {
+        x: r.left - sr.left + r.width * 0.5,
+        y: r.top - sr.top + r.height * 0.5
+      };
+    });
+    cache.fxSvg.setAttribute('viewBox', `0 0 ${sr.width.toFixed(1)} ${sr.height.toFixed(1)}`);
+  }
+
+  /* 攻撃者→対象への光弾・軌跡ライン＆着弾リング描画 */
+  function updateBattleFxSvg(sess, cache) {
+    const svg = cache.fxSvg;
+    if (!svg || !cache.stage) return;
 
     if (!sess.activeFx) {
-      if (svg.innerHTML !== '') svg.innerHTML = '';
+      if (lastRenderedFxSeq !== 0) {
+        lastRenderedFxSeq = 0;
+        svg.innerHTML = '';
+      }
       return;
     }
     if (lastRenderedFxSeq === sess.activeFx.seq) return;
     lastRenderedFxSeq = sess.activeFx.seq;
 
+    ensureCardCenters(cache);
+    if (!cache.cardCenters) return;
     const fx = sess.activeFx;
-    const stageRect = stage.getBoundingClientRect();
-    if (stageRect.width <= 0 || stageRect.height <= 0) return;
-
-    const actorCard = stage.querySelector(`[data-uid="${fx.actorUid}"]`);
-    if (!actorCard) return;
-    const aRect = actorCard.getBoundingClientRect();
-    const x1 = aRect.left - stageRect.left + aRect.width * 0.5;
-    const y1 = aRect.top - stageRect.top + aRect.height * 0.5;
+    const aPos = cache.cardCenters[fx.actorUid];
+    if (!aPos) return;
+    const x1 = aPos.x;
+    const y1 = aPos.y;
 
     const strokeColor = fx.kind === 'heal'
       ? '#5ef2a4'
@@ -398,213 +509,249 @@
     parts.push(`<circle class="fx-origin-dot" cx="${x1.toFixed(1)}" cy="${y1.toFixed(1)}" r="7" fill="${strokeColor}" fill-opacity="0.72" />`);
 
     fx.targetUids.forEach((tUid) => {
-      const tCard = stage.querySelector(`[data-uid="${tUid}"]`);
-      if (!tCard) return;
-      const tRect = tCard.getBoundingClientRect();
-      const x2 = tRect.left - stageRect.left + tRect.width * 0.5;
-      const y2 = tRect.top - stageRect.top + tRect.height * 0.5;
+      const tPos = cache.cardCenters[tUid];
+      if (!tPos) return;
+      const x2 = tPos.x;
+      const y2 = tPos.y;
 
       if (tUid !== fx.actorUid) {
         const mx = (x1 + x2) * 0.5 + (x2 >= x1 ? 18 : -18);
         const my = (y1 + y2) * 0.5;
         const d = `M ${x1.toFixed(1)} ${y1.toFixed(1)} Q ${mx.toFixed(1)} ${my.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
-        parts.push(`<path class="fx-beam" d="${d}" stroke="${strokeColor}" stroke-width="5" stroke-opacity="0.45" />`);
-        parts.push(`<path class="fx-beam-core" d="${d}" stroke-width="1.8" />`);
+        parts.push(`<path class="fx-beam" d="${d}" stroke="${strokeColor}" stroke-width="4.5" stroke-opacity="0.45" />`);
+        parts.push(`<path class="fx-beam-core" d="${d}" stroke-width="1.6" />`);
       }
-      parts.push(`<circle class="fx-impact-ring" cx="${x2.toFixed(1)}" cy="${y2.toFixed(1)}" r="17" stroke="${strokeColor}" stroke-width="2.6" />`);
-      parts.push(`<circle class="fx-origin-dot" cx="${x2.toFixed(1)}" cy="${y2.toFixed(1)}" r="5" fill="#ffffff" fill-opacity="0.88" />`);
+      parts.push(`<circle class="fx-impact-ring" cx="${x2.toFixed(1)}" cy="${y2.toFixed(1)}" r="16" stroke="${strokeColor}" stroke-width="2.4" />`);
+      parts.push(`<circle class="fx-origin-dot" cx="${x2.toFixed(1)}" cy="${y2.toFixed(1)}" r="4.5" fill="#ffffff" fill-opacity="0.88" />`);
     });
 
-    svg.setAttribute('viewBox', `0 0 ${stageRect.width.toFixed(1)} ${stageRect.height.toFixed(1)}`);
     svg.innerHTML = parts.join('');
-  }
-
-  /* レーン内ピップ2パス非重複配置（右端発光リング安全余白つき） */
-  function updateLanePips(units, upperEl, leadUid) {
-    const alive = units.filter((u) => !u.dead).sort((a, b) => b.atb - a.atb);
-    const n = alive.length;
-    if (n > 0) {
-      const minGap = n >= 4 ? 20 : 22;
-      const minX = 12;
-      const maxX = 87;
-      const pos = alive.map((u) => minX + (Math.min(100, Math.max(0, u.atb)) / 100) * (maxX - minX));
-      for (let i = 1; i < n; i++) {
-        if (pos[i] > pos[i - 1] - minGap) pos[i] = pos[i - 1] - minGap;
-      }
-      if (pos[n - 1] < minX) {
-        pos[n - 1] = minX;
-        for (let i = n - 2; i >= 0; i--) {
-          if (pos[i] < pos[i + 1] + minGap) pos[i] = Math.min(maxX, pos[i + 1] + minGap);
-        }
-      }
-      alive.forEach((u, idx) => {
-        const pip = upperEl.querySelector(`[data-pip="${u.uid}"]`);
-        if (!pip) return;
-        pip.style.display = 'flex';
-        pip.style.left = pos[idx].toFixed(1) + '%';
-        pip.style.zIndex = String(10 - idx);
-        pip.classList.toggle('lead', u.uid === leadUid);
-      });
-    }
-    units.filter((u) => u.dead).forEach((u) => {
-      const pip = upperEl.querySelector(`[data-pip="${u.uid}"]`);
-      if (pip) pip.style.display = 'none';
-    });
   }
 
   function renderBattle(sess, upperEl, lowerEl) {
     const key = `${sess.aggregate.runs}_${sess.wave}_${sess.enemies.map((e) => e.uid).join(',')}_${sess.allies.map((a) => a.uid).join(',')}`;
-    if (battleDomKey !== key) {
+    if (battleDomKey !== key || !battleCache) {
       battleDomKey = key;
       lastRenderedFxSeq = 0;
       mountBattleDom(sess, upperEl, lowerEl);
     }
 
-    const snap = STATE.getSnapshot();
-    const waveEl = upperEl.querySelector('[data-b="wave"]');
-    if (waveEl) waveEl.textContent = `第${sess.wave}/${sess.maxWave}波`;
+    const c = battleCache;
+    const speed = STATE.getBattleSpeed();
 
-    const autoPill = upperEl.querySelector('[data-b="auto"]');
-    if (autoPill) {
+    const waveStr = `第${sess.wave}/${sess.maxWave}波`;
+    if (c.waveEl && c.prevWave !== waveStr) {
+      c.prevWave = waveStr;
+      c.waveEl.textContent = waveStr;
+    }
+
+    if (c.autoPill) {
       if (sess.autoLoop) {
-        autoPill.style.display = 'inline-block';
-        autoPill.className = 'auto-pill num' + (sess.stopRequested ? ' stopping' : '');
         const runNum = sess.pendingRestart ? sess.aggregate.runs : (sess.aggregate.runs + 1);
-        autoPill.textContent = sess.stopRequested
-          ? `この周で終了(${runNum}周目)`
-          : `自動周回 ${runNum}周目`;
-      } else {
-        autoPill.style.display = 'none';
+        const cls = 'auto-pill num' + (sess.stopRequested ? ' stopping' : '');
+        const txt = sess.stopRequested ? `この周で終了(${runNum}周目)` : `自動周回 ${runNum}周目`;
+        if (c.prevAutoCls !== cls) {
+          c.prevAutoCls = cls;
+          c.autoPill.style.display = 'inline-block';
+          c.autoPill.className = cls;
+        }
+        if (c.prevAutoText !== txt) {
+          c.prevAutoText = txt;
+          c.autoPill.textContent = txt;
+        }
+      } else if (c.prevAutoCls !== 'none') {
+        c.prevAutoCls = 'none';
+        c.prevAutoText = '';
+        c.autoPill.style.display = 'none';
       }
     }
 
-    const bannerEl = upperEl.querySelector('[data-b="banner"]');
-    if (bannerEl && sess.actionBanner) {
+    if (c.bannerEl && sess.actionBanner) {
       const ab = sess.actionBanner;
-      const cls = ab.kind === 'heal' || ab.kind === 'allyBuff'
-        ? 'action-banner heal-act'
-        : (ab.side === 'enemy' ? 'action-banner enemy-act' : 'action-banner');
-      bannerEl.className = cls;
-      if (ab.kind === 'info') {
-        bannerEl.innerHTML = `<span class="act-actor">${esc(ab.actorName)}</span><span class="act-arrow">▶</span><span class="act-skill">${esc(ab.skillName)}</span><span class="act-target">(${esc(ab.targetSummary)})</span>`;
-      } else {
-        bannerEl.innerHTML = `<span class="act-actor">${esc(ab.actorName)}</span><span class="act-arrow">▶</span><span class="act-skill">${esc(ab.skillName)}</span>${scopeBadge(ab.scope)}<span class="act-arrow">▶</span><span class="act-target">${esc(ab.targetSummary)}</span>`;
-      }
-    }
-
-    const flashEl = upperEl.querySelector('[data-b="flash"]');
-    if (flashEl) {
-      if (sess.encounterBanner) {
-        const eb = sess.encounterBanner;
-        flashEl.innerHTML = `<div class="encounter-flash ${eb.kind}">${esc(eb.text)}</div>`;
-      } else if (flashEl.innerHTML !== '') {
-        flashEl.innerHTML = '';
-      }
-    }
-
-    /* 攻撃軌跡SVG更新 */
-    updateBattleFxSvg(sess, upperEl);
-
-    /* 行動順タイムライン更新 */
-    const allUnits = sess.allies.concat(sess.enemies);
-    const nextLead = allUnits.filter((u) => !u.dead).sort((a, b) => b.atb - a.atb)[0];
-    const nextEl = upperEl.querySelector('[data-b="nextAct"]');
-    if (nextEl && nextLead) {
-      nextEl.textContent = `次:${timelineCallName(nextLead)}`;
-    }
-    updateLanePips(sess.allies, upperEl, nextLead ? nextLead.uid : '');
-    updateLanePips(sess.enemies, upperEl, nextLead ? nextLead.uid : '');
-
-    /* ユニットカード差分更新 */
-    allUnits.forEach((u) => {
-      const card = upperEl.querySelector(`[data-uid="${u.uid}"]`);
-      if (!card) return;
-      card.classList.toggle('dead', u.dead);
-      card.classList.toggle('acting', u.fxTag === 'acting');
-      card.classList.toggle('targeted', u.fxTag === 'targeted');
-      card.classList.toggle('healed', u.fxTag === 'healed');
-
-      const hpPct = Math.max(0, Math.min(100, (u.hp / u.maxHp) * 100));
-      const trailPct = Math.max(hpPct, Math.min(100, (u.trailHp / u.maxHp) * 100));
-      const fill = card.querySelector('[data-role="hpfill"]');
-      const trail = card.querySelector('[data-role="trail"]');
-      const hptext = card.querySelector('[data-role="hptext"]');
-      const atb = card.querySelector('[data-role="atb"]');
-      const status = card.querySelector('[data-role="status"]');
-      const cts = card.querySelector('[data-role="cts"]');
-      const pop = card.querySelector('[data-role="pop"]');
-
-      if (fill) {
-        fill.style.width = hpPct.toFixed(1) + '%';
-        fill.classList.toggle('low', u.side === 'ally' && hpPct <= 28);
-      }
-      if (trail) trail.style.width = trailPct.toFixed(1) + '%';
-      if (hptext) hptext.textContent = `${fnum(u.hp)}/${fnum(u.maxHp)}`;
-      if (atb) atb.style.width = Math.min(100, Math.max(0, u.atb)).toFixed(1) + '%';
-      if (status) status.innerHTML = buildStatusChipsHtml(u);
-
-      if (cts) {
-        if (u.side === 'ally') {
-          cts.innerHTML = u.skills.map((sk, idx) => {
-            if (sk.scope === 'passive') return `<span class="ct-dot ready">常時</span>`;
-            if (idx === 0) return '';
-            const cd = u.cds[idx];
-            return `<span class="ct-dot ${cd <= 0 ? 'ready' : ''}">技${idx + 1}${cd > 0 ? ':' + cd : ''}</span>`;
-          }).join('');
+      const bKey = `${ab.side}|${ab.kind}|${ab.actorName}|${ab.skillName}|${ab.scope}|${ab.targetSummary}`;
+      if (c.prevBannerKey !== bKey) {
+        c.prevBannerKey = bKey;
+        const cls = ab.kind === 'heal' || ab.kind === 'allyBuff'
+          ? 'action-banner heal-act'
+          : (ab.side === 'enemy' ? 'action-banner enemy-act' : 'action-banner');
+        c.bannerEl.className = cls;
+        if (ab.kind === 'info') {
+          c.bannerEl.innerHTML = `<span class="act-actor">${esc(ab.actorName)}</span><span class="act-arrow">▶</span><span class="act-skill">${esc(ab.skillName)}</span><span class="act-target">(${esc(ab.targetSummary)})</span>`;
         } else {
-          const readyStrong = u.cds[1] <= 0;
-          cts.innerHTML = readyStrong ? `<span class="enemy-charge-warn">強技構え</span>` : `<span class="ct-dot">強技:${u.cds[1]}</span>`;
+          c.bannerEl.innerHTML = `<span class="act-actor">${esc(ab.actorName)}</span><span class="act-arrow">▶</span><span class="act-skill">${esc(ab.skillName)}</span>${scopeBadge(ab.scope)}<span class="act-arrow">▶</span><span class="act-target">${esc(ab.targetSummary)}</span>`;
         }
       }
+    }
 
-      if (pop) {
-        if (u.fxPop) {
-          const stamp = String(u.fxPop.seq || 0);
-          if (pop.dataset.stamp !== stamp) {
-            pop.dataset.stamp = stamp;
-            pop.innerHTML = `<span class="float-pop ${u.fxPop.cls}">${esc(u.fxPop.text)}</span>`;
-          }
-        } else if (pop.innerHTML !== '') {
-          pop.innerHTML = '';
-          pop.dataset.stamp = '';
+    if (c.flashEl) {
+      const fKey = sess.encounterBanner ? `${sess.encounterBanner.kind}:${sess.encounterBanner.text}` : '';
+      if (c.prevFlashKey !== fKey) {
+        c.prevFlashKey = fKey;
+        c.flashEl.innerHTML = sess.encounterBanner
+          ? `<div class="encounter-flash ${sess.encounterBanner.kind}">${esc(sess.encounterBanner.text)}</div>`
+          : '';
+      }
+    }
+
+    if (c.treasureFlashEl) {
+      const tfSeq = sess.treasureFlash ? sess.treasureFlash.seq : 0;
+      if (c.prevTreasureFlashSeq !== tfSeq) {
+        c.prevTreasureFlashSeq = tfSeq;
+        c.treasureFlashEl.innerHTML = sess.treasureFlash
+          ? `<div class="treasure-flash">${ICON.svg('crown', 11)} ${esc(sess.treasureFlash.text)}</div>`
+          : '';
+      }
+    }
+
+    /* 攻撃軌跡SVG更新（新規攻撃時のみ） */
+    updateBattleFxSvg(sess, c);
+
+    /* 行動順キュー更新（順位が変わった時のみDOM書換・名前被り絶対0px） */
+    const order = sess.actionOrder || [];
+    const qKey = order.map((u) => u.uid).join('|');
+    if (c.queueList && c.prevQueueKey !== qKey) {
+      c.prevQueueKey = qKey;
+      c.queueList.innerHTML = order.map((u, idx) => {
+        const sideCls = u.side === 'ally'
+          ? 'ally'
+          : ((u.kind === 'boss' || u.kind === 'raid') ? 'boss' : (u.kind === 'intruder' ? 'intruder' : 'enemy'));
+        return `<span class="aq-item ${sideCls}${idx === 0 ? ' lead' : ''}">${idx === 0 ? '<span class="aq-lead-mark">▶</span>' : ''}${ICON.svg(u.el, 8)}<span>${esc(timelineCallName(u))}</span></span>`;
+      }).join('');
+    }
+
+    /* ユニットカード差分更新（キャッシュ参照＋GPU scaleX＋文字列変化時のみDOM更新） */
+    const allUnits = sess.allies.concat(sess.enemies);
+    for (let i = 0; i < allUnits.length; i++) {
+      const u = allUnits[i];
+      const ref = c.units[u.uid];
+      if (!ref) continue;
+      ref.card.classList.toggle('dead', u.dead);
+      ref.card.classList.toggle('acting', u.fxTag === 'acting');
+      ref.card.classList.toggle('targeted', u.fxTag === 'targeted');
+      ref.card.classList.toggle('healed', u.fxTag === 'healed');
+
+      const hpRatio = Math.max(0, Math.min(1, u.hp / u.maxHp));
+      const trailRatio = Math.max(hpRatio, Math.min(1, u.trailHp / u.maxHp));
+      const atbRatio = Math.max(0, Math.min(1, u.atb / 100));
+
+      const hpQ = Math.round(hpRatio * 200) / 200;
+      if (ref.fill && ref.prevHpScale !== hpQ) {
+        ref.prevHpScale = hpQ;
+        ref.fill.style.transform = `scaleX(${hpQ})`;
+        ref.fill.classList.toggle('low', u.side === 'ally' && hpRatio <= 0.28);
+      }
+      const trQ = Math.round(trailRatio * 200) / 200;
+      if (ref.trail && ref.prevTrailScale !== trQ) {
+        ref.prevTrailScale = trQ;
+        ref.trail.style.transform = `scaleX(${trQ})`;
+      }
+      const atbQ = Math.round(atbRatio * 100) / 100;
+      if (ref.atb && ref.prevAtbScale !== atbQ) {
+        ref.prevAtbScale = atbQ;
+        ref.atb.style.transform = `scaleX(${atbQ})`;
+      }
+
+      const stHtml = buildStatusChipsHtml(u);
+      if (ref.status && ref.prevStatus !== stHtml) {
+        ref.prevStatus = stHtml;
+        ref.status.innerHTML = stHtml;
+      }
+
+      const ctHtml = buildCtsHtml(u);
+      if (ref.cts && ref.prevCts !== ctHtml) {
+        ref.prevCts = ctHtml;
+        ref.cts.innerHTML = ctHtml;
+      }
+
+      if (ref.pop) {
+        const stamp = u.fxPop ? String(u.fxPop.seq || 0) : '';
+        if (ref.prevPopSeq !== stamp) {
+          ref.prevPopSeq = stamp;
+          ref.pop.innerHTML = u.fxPop
+            ? `<span class="float-pop ${u.fxPop.cls}">${esc(u.fxPop.text)}</span>`
+            : '';
         }
       }
-    });
+    }
 
-    /* 一括DPSメーター更新 */
+    /* 下半分リアルタイムDPS＆至宝ドロップ更新 */
+    const sec = Math.max(1, sess.battleTime || 0);
+    const totalDmg = sess.dps.reduce((s, d) => s + d.dmgDealt, 0);
+    const totalDps = totalDmg / sec;
+    if (c.dpsTotal) c.dpsTotal.textContent = `${formatDps(totalDps)}/s`;
+    if (c.dpsTime) c.dpsTime.textContent = `${(sess.battleTime || 0).toFixed(1)}s`;
+
+    if (c.treasurePill) {
+      if (sess.autoLoop) {
+        const tCnt = sess.aggregate.treasureCount || 0;
+        const latest = sess.aggregate.treasures && sess.aggregate.treasures.length > 0
+          ? sess.aggregate.treasures[sess.aggregate.treasures.length - 1]
+          : null;
+        c.treasurePill.className = 'treasure-pill num' + (tCnt > 0 ? ' has-loot' : '');
+        c.treasurePill.textContent = tCnt > 0
+          ? `至宝 ×${tCnt}（${latest.name}）`
+          : '至宝 0個';
+      } else {
+        c.treasurePill.className = 'treasure-pill num';
+        c.treasurePill.textContent = `総与ダメ ${fnum(totalDmg)}`;
+      }
+    }
+
     const maxDmg = Math.max(1, ...sess.dps.map((d) => d.dmgDealt));
     const maxTkn = Math.max(1, ...sess.dps.map((d) => d.dmgTaken));
     const maxHeal = Math.max(1, ...sess.dps.map((d) => d.healDone));
     const maxRcvd = Math.max(1, ...sess.dps.map((d) => d.healRcvd));
 
-    sess.dps.forEach((d) => {
-      const row = lowerEl.querySelector(`[data-dps-row="${d.charId}"]`);
-      if (!row) return;
-      row.querySelector('[data-m="dmg"]').textContent = fnum(d.dmgDealt);
-      row.querySelector('[data-m="tkn"]').textContent = fnum(d.dmgTaken);
-      row.querySelector('[data-m="heal"]').textContent = fnum(d.healDone);
-      row.querySelector('[data-m="rcvd"]').textContent = fnum(d.healRcvd);
-      row.querySelector('[data-mb="dmg"]').style.width = ((d.dmgDealt / maxDmg) * 100).toFixed(1) + '%';
-      row.querySelector('[data-mb="tkn"]').style.width = ((d.dmgTaken / maxTkn) * 100).toFixed(1) + '%';
-      row.querySelector('[data-mb="heal"]').style.width = ((d.healDone / maxHeal) * 100).toFixed(1) + '%';
-      row.querySelector('[data-mb="rcvd"]').style.width = ((d.healRcvd / maxRcvd) * 100).toFixed(1) + '%';
-    });
+    for (let i = 0; i < sess.dps.length; i++) {
+      const d = sess.dps[i];
+      const ref = c.dpsRows[d.charId];
+      if (!ref) continue;
+      const myDps = d.dmgDealt / sec;
+      const myHps = d.healDone / sec;
+      const isHealLead = d.role === 'healer' && d.healDone > d.dmgDealt;
+      const share = totalDmg > 0 ? Math.round((d.dmgDealt / totalDmg) * 100) : 0;
 
-    const spdBtn = lowerEl.querySelector('[data-b="speedBtn"]');
-    if (spdBtn) spdBtn.textContent = `速度 ×${snap.settings.speed}`;
-
-    const autoBtn = lowerEl.querySelector('[data-b="autoBtn"]');
-    if (autoBtn) {
-      const runNum = sess.pendingRestart ? sess.aggregate.runs : (sess.aggregate.runs + 1);
-      if (!sess.autoLoop) {
-        autoBtn.className = 'btn-secondary battle-ctrl-btn';
-        autoBtn.textContent = '自動周回をONにする';
-      } else if (!sess.stopRequested) {
-        autoBtn.className = 'btn-danger battle-ctrl-btn';
-        autoBtn.textContent = `周回停止予約（${runNum}周目）`;
+      if (isHealLead) {
+        ref.rate.className = 'dps-rate-val healer-hps num';
+        ref.rate.textContent = `HPS ${formatDps(myHps)}/s`;
+        ref.pct.textContent = `DPS ${formatDps(myDps)}`;
+        ref.mainBar.style.transform = `scaleX(${Math.min(1, d.healDone / maxHeal).toFixed(3)})`;
       } else {
-        autoBtn.className = 'btn-primary battle-ctrl-btn';
-        autoBtn.textContent = 'この周で終了（予約中）';
+        ref.rate.className = 'dps-rate-val num';
+        ref.rate.textContent = `DPS ${formatDps(myDps)}/s`;
+        ref.pct.textContent = `${share}%`;
+        ref.mainBar.style.transform = `scaleX(${Math.min(1, d.dmgDealt / maxDmg).toFixed(3)})`;
+      }
+      ref.dmg.textContent = fnum(d.dmgDealt);
+      ref.tkn.textContent = fnum(d.dmgTaken);
+      ref.heal.textContent = fnum(d.healDone);
+      ref.rcvd.textContent = fnum(d.healRcvd);
+      ref.bDmg.style.transform = `scaleX(${(d.dmgDealt / maxDmg).toFixed(3)})`;
+      ref.bTkn.style.transform = `scaleX(${(d.dmgTaken / maxTkn).toFixed(3)})`;
+      ref.bHeal.style.transform = `scaleX(${(d.healDone / maxHeal).toFixed(3)})`;
+      ref.bRcvd.style.transform = `scaleX(${(d.healRcvd / maxRcvd).toFixed(3)})`;
+    }
+
+    if (c.speedBtn && c.prevSpeed !== speed) {
+      c.prevSpeed = speed;
+      c.speedBtn.textContent = `速度 ×${speed}`;
+    }
+
+    if (c.autoBtn) {
+      const runNum = sess.pendingRestart ? sess.aggregate.runs : (sess.aggregate.runs + 1);
+      const abKey = `${sess.autoLoop}_${sess.stopRequested}_${runNum}`;
+      if (c.prevAutoBtnKey !== abKey) {
+        c.prevAutoBtnKey = abKey;
+        if (!sess.autoLoop) {
+          c.autoBtn.className = 'btn-secondary battle-ctrl-btn';
+          c.autoBtn.textContent = '自動周回をONにする';
+        } else if (!sess.stopRequested) {
+          c.autoBtn.className = 'btn-danger battle-ctrl-btn';
+          c.autoBtn.textContent = `周回停止予約（${runNum}周目）`;
+        } else {
+          c.autoBtn.className = 'btn-primary battle-ctrl-btn';
+          c.autoBtn.textContent = 'この周で終了（予約中）';
+        }
       }
     }
   }
@@ -612,10 +759,11 @@
   function resetBattleDomCache() {
     battleDomKey = '';
     lastRenderedFxSeq = 0;
+    battleCache = null;
   }
 
   /* =========================================================
-   * リザルト画面
+   * リザルト画面（枠貫通ゼロ・至宝＆売却内訳分離・累計DPS表示）
    * ========================================================= */
   function renderResultUpper(report, snap, ui) {
     const agg = report.aggregate;
@@ -626,6 +774,9 @@
 
     const totalDmg = agg.dps.reduce((s, d) => s + d.dmgDealt, 0);
     const totalHeal = agg.dps.reduce((s, d) => s + d.healDone, 0);
+    const totalSec = Math.max(1, agg.totalBattleTime || 1);
+    const avgDps = totalDmg / totalSec;
+    const totalGoldGain = (agg.gold || 0) + (agg.autoSoldGold || 0);
     const mvp = agg.dps.slice().sort((a, b) => (b.dmgDealt + b.healDone) - (a.dmgDealt + a.healDone))[0];
 
     const matItems = Object.entries(agg.mats).map(([mId, cnt]) => {
@@ -641,7 +792,9 @@
       return `<span class="synergy-pill">${ICON.svg('mark', 10)}${esc(r ? r.bossMarkName : '覇王の印')} ×${cnt}</span>`;
     });
     const charItems = (agg.grantedChars || []).map((gc) =>
-      `<span class="synergy-pill">${rarTag(gc.rarity)} ${esc(gc.name)} 加入！</span>`
+      gc.status === 'convert'
+        ? `<span class="synergy-pill">${rarTag(gc.rarity)} ${esc(gc.name)} → 魂晶+${gc.gainSoul}</span>`
+        : `<span class="synergy-pill">${rarTag(gc.rarity)} ${esc(gc.name)} 加入！</span>`
     );
     const abItems = agg.unlockedAbilities.map((aid) => {
       const a = EDATA.ABILITY_MAP[aid];
@@ -661,32 +814,37 @@
         </div>${agg.equips.length > 6 ? `<div class="item-sub">ほか獲得装備 +${agg.equips.length - 6}個</div>` : ''}`
       : (isWin
         ? `<div class="item-sub">獲得した報酬は所持品へ反映されました</div>`
-        : `<div class="skill-preview-row"><div class="skill-name">次戦への戦力強化ヒント</div><div class="skill-desc">共鳴盤解放・装備更新・共鳴設定・有利属性への編成変更で大きく戦力が伸びます。</div></div>`);
+        : `<div class="skill-preview-row"><div class="skill-name">次戦への戦力強化ヒント</div><div class="skill-desc">刻印解放・装備更新・共鳴設定・有利属性への編成変更で大きく戦力が伸びます。</div></div>`);
 
+    const treasureCnt = agg.treasureCount || 0;
     return `
       <div class="upper-bg-ornament"></div>
       <div class="upper-panel">
         <div class="result-banner ${isWin ? 'win' : 'lose'}">${esc(title)}</div>
         <div class="info-box">
-          <div class="stat-grid-4">
-            <div class="stat-cell"><div class="stat-lbl">勝敗</div><div class="stat-val">${agg.wins}勝 ${agg.losses}敗</div></div>
-            <div class="stat-cell"><div class="stat-lbl">乱入撃破</div><div class="stat-val">${agg.intruders}体</div></div>
-            <div class="stat-cell"><div class="stat-lbl">残響石</div><div class="stat-val">+${fnum(agg.stone)}</div></div>
-            <div class="stat-cell"><div class="stat-lbl">共鳴結晶</div><div class="stat-val">+${fnum(agg.crystal)}</div></div>
+          <div class="result-stat-grid">
+            <div class="result-stat-cell"><div class="stat-lbl">勝敗</div><div class="result-stat-val num">${agg.wins}勝${agg.losses}敗</div></div>
+            <div class="result-stat-cell"><div class="stat-lbl">乱入撃破</div><div class="result-stat-val num">${fnum(agg.intruders)}体</div></div>
+            <div class="result-stat-cell"><div class="stat-lbl">残響石</div><div class="result-stat-val num">+${fnum(agg.stone)}</div></div>
+            <div class="result-stat-cell"><div class="stat-lbl">結晶</div><div class="result-stat-val num">+${fnum(agg.crystal)}</div></div>
           </div>
-          <div class="stat-grid-4">
-            <div class="stat-cell"><div class="stat-lbl">金貨</div><div class="stat-val">+${fnum(agg.gold)}</div></div>
-            <div class="stat-cell"><div class="stat-lbl">魂晶</div><div class="stat-val">+${fnum(agg.soul)}</div></div>
-            <div class="stat-cell"><div class="stat-lbl">獲得装備</div><div class="stat-val">${agg.equips.length}個</div></div>
-            <div class="stat-cell"><div class="stat-lbl">自動売却</div><div class="stat-val">${agg.autoSoldCount}個/+${fnum(agg.autoSoldGold)}</div></div>
+          <div class="result-stat-grid">
+            <div class="result-stat-cell"><div class="stat-lbl">総金貨</div><div class="result-stat-val num">+${fnum(totalGoldGain)}</div></div>
+            <div class="result-stat-cell"><div class="stat-lbl">魂晶</div><div class="result-stat-val num">+${fnum(agg.soul)}</div></div>
+            <div class="result-stat-cell ${treasureCnt > 0 ? 'gold-glow' : ''}"><div class="stat-lbl">獲得装備</div><div class="result-stat-val num">${fnum(agg.equips.length)}個</div></div>
+            <div class="result-stat-cell"><div class="stat-lbl">自動売却</div><div class="result-stat-val num">${fnum(agg.autoSoldCount)}個</div></div>
+          </div>
+          <div class="result-sub-strip">
+            <span class="num" style="color:var(--gold-bright)">平均DPS ${formatDps(avgDps)}/s</span>
+            ${agg.autoSoldGold > 0 ? `<span class="num">売却換金 +${fnum(agg.autoSoldGold)}金貨</span>` : `<span class="num">合計与ダメ ${fnum(totalDmg)}</span>`}
+            ${treasureCnt > 0 ? `<span class="qual-tag qual-4 num">至宝 ×${treasureCnt}</span>` : `<span class="num">回復 ${fnum(totalHeal)}</span>`}
           </div>
         </div>
         <div class="info-box grow">
           <div class="row-between">
             <span class="dps-title">獲得品と戦果</span>
-            <span class="item-sub num">合計与ダメ ${fnum(totalDmg)} / 合計回復 ${fnum(totalHeal)}</span>
+            ${mvp ? `<span class="synergy-pill">最優秀：${esc(mvp.name)}</span>` : ''}
           </div>
-          ${mvp ? `<div class="row-between"><span class="synergy-pill">最優秀：${esc(mvp.name)}</span><span class="item-sub num">与ダメ ${fnum(mvp.dmgDealt)} / 回復 ${fnum(mvp.healDone)}</span></div>` : ''}
           ${(matItems.length || shardItems.length || markItems.length || charItems.length || abItems.length)
             ? `<div class="synergy-list">${charItems.join('')}${markItems.join('')}${matItems.join('')}${shardItems.join('')}${abItems.join('')}</div>`
             : ''}
@@ -698,42 +856,55 @@
 
   function renderResultLower(report) {
     const agg = report.aggregate;
+    const totalSec = Math.max(1, agg.totalBattleTime || 1);
+    const totalDmg = agg.dps.reduce((s, d) => s + d.dmgDealt, 0);
     const maxDmg = Math.max(1, ...agg.dps.map((d) => d.dmgDealt));
     const maxTkn = Math.max(1, ...agg.dps.map((d) => d.dmgTaken));
     const maxHeal = Math.max(1, ...agg.dps.map((d) => d.healDone));
     const maxRcvd = Math.max(1, ...agg.dps.map((d) => d.healRcvd));
 
-    const rows = agg.dps.map((d) => `
-      <div class="dps-row">
-        <div class="dps-row-top">
-          <span class="dps-char-name">${elBadge(d.el)}<span>${esc(d.name)}</span></span>
-          ${roleBadge(d.role)}
-        </div>
-        <div class="dps-metrics-grid">
-          <div class="dps-metric">
-            <div class="dps-metric-top"><span class="dps-m-lbl">与ダメ</span><span class="dps-num lg-dmg">${fnum(d.dmgDealt)}</span></div>
-            <div class="dps-bar-bg"><div class="dps-bar-fill dmg" style="width:${((d.dmgDealt / maxDmg) * 100).toFixed(1)}%"></div></div>
+    const rows = agg.dps.map((d) => {
+      const myDps = d.dmgDealt / totalSec;
+      const myHps = d.healDone / totalSec;
+      const share = totalDmg > 0 ? Math.round((d.dmgDealt / totalDmg) * 100) : 0;
+      const isHealLead = d.role === 'healer' && d.healDone > d.dmgDealt;
+      const mainPct = isHealLead ? (d.healDone / maxHeal) : (d.dmgDealt / maxDmg);
+      return `
+        <div class="dps-row">
+          <div class="dps-row-top">
+            <span class="dps-char-name">${elBadge(d.el)}<span>${esc(d.name)}</span>${roleBadge(d.role)}</span>
+            <div class="dps-hero-right">
+              <span class="dps-rate-val ${isHealLead ? 'healer-hps' : ''} num">${isHealLead ? `HPS ${formatDps(myHps)}/s` : `DPS ${formatDps(myDps)}/s`}</span>
+              <span class="dps-share-pct num">${isHealLead ? `DPS ${formatDps(myDps)}` : `${share}%`}</span>
+            </div>
           </div>
-          <div class="dps-metric">
-            <div class="dps-metric-top"><span class="dps-m-lbl">被ダメ</span><span class="dps-num lg-tkn">${fnum(d.dmgTaken)}</span></div>
-            <div class="dps-bar-bg"><div class="dps-bar-fill tkn" style="width:${((d.dmgTaken / maxTkn) * 100).toFixed(1)}%"></div></div>
+          <div class="dps-main-bar-bg"><div class="dps-main-bar-fill ${isHealLead ? 'heal-bar' : ''}" style="transform:scaleX(${Math.min(1, mainPct).toFixed(3)})"></div></div>
+          <div class="dps-metrics-grid">
+            <div class="dps-metric">
+              <div class="dps-metric-top"><span class="dps-m-lbl">与ダメ</span><span class="dps-num lg-dmg">${fnum(d.dmgDealt)}</span></div>
+              <div class="dps-bar-bg"><div class="dps-bar-fill dmg" style="transform:scaleX(${(d.dmgDealt / maxDmg).toFixed(3)})"></div></div>
+            </div>
+            <div class="dps-metric">
+              <div class="dps-metric-top"><span class="dps-m-lbl">被ダメ</span><span class="dps-num lg-tkn">${fnum(d.dmgTaken)}</span></div>
+              <div class="dps-bar-bg"><div class="dps-bar-fill tkn" style="transform:scaleX(${(d.dmgTaken / maxTkn).toFixed(3)})"></div></div>
+            </div>
+            <div class="dps-metric">
+              <div class="dps-metric-top"><span class="dps-m-lbl">回復</span><span class="dps-num lg-heal">${fnum(d.healDone)}</span></div>
+              <div class="dps-bar-bg"><div class="dps-bar-fill heal" style="transform:scaleX(${(d.healDone / maxHeal).toFixed(3)})"></div></div>
+            </div>
+            <div class="dps-metric">
+              <div class="dps-metric-top"><span class="dps-m-lbl">被回復</span><span class="dps-num lg-rcvd">${fnum(d.healRcvd)}</span></div>
+              <div class="dps-bar-bg"><div class="dps-bar-fill rcvd" style="transform:scaleX(${(d.healRcvd / maxRcvd).toFixed(3)})"></div></div>
+            </div>
           </div>
-          <div class="dps-metric">
-            <div class="dps-metric-top"><span class="dps-m-lbl">回復量</span><span class="dps-num lg-heal">${fnum(d.healDone)}</span></div>
-            <div class="dps-bar-bg"><div class="dps-bar-fill heal" style="width:${((d.healDone / maxHeal) * 100).toFixed(1)}%"></div></div>
-          </div>
-          <div class="dps-metric">
-            <div class="dps-metric-top"><span class="dps-m-lbl">被回復</span><span class="dps-num lg-rcvd">${fnum(d.healRcvd)}</span></div>
-            <div class="dps-bar-bg"><div class="dps-bar-fill rcvd" style="width:${((d.healRcvd / maxRcvd) * 100).toFixed(1)}%"></div></div>
-          </div>
-        </div>
-      </div>`).join('');
+        </div>`;
+    }).join('');
 
     return `
       <div class="lower-body">
         <div class="row-between">
-          <span class="dps-title">累計戦績メーター</span>
-          <span class="item-sub">全${agg.runs}周合計</span>
+          <span class="dps-title">累計DPS・戦績メーター</span>
+          <span class="item-sub num">全${agg.runs}周 / 合計DPS ${formatDps(totalDmg / totalSec)}/s</span>
         </div>
         <div class="scroll-list" data-scroll-key="result-dps">
           <div class="list-stack">${rows}</div>
@@ -774,11 +945,15 @@
         const world = WDATA.WORLDS.find((w) => w.id === ui.selectedWorldId) || WDATA.WORLDS[0];
         const stage = world.stages[ui.selectedStageNum - 1] || world.stages[0];
         const boss = stage.isBoss ? WDATA.ENEMIES[stage.bossId] : null;
-        const intruder = WDATA.ENEMIES[world.intruderId];
         const normals = WDATA.getWorldNormalEnemies(world.id);
         const drops = world.drops.map((sid) => (EDATA.SERIES_MAP[sid] ? EDATA.SERIES_MAP[sid].name : sid)).join(' / ');
         const recPower = Math.round(stage.power * 3400);
         const clearedCnt = world.stages.filter((s) => snap.clearedStages[`${world.id}_${s.num}`]).length;
+
+        const enemyChipsHtml = [
+          ...normals.map((e) => `<span class="enemy-mini-chip">${elBadge(e.el)}${esc(e.name)}</span>`),
+          ...(boss ? [`<span class="enemy-mini-chip boss-chip">${ICON.svg('crown', 10)}${elBadge(boss.el)}<span>強敵：${esc(boss.name)}</span></span>`] : [])
+        ].join('');
 
         return `
           <div class="upper-bg-ornament"></div>
@@ -795,12 +970,8 @@
                 <span class="item-title">ステージ${stage.num}：${esc(stage.name)}</span>
                 <div class="row-left">${powerJudgeBadge(partyPower, recPower)}<span class="wave-pill">全5連戦</span></div>
               </div>
-              ${boss
-                ? `<div class="row-left"><span class="encounter-badge boss">${ICON.svg('crown', 10)} 強敵：${esc(boss.name)}</span>${elBadge(boss.el)}</div>`
-                : `<div class="row-left"><span class="item-sub">異界情景：${esc(world.theme)}</span></div>`}
               <div class="row-left">
-                <span class="encounter-badge intruder">${ICON.svg('warn', 10)} 乱入：${esc(intruder.name)}</span>
-                ${elBadge(intruder.el)}
+                <span class="item-sub">異界情景：${esc(world.theme)}</span>
               </div>
             </div>
             <div class="info-box grow">
@@ -812,9 +983,7 @@
               </div>
               <div>
                 <div class="item-sub" style="margin-bottom:3px">出現敵</div>
-                <div class="enemy-mini-row">
-                  ${normals.map((e) => `<span class="enemy-mini-chip">${elBadge(e.el)}${esc(e.name)}</span>`).join('')}
-                </div>
+                <div class="enemy-mini-row">${enemyChipsHtml}</div>
               </div>
               <div class="row-between">
                 <span class="item-sub">獲得装備：${esc(drops)}</span>
@@ -862,7 +1031,7 @@
                   <div class="skill-preview-row">
                     <div class="skill-preview-head">
                       <span class="skill-name">敵技${i + 1}：${esc(sk.name)}</span>
-                      ${scopeBadge(sk.scope)}
+                      ${skillMetaHtml(sk)}
                     </div>
                     <div class="skill-desc">${esc(sk.desc)}</div>
                   </div>`).join('')}
@@ -1010,7 +1179,7 @@
                   <div class="skill-preview-row">
                     <div class="skill-preview-head">
                       <span class="skill-name">敵技${idx + 1}：${esc(sk.name)}</span>
-                      ${scopeBadge(sk.scope)}
+                      ${skillMetaHtml(sk)}
                     </div>
                     <div class="skill-desc">${esc(sk.desc)}</div>
                   </div>`).join('')}
@@ -1021,79 +1190,258 @@
       }
     }
 
-    /* ② 編成タブ上半分 */
-    if (ui.tab === 'party') {
-      const targetParty = ui.partySub === 'main' ? snap.party : snap.gauntletParties[ui.gauntletTeamIdx];
-      const validIds = targetParty.filter(Boolean);
-      const validChars = validIds.map((id) => CDATA.CHAR_MAP[id]).filter(Boolean);
-      const syn = EDATA.computePartySynergies(validChars);
-      const comps = validIds.map((id) => STATE.getCharComputed(id, targetParty));
-      const totalPower = comps.reduce((s, c) => s + c.power, 0);
-      const sumHp = comps.reduce((s, c) => s + c.hp, 0);
-      const sumAtk = comps.reduce((s, c) => s + c.atk, 0);
-      const avgSpd = comps.length ? Math.round(comps.reduce((s, c) => s + c.spd, 0) / comps.length) : 0;
+    /* ② 統合「キャラ」タブ上半分（編成・刻印12種・覚醒・アビ・共鳴・装備を完全連動表示） */
+    if (ui.tab === 'char') {
+      if (ui.charSub === 'party') {
+        const targetParty = ui.partySub === 'main' ? snap.party : snap.gauntletParties[ui.gauntletTeamIdx];
+        const validIds = targetParty.filter(Boolean);
+        const validChars = validIds.map((id) => CDATA.CHAR_MAP[id]).filter(Boolean);
+        const syn = EDATA.computePartySynergies(validChars);
+        const comps = validIds.map((id) => STATE.getCharComputed(id, targetParty));
+        const totalPower = comps.reduce((s, c) => s + c.power, 0);
+        const sumHp = comps.reduce((s, c) => s + c.hp, 0);
+        const sumAtk = comps.reduce((s, c) => s + c.atk, 0);
+        const avgSpd = comps.length ? Math.round(comps.reduce((s, c) => s + c.spd, 0) / comps.length) : 0;
 
-      const slotsHtml = [0, 1, 2, 3].map((idx) => {
-        const cid = targetParty[idx];
-        const isSel = ui.selectedPartySlot === idx;
-        if (!cid) {
-          return `<div class="party-slot-card ${isSel ? 'selected' : ''}"><span class="item-sub">編成${idx + 1}：空き</span></div>`;
-        }
-        const comp = STATE.getCharComputed(cid, targetParty);
+        const slotsHtml = [0, 1, 2, 3].map((idx) => {
+          const cid = targetParty[idx];
+          const isSel = ui.selectedPartySlot === idx;
+          if (!cid) {
+            return `<div class="party-slot-card ${isSel ? 'selected' : ''}"><span class="item-sub">編成${idx + 1}：空き</span></div>`;
+          }
+          const comp = STATE.getCharComputed(cid, targetParty);
+          return `
+            <div class="party-slot-card ${isSel ? 'selected' : ''}">
+              <div class="row-between">
+                <span class="item-title" style="font-size:11.5px">${esc(comp.def.name)}</span>
+                ${rarTag(comp.def.rarity)}
+              </div>
+              <div class="row-left">
+                ${elBadge(comp.def.el)}
+                ${roleBadge(comp.def.role)}
+                <span class="item-sub num">覚醒${comp.awake}</span>
+              </div>
+              <div class="row-between">
+                <span class="item-sub num">戦力 ${fnum(comp.power)}</span>
+                <span class="item-sub">${comp.linkInfo ? '共鳴:' + esc(comp.linkInfo.name) : '共鳴なし'}</span>
+              </div>
+            </div>`;
+        }).join('');
+
         return `
-          <div class="party-slot-card ${isSel ? 'selected' : ''}">
-            <div class="row-between">
-              <span class="item-title" style="font-size:11.5px">${esc(comp.def.name)}</span>
-              ${rarTag(comp.def.rarity)}
+          <div class="upper-bg-ornament"></div>
+          <div class="upper-panel">
+            <div class="upper-header">
+              <div class="upper-title-group">
+                <span class="upper-title">${ui.partySub === 'main' ? '主力編成' : `総力第${ui.gauntletTeamIdx + 1}部隊`}</span>
+                <span class="upper-subtitle num">総戦力 ${fnum(totalPower)}</span>
+              </div>
+              ${currencyBarHtml(snap)}
             </div>
-            <div class="row-left">
-              ${elBadge(comp.def.el)}
-              ${roleBadge(comp.def.role)}
-              <span class="item-sub num">覚醒${comp.awake}</span>
+            <div class="party-preview-grid">${slotsHtml}</div>
+            <div class="stat-grid-4">
+              <div class="stat-cell"><div class="stat-lbl">合計HP</div><div class="stat-val">${fnum(sumHp)}</div></div>
+              <div class="stat-cell"><div class="stat-lbl">合計攻撃</div><div class="stat-val">${fnum(sumAtk)}</div></div>
+              <div class="stat-cell"><div class="stat-lbl">平均速度</div><div class="stat-val">${avgSpd}</div></div>
+              <div class="stat-cell"><div class="stat-lbl">シナジー</div><div class="stat-val">${syn.active.length}種</div></div>
             </div>
-            <div class="row-between">
-              <span class="item-sub num">戦力 ${fnum(comp.power)}</span>
-              <span class="item-sub">${comp.linkInfo ? '共鳴:' + esc(comp.linkInfo.name) : '共鳴なし'}</span>
+            <div class="info-box grow">
+              <div class="item-sub" style="font-weight:800;color:var(--gold-bright)">発動中の編成シナジー（属性・ロール・出身異界）</div>
+              <div class="synergy-list">
+                ${syn.active.length > 0
+                  ? syn.active.map((s) => `<span class="synergy-pill">${esc(s.name)}：${esc(s.desc)}</span>`).join('')
+                  : '<span class="item-sub">属性・ロール・出身異界の組み合わせで部隊強化が発動します</span>'}
+              </div>
             </div>
+            ${toastHtml(ui)}
           </div>`;
-      }).join('');
+      }
 
-      return `
-        <div class="upper-bg-ornament"></div>
-        <div class="upper-panel">
-          <div class="upper-header">
-            <div class="upper-title-group">
-              <span class="upper-title">${ui.partySub === 'main' ? '主力編成' : `総力第${ui.gauntletTeamIdx + 1}部隊`}</span>
-              <span class="upper-subtitle num">総戦力 ${fnum(totalPower)}</span>
-            </div>
-            ${currencyBarHtml(snap)}
-          </div>
-          <div class="party-preview-grid">${slotsHtml}</div>
-          <div class="stat-grid-4">
-            <div class="stat-cell"><div class="stat-lbl">合計HP</div><div class="stat-val">${fnum(sumHp)}</div></div>
-            <div class="stat-cell"><div class="stat-lbl">合計攻撃</div><div class="stat-val">${fnum(sumAtk)}</div></div>
-            <div class="stat-cell"><div class="stat-lbl">平均速度</div><div class="stat-val">${avgSpd}</div></div>
-            <div class="stat-cell"><div class="stat-lbl">シナジー</div><div class="stat-val">${syn.active.length}種</div></div>
-          </div>
-          <div class="info-box grow">
-            <div class="item-sub" style="font-weight:800;color:var(--gold-bright)">発動中の編成シナジー（属性・ロール・出身異界）</div>
-            <div class="synergy-list">
-              ${syn.active.length > 0
-                ? syn.active.map((s) => `<span class="synergy-pill">${esc(s.name)}：${esc(s.desc)}</span>`).join('')
-                : '<span class="item-sub">属性・ロール・出身異界の組み合わせで部隊強化が発動します</span>'}
-            </div>
-          </div>
-          ${toastHtml(ui)}
-        </div>`;
-    }
+      if (ui.charSub === 'equip') {
+        if (ui.equipSub === 'craft') {
+          const ser = EDATA.SERIES_MAP[ui.selectedCraftSeries] || EDATA.EQUIP_SERIES.find((s) => s.limited);
+          const raid = WDATA.RAIDS.find((x) => x.matId === ser.matId);
+          const have = snap.mats[ser.matId] || 0;
+          return `
+            <div class="upper-bg-ornament"></div>
+            <div class="upper-panel">
+              <div class="upper-header">
+                <div class="upper-title-group">
+                  <span class="upper-title">限定装備製作</span>
+                  ${ser.el ? elBadge(ser.el) : ''}
+                </div>
+                ${currencyBarHtml(snap)}
+              </div>
+              <div class="info-box">
+                <div class="row-between">
+                  <span class="item-title">${esc(ser.name)}</span>
+                  <span class="synergy-pill num">${esc(raid ? raid.matName : '')} ${have}/${ser.matCost}</span>
+                </div>
+                <div class="stat-grid-4">
+                  ${EDATA.SLOTS.map((sl) => {
+                    const vals = STATE.getEquipPartPreviewValues(ser.id, sl.id);
+                    return `<div class="stat-cell"><div class="stat-lbl">${esc(sl.name)}(${esc(sl.statLabel)})</div><div class="stat-val">+${fnum(vals[0].val)}〜${fnum(vals[4].val)}</div></div>`;
+                  }).join('')}
+                </div>
+              </div>
+              <div class="info-box grow">
+                <div class="skill-preview-row">
+                  <div class="skill-name">2部位セット効果</div>
+                  <div class="skill-desc">${esc(ser.set2.desc)}</div>
+                </div>
+                <div class="skill-preview-row">
+                  <div class="skill-name">4部位セット効果</div>
+                  <div class="skill-desc">${esc(ser.set4.desc)}</div>
+                </div>
+                <div class="item-sub">獲得先：${esc(ser.sourceText)}</div>
+              </div>
+              ${toastHtml(ui)}
+            </div>`;
+        }
 
-    /* ③ 育成タブ上半分（共鳴結晶＆魂晶を両方常時表示・紹介文は図鑑のみ） */
-    if (ui.tab === 'grow') {
+        if (ui.equipSub === 'shop') {
+          const cryTimes = Math.floor(snap.gold / 400);
+          const stoTimes = Math.floor(snap.gold / 600);
+          return `
+            <div class="upper-bg-ornament"></div>
+            <div class="upper-panel">
+              <div class="upper-header">
+                <div class="upper-title-group"><span class="upper-title">金貨還元交換</span></div>
+                ${currencyBarHtml(snap)}
+              </div>
+              <div class="info-box">
+                <div class="stat-grid-4">
+                  <div class="stat-cell"><div class="stat-lbl">所持金貨</div><div class="stat-val">${fnum(snap.gold)}</div></div>
+                  <div class="stat-cell"><div class="stat-lbl">結晶</div><div class="stat-val">${fnum(snap.crystal)}</div></div>
+                  <div class="stat-cell"><div class="stat-lbl">残響石</div><div class="stat-val">${fnum(snap.stone)}</div></div>
+                  <div class="stat-cell"><div class="stat-lbl">交換可能</div><div class="stat-val">${fnum(cryTimes)}回</div></div>
+                </div>
+              </div>
+              <div class="info-box grow">
+                <div class="skill-preview-row">
+                  <div class="skill-preview-head">
+                    <span class="skill-name">${ICON.svg('crystal', 11)} 結晶交換</span>
+                    <span class="qual-tag qual-2 num">交換可 ${fnum(cryTimes)}回</span>
+                  </div>
+                  <div class="skill-desc">金貨 400 で 結晶 +160（キャラの刻印解放に使用）</div>
+                </div>
+                <div class="skill-preview-row">
+                  <div class="skill-preview-head">
+                    <span class="skill-name">${ICON.svg('stone', 11)} 残響石交換</span>
+                    <span class="qual-tag qual-4 num">交換可 ${fnum(stoTimes)}回</span>
+                  </div>
+                  <div class="skill-desc">金貨 600 で 残響石 +120（星海残響召喚に使用）</div>
+                </div>
+              </div>
+              ${toastHtml(ui)}
+            </div>`;
+        }
+
+        if (ui.equipSub === 'sell') {
+          const equippedSet = new Set();
+          Object.values(snap.roster).forEach((r) => EDATA.SLOTS.forEach((sl) => { if (r.equips[sl.id]) equippedSet.add(r.equips[sl.id]); }));
+          const counts = [0, 1, 2, 3, 4].map((q) => snap.equips.filter((e) => e.quality === q && !e.locked && !equippedSet.has(e.id)).length);
+          const lockedCnt = snap.equips.filter((e) => e.locked).length;
+          return `
+            <div class="upper-bg-ornament"></div>
+            <div class="upper-panel">
+              <div class="upper-header">
+                <div class="upper-title-group"><span class="upper-title">装備整理・売却</span></div>
+                ${currencyBarHtml(snap)}
+              </div>
+              <div class="info-box">
+                <div class="row-between">
+                  <span class="item-title">売却可能な未装着装備（品質別）</span>
+                  <span class="item-sub num">保護中 ${lockedCnt}個 / 総所持 ${snap.equips.length}個</span>
+                </div>
+                <div class="stat-grid-5">
+                  ${EDATA.QUALITIES.map((q, idx) => `<div class="stat-cell"><div class="stat-lbl">${esc(q.name)}</div><div class="stat-val">${counts[idx]}個</div></div>`).join('')}
+                </div>
+              </div>
+              <div class="info-box grow">
+                <div class="skill-preview-row">
+                  <div class="skill-name">自動売却ライン</div>
+                  <div class="skill-desc">現在設定：${snap.settings.autoSellMaxQuality < 0 ? 'OFF（すべて保管）' : EDATA.QUALITIES[snap.settings.autoSellMaxQuality].name + '以下を即時換金'}</div>
+                </div>
+                <div class="skill-preview-row">
+                  <div class="skill-name">保護ルール</div>
+                  <div class="skill-desc">誰かが装着中の装備、および保護マーク付き装備は一括売却の対象から除外されます。</div>
+                </div>
+              </div>
+              ${toastHtml(ui)}
+            </div>`;
+        }
+
+        const cid = ui.selectedCharId && snap.roster[ui.selectedCharId] ? ui.selectedCharId : Object.keys(snap.roster)[0];
+        const comp = STATE.getCharComputed(cid, snap.party);
+        const r = snap.roster[cid];
+        let sumAtk = 0, sumDef = 0, sumHp = 0, sumSpd = 0;
+
+        const slotCards = EDATA.SLOTS.map((sl) => {
+          const eq = STATE.getEquipById(r.equips[sl.id]);
+          if (!eq) {
+            return `<div class="party-slot-card ${ui.selectedEquipSlot === sl.id ? 'selected' : ''}"><span class="item-sub">${ICON.svg(sl.id, 11)} ${esc(sl.name)}（${esc(sl.statLabel)}）：未装着</span></div>`;
+          }
+          const ser = EDATA.SERIES_MAP[eq.seriesId];
+          const val = STATE.getEquipStatValue(eq);
+          if (sl.baseStat === 'atk') sumAtk += val;
+          if (sl.baseStat === 'def') sumDef += val;
+          if (sl.baseStat === 'hp') sumHp += val;
+          if (sl.baseStat === 'spd') sumSpd += val;
+          return `
+            <div class="party-slot-card ${ui.selectedEquipSlot === sl.id ? 'selected' : ''}">
+              <div class="row-between">
+                <span class="item-title" style="font-size:11px">${ICON.svg(sl.id, 11)} ${esc(ser.partNames[sl.id])}</span>
+                ${qualTag(eq.quality)}
+              </div>
+              <div class="row-between">
+                <span class="item-sub">${esc(ser.name)}</span>
+                <span class="item-sub num" style="color:var(--gold-bright);font-weight:800">${esc(sl.statLabel)} +${fnum(val)}</span>
+              </div>
+            </div>`;
+        }).join('');
+
+        return `
+          <div class="upper-bg-ornament"></div>
+          <div class="upper-panel">
+            <div class="upper-header">
+              <div class="upper-title-group">
+                ${rarTag(comp.def.rarity)}
+                <span class="upper-title">${esc(comp.def.name)}</span>
+                ${elBadge(comp.def.el)}
+                <span class="upper-subtitle num">戦力 ${fnum(comp.power)}</span>
+              </div>
+              ${currencyBarHtml(snap)}
+            </div>
+            <div class="party-preview-grid">${slotCards}</div>
+            <div class="stat-grid-4">
+              <div class="stat-cell"><div class="stat-lbl">装備HP</div><div class="stat-val">+${fnum(sumHp)}</div></div>
+              <div class="stat-cell"><div class="stat-lbl">装備攻撃</div><div class="stat-val">+${fnum(sumAtk)}</div></div>
+              <div class="stat-cell"><div class="stat-lbl">装備防御</div><div class="stat-val">+${fnum(sumDef)}</div></div>
+              <div class="stat-cell"><div class="stat-lbl">装備速度</div><div class="stat-val">+${sumSpd}</div></div>
+            </div>
+            <div class="info-box grow">
+              <div class="row-between">
+                <span class="item-sub" style="font-weight:800;color:var(--gold-bright)">発動中セット効果</span>
+                <span class="item-sub">自動売却：${snap.settings.autoSellMaxQuality < 0 ? 'OFF' : EDATA.QUALITIES[snap.settings.autoSellMaxQuality].name + '以下'}</span>
+              </div>
+              <div class="synergy-list">
+                ${comp.activeSets.length > 0
+                  ? comp.activeSets.map((s) => `<span class="synergy-pill">${esc(s.name)}(${s.count})：${esc(s.desc)}</span>`).join('')
+                  : '<span class="item-sub">同シリーズ2部位・4部位の装着でセット効果が発動します</span>'}
+              </div>
+            </div>
+            ${toastHtml(ui)}
+          </div>`;
+      }
+
+      /* 刻印・覚醒・アビリティ・共鳴 上半分プレビュー（倍率付き技＆結晶・魂晶常時表示） */
       const cid = ui.selectedCharId && snap.roster[ui.selectedCharId] ? ui.selectedCharId : Object.keys(snap.roster)[0];
       const comp = STATE.getCharComputed(cid, snap.party);
       const r = snap.roster[cid];
       const maxAbSlots = STATE.getAbilitySlotCount(r.awake);
       const eqAbNames = r.abilities.map((aid) => EDATA.ABILITY_MAP[aid]?.name).filter(Boolean).join(' / ') || '未装着';
+      const totalBoards = CDATA.BOARD_TEMPLATES.length;
 
       return `
         <div class="upper-bg-ornament"></div>
@@ -1106,7 +1454,7 @@
               ${roleBadge(comp.def.role)}
             </div>
             <div class="currency-bar">
-              <span class="curr-pill num" title="共鳴結晶">${ICON.svg('crystal', 11)} ${fnum(snap.crystal)}</span>
+              <span class="curr-pill num" title="結晶">${ICON.svg('crystal', 11)} ${fnum(snap.crystal)}</span>
               <span class="curr-pill num" title="魂晶">${ICON.svg('soul', 11)} ${fnum(snap.soul)}</span>
             </div>
           </div>
@@ -1119,7 +1467,7 @@
           </div>
           <div class="info-box grow">
             <div class="row-between">
-              <span class="item-sub">覚醒 ${r.awake}/5 ・ 共鳴盤 ${r.board.length}/6 ・ 自由枠 ${r.abilities.length}/${maxAbSlots}：${esc(eqAbNames)}</span>
+              <span class="item-sub num">戦力 ${fnum(comp.power)} ・ 覚醒 ${r.awake}/5 ・ 刻印 ${r.board.length}/${totalBoards} ・ 自由枠 ${r.abilities.length}/${maxAbSlots}</span>
             </div>
             <div class="row-between">
               <span class="item-sub">固有：${esc(comp.def.innate.name)}（${esc(comp.def.innate.desc)}）</span>
@@ -1129,189 +1477,12 @@
                 <div class="skill-preview-row">
                   <div class="skill-preview-head">
                     <span class="skill-name">${sk.scope === 'passive' ? '常時' : '技' + sk.slot}：${esc(sk.name)}</span>
-                    ${scopeBadge(sk.scope)}
+                    ${skillMetaHtml(sk)}
                   </div>
                   <div class="skill-desc">${esc(sk.desc)}</div>
                 </div>`).join('')}
             </div>
-          </div>
-          ${toastHtml(ui)}
-        </div>`;
-    }
-
-    /* ④ 装備タブ上半分（サブタブ完全連動！装着／売却／限定製作／金貨還元） */
-    if (ui.tab === 'equip') {
-      if (ui.equipSub === 'craft') {
-        const ser = EDATA.SERIES_MAP[ui.selectedCraftSeries] || EDATA.EQUIP_SERIES.find((s) => s.limited);
-        const raid = WDATA.RAIDS.find((x) => x.matId === ser.matId);
-        const have = snap.mats[ser.matId] || 0;
-        return `
-          <div class="upper-bg-ornament"></div>
-          <div class="upper-panel">
-            <div class="upper-header">
-              <div class="upper-title-group">
-                <span class="upper-title">限定装備製作</span>
-                ${ser.el ? elBadge(ser.el) : ''}
-              </div>
-              ${currencyBarHtml(snap)}
-            </div>
-            <div class="info-box">
-              <div class="row-between">
-                <span class="item-title">${esc(ser.name)}</span>
-                <span class="synergy-pill num">${esc(raid ? raid.matName : '')} ${have}/${ser.matCost}</span>
-              </div>
-              <div class="stat-grid-4">
-                ${EDATA.SLOTS.map((sl) => {
-                  const vals = STATE.getEquipPartPreviewValues(ser.id, sl.id);
-                  return `<div class="stat-cell"><div class="stat-lbl">${esc(sl.name)}(${esc(sl.statLabel)})</div><div class="stat-val">+${fnum(vals[0].val)}〜${fnum(vals[4].val)}</div></div>`;
-                }).join('')}
-              </div>
-            </div>
-            <div class="info-box grow">
-              <div class="skill-preview-row">
-                <div class="skill-name">2部位セット効果</div>
-                <div class="skill-desc">${esc(ser.set2.desc)}</div>
-              </div>
-              <div class="skill-preview-row">
-                <div class="skill-name">4部位セット効果</div>
-                <div class="skill-desc">${esc(ser.set4.desc)}</div>
-              </div>
-              <div class="item-sub">獲得先：${esc(ser.sourceText)}</div>
-            </div>
-            ${toastHtml(ui)}
-          </div>`;
-      }
-
-      if (ui.equipSub === 'shop') {
-        const cryTimes = Math.floor(snap.gold / 400);
-        const stoTimes = Math.floor(snap.gold / 600);
-        return `
-          <div class="upper-bg-ornament"></div>
-          <div class="upper-panel">
-            <div class="upper-header">
-              <div class="upper-title-group"><span class="upper-title">金貨還元交換</span></div>
-              ${currencyBarHtml(snap)}
-            </div>
-            <div class="info-box">
-              <div class="stat-grid-4">
-                <div class="stat-cell"><div class="stat-lbl">所持金貨</div><div class="stat-val">${fnum(snap.gold)}</div></div>
-                <div class="stat-cell"><div class="stat-lbl">共鳴結晶</div><div class="stat-val">${fnum(snap.crystal)}</div></div>
-                <div class="stat-cell"><div class="stat-lbl">残響石</div><div class="stat-val">${fnum(snap.stone)}</div></div>
-                <div class="stat-cell"><div class="stat-lbl">交換可能</div><div class="stat-val">${fnum(cryTimes)}回</div></div>
-              </div>
-            </div>
-            <div class="info-box grow">
-              <div class="skill-preview-row">
-                <div class="skill-preview-head">
-                  <span class="skill-name">${ICON.svg('crystal', 11)} 共鳴結晶交換</span>
-                  <span class="qual-tag qual-2 num">交換可 ${fnum(cryTimes)}回</span>
-                </div>
-                <div class="skill-desc">金貨 400 で 共鳴結晶 +160（キャラの共鳴盤ノード解放に使用）</div>
-              </div>
-              <div class="skill-preview-row">
-                <div class="skill-preview-head">
-                  <span class="skill-name">${ICON.svg('stone', 11)} 残響石交換</span>
-                  <span class="qual-tag qual-4 num">交換可 ${fnum(stoTimes)}回</span>
-                </div>
-                <div class="skill-desc">金貨 600 で 残響石 +120（星海残響召喚に使用）</div>
-              </div>
-            </div>
-            ${toastHtml(ui)}
-          </div>`;
-      }
-
-      if (ui.equipSub === 'sell') {
-        const equippedSet = new Set();
-        Object.values(snap.roster).forEach((r) => EDATA.SLOTS.forEach((sl) => { if (r.equips[sl.id]) equippedSet.add(r.equips[sl.id]); }));
-        const counts = [0, 1, 2, 3, 4].map((q) => snap.equips.filter((e) => e.quality === q && !e.locked && !equippedSet.has(e.id)).length);
-        const lockedCnt = snap.equips.filter((e) => e.locked).length;
-        return `
-          <div class="upper-bg-ornament"></div>
-          <div class="upper-panel">
-            <div class="upper-header">
-              <div class="upper-title-group"><span class="upper-title">装備整理・売却</span></div>
-              ${currencyBarHtml(snap)}
-            </div>
-            <div class="info-box">
-              <div class="row-between">
-                <span class="item-title">売却可能な未装着装備（品質別）</span>
-                <span class="item-sub num">保護中 ${lockedCnt}個 / 総所持 ${snap.equips.length}個</span>
-              </div>
-              <div class="stat-grid-5">
-                ${EDATA.QUALITIES.map((q, idx) => `<div class="stat-cell"><div class="stat-lbl">${esc(q.name)}</div><div class="stat-val">${counts[idx]}個</div></div>`).join('')}
-              </div>
-            </div>
-            <div class="info-box grow">
-              <div class="skill-preview-row">
-                <div class="skill-name">自動売却ライン</div>
-                <div class="skill-desc">現在設定：${snap.settings.autoSellMaxQuality < 0 ? 'OFF（すべて保管）' : EDATA.QUALITIES[snap.settings.autoSellMaxQuality].name + '以下を即時換金'}</div>
-              </div>
-              <div class="skill-preview-row">
-                <div class="skill-name">保護ルール</div>
-                <div class="skill-desc">誰かが装着中の装備、および保護マーク付き装備は一括売却の対象から除外されます。</div>
-              </div>
-            </div>
-            ${toastHtml(ui)}
-          </div>`;
-      }
-
-      const cid = ui.selectedCharId && snap.roster[ui.selectedCharId] ? ui.selectedCharId : Object.keys(snap.roster)[0];
-      const comp = STATE.getCharComputed(cid, snap.party);
-      const r = snap.roster[cid];
-      let sumAtk = 0, sumDef = 0, sumHp = 0, sumSpd = 0;
-
-      const slotCards = EDATA.SLOTS.map((sl) => {
-        const eq = STATE.getEquipById(r.equips[sl.id]);
-        if (!eq) {
-          return `<div class="party-slot-card"><span class="item-sub">${ICON.svg(sl.id, 11)} ${esc(sl.name)}（${esc(sl.statLabel)}）：未装着</span></div>`;
-        }
-        const ser = EDATA.SERIES_MAP[eq.seriesId];
-        const val = STATE.getEquipStatValue(eq);
-        if (sl.baseStat === 'atk') sumAtk += val;
-        if (sl.baseStat === 'def') sumDef += val;
-        if (sl.baseStat === 'hp') sumHp += val;
-        if (sl.baseStat === 'spd') sumSpd += val;
-        return `
-          <div class="party-slot-card ${ui.selectedEquipSlot === sl.id ? 'selected' : ''}">
-            <div class="row-between">
-              <span class="item-title" style="font-size:11px">${ICON.svg(sl.id, 11)} ${esc(ser.partNames[sl.id])}</span>
-              ${qualTag(eq.quality)}
-            </div>
-            <div class="row-between">
-              <span class="item-sub">${esc(ser.name)}</span>
-              <span class="item-sub num" style="color:var(--gold-bright);font-weight:800">${esc(sl.statLabel)} +${fnum(val)}</span>
-            </div>
-          </div>`;
-      }).join('');
-
-      return `
-        <div class="upper-bg-ornament"></div>
-        <div class="upper-panel">
-          <div class="upper-header">
-            <div class="upper-title-group">
-              ${elBadge(comp.def.el)}
-              <span class="upper-title">${esc(comp.def.name)}</span>
-              <span class="upper-subtitle num">戦力 ${fnum(comp.power)}</span>
-            </div>
-            ${currencyBarHtml(snap)}
-          </div>
-          <div class="party-preview-grid">${slotCards}</div>
-          <div class="stat-grid-4">
-            <div class="stat-cell"><div class="stat-lbl">装備HP</div><div class="stat-val">+${fnum(sumHp)}</div></div>
-            <div class="stat-cell"><div class="stat-lbl">装備攻撃</div><div class="stat-val">+${fnum(sumAtk)}</div></div>
-            <div class="stat-cell"><div class="stat-lbl">装備防御</div><div class="stat-val">+${fnum(sumDef)}</div></div>
-            <div class="stat-cell"><div class="stat-lbl">装備速度</div><div class="stat-val">+${sumSpd}</div></div>
-          </div>
-          <div class="info-box grow">
-            <div class="row-between">
-              <span class="item-sub" style="font-weight:800;color:var(--gold-bright)">発動中セット効果</span>
-              <span class="item-sub">自動売却：${snap.settings.autoSellMaxQuality < 0 ? 'OFF' : EDATA.QUALITIES[snap.settings.autoSellMaxQuality].name + '以下'}</span>
-            </div>
-            <div class="synergy-list">
-              ${comp.activeSets.length > 0
-                ? comp.activeSets.map((s) => `<span class="synergy-pill">${esc(s.name)}(${s.count})：${esc(s.desc)}</span>`).join('')
-                : '<span class="item-sub">同シリーズ2部位・4部位の装着でセット効果が発動します</span>'}
-            </div>
+            ${ui.charSub === 'ability' ? `<div class="item-sub">装着中：${esc(eqAbNames)}</div>` : ''}
           </div>
           ${toastHtml(ui)}
         </div>`;
@@ -1353,7 +1524,7 @@
                   <div class="skill-preview-row">
                     <div class="skill-preview-head">
                       <span class="skill-name">${sk.scope === 'passive' ? '常時' : '技' + sk.slot}：${esc(sk.name)}</span>
-                      ${scopeBadge(sk.scope)}
+                      ${skillMetaHtml(sk)}
                     </div>
                     <div class="skill-desc">${esc(sk.desc)}</div>
                   </div>`).join('')}
@@ -1378,7 +1549,7 @@
                 <div class="stat-cell"><div class="stat-lbl">所持魂晶</div><div class="stat-val">${fnum(snap.soul)}</div></div>
                 <div class="stat-cell"><div class="stat-lbl">交換済</div><div class="stat-val">${unlockedCnt}/${shopAbs.length}</div></div>
                 <div class="stat-cell"><div class="stat-lbl">総解放</div><div class="stat-val">${snap.unlockedAbilities.length}/${EDATA.FREE_ABILITIES.length}</div></div>
-                <div class="stat-cell"><div class="stat-lbl">装着先</div><div class="stat-val">育成画面</div></div>
+                <div class="stat-cell"><div class="stat-lbl">装着先</div><div class="stat-val">キャラ画面</div></div>
               </div>
               <div class="skill-preview-row">
                 <div class="skill-name">自由アビリティについて</div>
@@ -1419,7 +1590,9 @@
             ${showFlash ? `<div class="summon-flash-veil"></div>` : ''}
             <div class="summon-grid ${ui.lastSummonResults.length === 1 ? 'single' : ''}">
               ${shown.map((res) => {
-                const tag = res.status === 'new' ? 'NEW' : (res.status === 'awake' ? `覚醒${res.awake}` : `魂晶+${res.gainSoul}`);
+                const tagHtml = res.status === 'new'
+                  ? `<span class="item-sub num" style="color:#82ffbd;font-weight:900">NEW</span>`
+                  : `<span class="item-sub num" style="color:var(--gold-bright);font-weight:900;text-align:right;line-height:1.15">魂晶+${res.gainSoul}<br><span style="font-size:8.5px;color:#8cd3ff">結晶+${res.gainCry}</span></span>`;
                 return `
                   <div class="summon-card rar-${res.rarity}">
                     <div class="row-left">
@@ -1427,7 +1600,7 @@
                       <span class="el-${res.el}" style="color:var(--el-color)">${ICON.svg(res.el, 10)}</span>
                       <span class="item-title" style="font-size:11px">${esc(res.name)}</span>
                     </div>
-                    <span class="item-sub num" style="color:var(--gold-bright);font-weight:900">${esc(tag)}</span>
+                    ${tagHtml}
                   </div>`;
               }).join('')}
             </div>
@@ -1509,7 +1682,7 @@
                 <div class="skill-preview-row">
                   <div class="skill-preview-head">
                     <span class="skill-name">${sk.scope === 'passive' ? '常時' : '技' + sk.slot}：${esc(sk.name)}</span>
-                    ${scopeBadge(sk.scope)}
+                    ${skillMetaHtml(sk)}
                   </div>
                   <div class="skill-desc">${esc(sk.desc)}</div>
                 </div>`).join('')}
@@ -1547,7 +1720,7 @@
                 <div class="skill-preview-row">
                   <div class="skill-preview-head">
                     <span class="skill-name">敵技${idx + 1}：${esc(sk.name)}</span>
-                    ${scopeBadge(sk.scope)}
+                    ${skillMetaHtml(sk)}
                   </div>
                   <div class="skill-desc">${esc(sk.desc)}</div>
                 </div>`).join('')}
@@ -1556,46 +1729,52 @@
           </div>`;
       }
 
-      if (ui.codexSub === 'equip') {
-        const part = EDATA.PART_MAP[ui.codexEquipPartKey] || EDATA.EQUIP_PARTS[0];
-        const ser = EDATA.SERIES_MAP[part.seriesId];
-        const vals = STATE.getEquipPartPreviewValues(part.seriesId, part.slotId);
-        return `
-          <div class="upper-bg-ornament"></div>
-          <div class="upper-panel">
-            <div class="upper-header">
-              <div class="upper-title-group">
-                <span class="qual-tag ${part.limited ? 'qual-4' : 'qual-2'}">${ICON.svg(part.slotId, 10)} ${esc(part.slotName)}</span>
-                <span class="upper-title">${esc(part.partName)}</span>
-              </div>
-              <span class="item-sub num">発見 ${equipSeen}/${equipTotal}</span>
+      /* 装備図鑑 */
+      const part = EDATA.PART_MAP[ui.codexEquipPartKey] || EDATA.EQUIP_PARTS[0];
+      const ser = EDATA.SERIES_MAP[part.seriesId];
+      const vals = STATE.getEquipPartPreviewValues(part.seriesId, part.slotId);
+      return `
+        <div class="upper-bg-ornament"></div>
+        <div class="upper-panel">
+          <div class="upper-header">
+            <div class="upper-title-group">
+              <span class="qual-tag ${part.limited ? 'qual-4' : 'qual-2'}">${ICON.svg(part.slotId, 10)} ${esc(part.slotName)}</span>
+              <span class="upper-title">${esc(part.partName)}</span>
             </div>
-            <div class="row-between">
-              <span class="item-sub">シリーズ：${esc(ser.name)}</span>
-              <span class="item-sub">入手：${esc(part.sourceText)}</span>
+            <span class="item-sub num">発見 ${equipSeen}/${equipTotal}</span>
+          </div>
+          <div class="row-between">
+            <span class="item-sub">シリーズ：${esc(ser.name)}</span>
+            <span class="item-sub">入手：${esc(part.sourceText)}</span>
+          </div>
+          <div class="stat-grid-5">
+            ${vals.map((v) => `<div class="stat-cell"><div class="stat-lbl">${esc(v.name)}</div><div class="stat-val">${esc(part.statLabel.slice(0, 2))}+${fnum(v.val)}</div></div>`).join('')}
+          </div>
+          <div class="lore-box">${esc(part.partLore)}</div>
+          <div class="info-box grow">
+            <div class="skill-preview-row">
+              <div class="skill-name">2部位セット効果（${esc(ser.name)}）</div>
+              <div class="skill-desc">${esc(ser.set2.desc)}</div>
             </div>
-            <div class="stat-grid-5">
-              ${vals.map((v) => `<div class="stat-cell"><div class="stat-lbl">${esc(v.name)}</div><div class="stat-val">${esc(part.statLabel.slice(0, 2))}+${fnum(v.val)}</div></div>`).join('')}
+            <div class="skill-preview-row">
+              <div class="skill-name">4部位セット効果</div>
+              <div class="skill-desc">${esc(ser.set4.desc)}</div>
             </div>
-            <div class="lore-box">${esc(part.partLore)}</div>
-            <div class="info-box grow">
-              <div class="skill-preview-row">
-                <div class="skill-name">2部位セット効果（${esc(ser.name)}）</div>
-                <div class="skill-desc">${esc(ser.set2.desc)}</div>
-              </div>
-              <div class="skill-preview-row">
-                <div class="skill-name">4部位セット効果</div>
-                <div class="skill-desc">${esc(ser.set4.desc)}</div>
-              </div>
-              <div class="synergy-list">
-                ${EDATA.SLOTS.map((sl) => `<span class="synergy-pill" style="${sl.id === part.slotId ? 'border-color:var(--gold-bright);background:rgba(216,181,100,0.28)' : ''}">${esc(sl.name)}：${esc(ser.partNames[sl.id])}</span>`).join('')}
-              </div>
+            <div class="synergy-list">
+              ${EDATA.SLOTS.map((sl) => `<span class="synergy-pill" style="${sl.id === part.slotId ? 'border-color:var(--gold-bright);background:rgba(216,181,100,0.28)' : ''}">${esc(sl.name)}：${esc(ser.partNames[sl.id])}</span>`).join('')}
             </div>
-            ${toastHtml(ui)}
-          </div>`;
-      }
+          </div>
+          ${toastHtml(ui)}
+        </div>`;
+    }
 
-      /* 設定＆記録プレビュー */
+    /* ⑤ 独立「設定」タブ上半分（記録と進捗サマリー） */
+    if (ui.tab === 'settings') {
+      const charPct = Math.round((Object.keys(snap.roster).length / CDATA.CHARS.length) * 100);
+      const enemyTotal = Object.keys(WDATA.ENEMIES).length;
+      const enemySeen = Object.keys(snap.codexEnemies).length;
+      const equipTotal = EDATA.EQUIP_PARTS.length;
+      const equipSeen = EDATA.EQUIP_PARTS.filter((p) => snap.codexEquips[p.partKey]).length;
       const totalStages = WDATA.WORLDS.reduce((s, w) => s + w.stages.length, 0);
       const clearedStages = Object.keys(snap.clearedStages).length;
       return `
@@ -1646,12 +1825,11 @@
    * ========================================================= */
   function renderBottomNav(activeTab) {
     const tabs = [
-      { id: 'quest',  label: '出撃', icon: 'battle' },
-      { id: 'party',  label: '編成', icon: 'party' },
-      { id: 'grow',   label: '育成', icon: 'grow' },
-      { id: 'equip',  label: '装備', icon: 'equip' },
-      { id: 'summon', label: '召喚', icon: 'summon' },
-      { id: 'codex',  label: '図鑑', icon: 'codex' }
+      { id: 'quest',    label: '出撃',   icon: 'battle' },
+      { id: 'char',     label: 'キャラ', icon: 'party' },
+      { id: 'summon',   label: '召喚',   icon: 'summon' },
+      { id: 'codex',    label: '図鑑',   icon: 'codex' },
+      { id: 'settings', label: '設定',   icon: 'gear' }
     ];
     return `
       <nav class="bottom-nav" aria-label="メインナビゲーション">
@@ -1830,107 +2008,90 @@
           ${subtabs}
           <div class="scroll-list" data-scroll-key="quest-trials"><div class="list-stack">${rows}</div></div>
           <div class="action-bar">
-            <button class="btn-secondary" data-act="setTab" data-val="party">条件に合わせて編成</button>
+            <button class="btn-secondary" data-act="setTab" data-val="char" data-sub="party">条件に合わせて編成</button>
             <button class="btn-primary" data-act="startBattle" data-auto="0" ${curCheck.ok ? '' : 'disabled'}>試練へ挑戦</button>
           </div>`;
       }
     }
 
-    /* ② 編成タブ */
-    if (ui.tab === 'party') {
-      const targetParty = ui.partySub === 'main' ? snap.party : snap.gauntletParties[ui.gauntletTeamIdx];
-      const sortedIds = filterSortedCharIds(STATE.sortCharIds(Object.keys(snap.roster)), ui);
-
-      const slotBtns = [0, 1, 2, 3].map((idx) => `
-        <button class="subtab-btn ${ui.selectedPartySlot === idx ? 'active' : ''}" data-act="selectPartySlot" data-val="${idx}">編成${idx + 1}</button>`).join('');
-
-      const listHtml = sortedIds.map((cid) => {
-        const comp = STATE.getCharComputed(cid, targetParty);
-        const inIdx = targetParty.indexOf(cid);
-        const inOtherGauntlet = ui.partySub === 'gauntlet' && snap.gauntletParties.some((t, ti) => ti !== ui.gauntletTeamIdx && t.includes(cid));
-        return `
-          <button class="item-row-btn ${inIdx >= 0 ? 'in-party' : ''}" data-act="assignPartyChar" data-val="${cid}">
-            <div class="row-between">
-              <div class="row-left">${rarTag(comp.def.rarity)}<span class="item-title">${esc(comp.def.name)}</span></div>
-              <div class="row-left">${elBadge(comp.def.el)}${roleBadge(comp.def.role)}</div>
-            </div>
-            <div class="row-between">
-              <span class="item-sub num">覚醒 ${comp.awake}/5 ・ 戦力 ${fnum(comp.power)}</span>
-              <span class="item-sub">${inIdx >= 0 ? `編成中(枠${inIdx + 1})` : (inOtherGauntlet ? '他部隊編成中' : 'タップで配置')}</span>
-            </div>
-          </button>`;
-      }).join('');
-
-      body = `
-        <div class="subtab-row">
-          <button class="subtab-btn ${ui.partySub === 'main' ? 'active' : ''}" data-act="setPartySub" data-val="main">主力編成</button>
-          <button class="subtab-btn ${ui.partySub === 'gauntlet' && ui.gauntletTeamIdx === 0 ? 'active' : ''}" data-act="setGauntletTeam" data-val="0">総力第1</button>
-          <button class="subtab-btn ${ui.partySub === 'gauntlet' && ui.gauntletTeamIdx === 1 ? 'active' : ''}" data-act="setGauntletTeam" data-val="1">総力第2</button>
-          <button class="subtab-btn ${ui.partySub === 'gauntlet' && ui.gauntletTeamIdx === 2 ? 'active' : ''}" data-act="setGauntletTeam" data-val="2">総力第3</button>
-        </div>
-        <div class="subtab-row">
-          ${slotBtns}
-          <button class="subtab-btn" data-act="clearPartySlot">外す</button>
-          ${ui.partySub === 'gauntlet' ? `<button class="subtab-btn active" data-act="autoFillGauntlet">自動3部隊</button>` : ''}
-        </div>
-        ${renderFilterBars(ui, 'party')}
-        <div class="scroll-list" data-scroll-key="party-list"><div class="list-stack">${listHtml || '<div class="item-sub">該当するキャラがいません</div>'}</div></div>`;
-    }
-
-    /* ③ 育成タブ（横スクロールキャラ即切替＋「共鳴」名称統一） */
-    if (ui.tab === 'grow') {
+    /* ② 統合「キャラ」タブ下半分（編成・刻印12種・覚醒・アビ・共鳴・装備を一括操作） */
+    if (ui.tab === 'char') {
       const cid = ui.selectedCharId && snap.roster[ui.selectedCharId] ? ui.selectedCharId : Object.keys(snap.roster)[0];
       const r = snap.roster[cid];
       const def = CDATA.CHAR_MAP[cid];
       const sortedIds = STATE.sortCharIds(Object.keys(snap.roster));
+      const totalBoards = CDATA.BOARD_TEMPLATES.length;
 
-      const charStrip = renderHorizontalCharStrip(snap, cid, 'selectChar', 'grow-chars-h');
-      const subRow = `
+      const mainSubRow = `
         <div class="subtab-row">
-          <button class="subtab-btn ${ui.growSub === 'board' ? 'active' : ''}" data-act="setGrowSub" data-val="board">共鳴盤</button>
-          <button class="subtab-btn ${ui.growSub === 'awake' ? 'active' : ''}" data-act="setGrowSub" data-val="awake">覚醒</button>
-          <button class="subtab-btn ${ui.growSub === 'ability' ? 'active' : ''}" data-act="setGrowSub" data-val="ability">アビリティ</button>
-          <button class="subtab-btn ${ui.growSub === 'link' ? 'active' : ''}" data-act="setGrowSub" data-val="link">共鳴</button>
-          <button class="subtab-btn ${ui.growSub === 'list' ? 'active' : ''}" data-act="setGrowSub" data-val="list">一覧</button>
+          <button class="subtab-btn ${ui.charSub === 'party' ? 'active' : ''}" data-act="setCharSub" data-val="party">編成</button>
+          <button class="subtab-btn ${ui.charSub === 'board' ? 'active' : ''}" data-act="setCharSub" data-val="board">刻印</button>
+          <button class="subtab-btn ${ui.charSub === 'awake' ? 'active' : ''}" data-act="setCharSub" data-val="awake">覚醒</button>
+          <button class="subtab-btn ${ui.charSub === 'ability' ? 'active' : ''}" data-act="setCharSub" data-val="ability">アビ</button>
+          <button class="subtab-btn ${ui.charSub === 'link' ? 'active' : ''}" data-act="setCharSub" data-val="link">共鳴</button>
+          <button class="subtab-btn ${ui.charSub === 'equip' ? 'active' : ''}" data-act="setCharSub" data-val="equip">装備</button>
         </div>`;
 
       let content = '';
-      if (ui.growSub === 'list') {
-        const filtered = filterSortedCharIds(sortedIds, ui);
-        content = `${renderFilterBars(ui, 'grow')}<div class="scroll-list" data-scroll-key="grow-list"><div class="list-stack">${filtered.map((id) => {
-          const comp = STATE.getCharComputed(id, snap.party);
-          const sel = id === cid;
+      if (ui.charSub === 'party') {
+        const targetParty = ui.partySub === 'main' ? snap.party : snap.gauntletParties[ui.gauntletTeamIdx];
+        const filteredIds = filterSortedCharIds(sortedIds, ui);
+        const slotBtns = [0, 1, 2, 3].map((idx) => `
+          <button class="subtab-btn ${ui.selectedPartySlot === idx ? 'active' : ''}" data-act="selectPartySlot" data-val="${idx}">枠${idx + 1}</button>`).join('');
+
+        const listHtml = filteredIds.map((id) => {
+          const comp = STATE.getCharComputed(id, targetParty);
+          const inIdx = targetParty.indexOf(id);
+          const inOtherGauntlet = ui.partySub === 'gauntlet' && snap.gauntletParties.some((t, ti) => ti !== ui.gauntletTeamIdx && t.includes(id));
           return `
-            <button class="item-row-btn ${sel ? 'selected' : ''}" data-act="selectChar" data-val="${id}">
+            <button class="item-row-btn ${inIdx >= 0 ? 'in-party' : ''}" data-act="assignPartyChar" data-val="${id}">
               <div class="row-between">
                 <div class="row-left">${rarTag(comp.def.rarity)}<span class="item-title">${esc(comp.def.name)}</span></div>
                 <div class="row-left">${elBadge(comp.def.el)}${roleBadge(comp.def.role)}</div>
               </div>
               <div class="row-between">
-                <span class="item-sub num">覚醒 ${comp.awake}/5 ・ 共鳴盤 ${snap.roster[id].board.length}/6</span>
-                <span class="item-sub num">戦力 ${fnum(comp.power)}</span>
+                <span class="item-sub num">覚醒 ${comp.awake}/5 ・ 刻印 ${snap.roster[id].board.length}/${totalBoards} ・ 戦力 ${fnum(comp.power)}</span>
+                <span class="item-sub">${inIdx >= 0 ? `編成中(枠${inIdx + 1})` : (inOtherGauntlet ? '他部隊編成中' : 'タップで配置')}</span>
               </div>
             </button>`;
-        }).join('') || '<div class="item-sub">該当するキャラがいません</div>'}</div></div>`;
-      } else if (ui.growSub === 'board') {
+        }).join('');
+
+        content = `
+          <div class="subtab-row">
+            <button class="subtab-btn ${ui.partySub === 'main' ? 'active' : ''}" data-act="setPartySub" data-val="main">主力編成</button>
+            <button class="subtab-btn ${ui.partySub === 'gauntlet' && ui.gauntletTeamIdx === 0 ? 'active' : ''}" data-act="setGauntletTeam" data-val="0">総力第1</button>
+            <button class="subtab-btn ${ui.partySub === 'gauntlet' && ui.gauntletTeamIdx === 1 ? 'active' : ''}" data-act="setGauntletTeam" data-val="1">総力第2</button>
+            <button class="subtab-btn ${ui.partySub === 'gauntlet' && ui.gauntletTeamIdx === 2 ? 'active' : ''}" data-act="setGauntletTeam" data-val="2">総力第3</button>
+          </div>
+          <div class="subtab-row">
+            ${slotBtns}
+            <button class="subtab-btn" data-act="clearPartySlot">外す</button>
+            ${ui.partySub === 'gauntlet' ? `<button class="subtab-btn active" data-act="autoFillGauntlet">自動3部隊</button>` : ''}
+          </div>
+          ${renderFilterBars(ui, 'party')}
+          <div class="scroll-list" data-scroll-key="party-list"><div class="list-stack">${listHtml || '<div class="item-sub">該当するキャラがいません</div>'}</div></div>`;
+      } else if (ui.charSub === 'board') {
+        const charStrip = renderHorizontalCharStrip(snap, cid, 'selectChar', 'char-strip-h');
         const nodes = CDATA.BOARD_TEMPLATES.map((t) => {
           const unlocked = r.board.includes(t.key);
           const can = !unlocked && snap.crystal >= t.cost;
           return `
             <button class="node-card ${unlocked ? 'unlocked' : (can ? 'can-unlock' : '')}" data-act="unlockBoard" data-val="${t.key}" ${unlocked ? 'disabled' : ''}>
               <div class="row-between">
-                <span class="item-title" style="font-size:11.5px">${esc(t.name)}</span>
-                <span class="item-sub num">${unlocked ? '解放済' : `共鳴結晶 ${fnum(t.cost)}`}</span>
+                <span class="item-title" style="font-size:11px">${esc(t.name)}</span>
+                <span class="item-sub num">${unlocked ? '解放済' : `結晶 ${fnum(t.cost)}`}</span>
               </div>
               <div class="item-sub">${esc(t.desc)}</div>
             </button>`;
         }).join('');
-        content = `<div class="scroll-list" data-scroll-key="grow-board"><div class="list-grid-2">${nodes}</div></div>`;
-      } else if (ui.growSub === 'awake') {
+        content = `${charStrip}<div class="scroll-list" data-scroll-key="grow-board"><div class="list-grid-2">${nodes}</div></div>`;
+      } else if (ui.charSub === 'awake') {
+        const charStrip = renderHorizontalCharStrip(snap, cid, 'selectChar', 'char-strip-h');
         const costMap = { N: 40, R: 70, SR: 120, SSR: 200, UR: 320 };
         const nextCost = costMap[def.rarity] + r.awake * 35;
         const nextBonus = r.awake < 5 ? `全基礎性能 +${(r.awake + 1) * 14}%${r.awake + 1 === 2 ? ' ＋ 自由枠2解放' : (r.awake + 1 === 4 ? ' ＋ 自由枠3解放' : '')}` : '最大段階に到達済み';
         content = `
+          ${charStrip}
           <div class="info-box grow" style="justify-content:space-between">
             <div class="stat-grid-4">
               <div class="stat-cell"><div class="stat-lbl">現在覚醒</div><div class="stat-val">${r.awake}/5</div></div>
@@ -1940,7 +2101,7 @@
             </div>
             <div class="skill-preview-row">
               <div class="skill-name">次の覚醒効果</div>
-              <div class="skill-desc">${esc(nextBonus)}</div>
+              <div class="skill-desc">${esc(nextBonus)}（魂晶のみで好きな仲間を覚醒できます）</div>
             </div>
             <div class="action-bar">
               <button class="btn-primary" data-act="awakeChar" ${r.awake >= 5 || snap.soul < nextCost ? 'disabled' : ''}>
@@ -1948,7 +2109,8 @@
               </button>
             </div>
           </div>`;
-      } else if (ui.growSub === 'ability') {
+      } else if (ui.charSub === 'ability') {
+        const charStrip = renderHorizontalCharStrip(snap, cid, 'selectChar', 'char-strip-h');
         const maxSlots = STATE.getAbilitySlotCount(r.awake);
         const list = snap.unlockedAbilities.map((aid) => {
           const ab = EDATA.ABILITY_MAP[aid];
@@ -1964,9 +2126,11 @@
             </button>`;
         }).join('');
         content = `
+          ${charStrip}
           <div class="item-sub">自由枠：${r.abilities.length} / ${maxSlots}（召喚の魂晶交換・試練・深淵の塔で解放）</div>
           <div class="scroll-list" data-scroll-key="grow-ability"><div class="list-grid-2">${list}</div></div>`;
-      } else if (ui.growSub === 'link') {
+      } else if (ui.charSub === 'link') {
+        const charStrip = renderHorizontalCharStrip(snap, cid, 'selectChar', 'char-strip-h');
         const candidates = sortedIds.filter((id) => id !== cid && !snap.party.includes(id));
         const list = candidates.map((id) => {
           const cDef = CDATA.CHAR_MAP[id];
@@ -1977,147 +2141,142 @@
                 <div class="row-left">${rarTag(cDef.rarity)}<span class="item-title">${esc(cDef.name)}</span></div>
                 <span class="${isLinked ? 'qual-tag qual-1' : 'item-sub'}">${isLinked ? '共鳴中' : '選択'}</span>
               </div>
-              <div class="item-sub">${esc(cDef.linkBonus.text)}（覚醒 ${snap.roster[id].awake}・共鳴盤 ${snap.roster[id].board.length}で強化）</div>
+              <div class="item-sub">${esc(cDef.linkBonus.text)}（覚醒 ${snap.roster[id].awake}・刻印 ${snap.roster[id].board.length}/${totalBoards}で強化）</div>
             </button>`;
         }).join('');
         content = `
+          ${charStrip}
           <div class="row-between">
             <span class="item-sub">控え仲間と共鳴して能力と特性を加算</span>
             <button class="btn-secondary" style="padding:3px 9px;font-size:10px" data-act="clearCharLink">共鳴解除</button>
           </div>
           <div class="scroll-list" data-scroll-key="grow-link"><div class="list-stack">${list || '<div class="item-sub">控えの仲間が増えると共鳴できます</div>'}</div></div>`;
-      }
-
-      body = `${subRow}${charStrip}${content}`;
-    }
-
-    /* ④ 装備タブ（横スクロールキャラ即切替・パラメータ名＆差分明示・限定6種製作） */
-    if (ui.tab === 'equip') {
-      const cid = ui.selectedCharId && snap.roster[ui.selectedCharId] ? ui.selectedCharId : Object.keys(snap.roster)[0];
-      const r = snap.roster[cid];
-      const subRow = `
-        <div class="subtab-row">
-          <button class="subtab-btn ${ui.equipSub === 'wear' ? 'active' : ''}" data-act="setEquipSub" data-val="wear">装着</button>
-          <button class="subtab-btn ${ui.equipSub === 'sell' ? 'active' : ''}" data-act="setEquipSub" data-val="sell">売却・自動</button>
-          <button class="subtab-btn ${ui.equipSub === 'craft' ? 'active' : ''}" data-act="setEquipSub" data-val="craft">限定製作</button>
-          <button class="subtab-btn ${ui.equipSub === 'shop' ? 'active' : ''}" data-act="setEquipSub" data-val="shop">金貨還元</button>
-        </div>`;
-
-      let content = '';
-      if (ui.equipSub === 'wear') {
-        const charStrip = renderHorizontalCharStrip(snap, cid, 'selectChar', 'equip-chars-h');
-        const curEquipped = STATE.getEquipById(r.equips[ui.selectedEquipSlot]);
-        const curVal = curEquipped ? STATE.getEquipStatValue(curEquipped) : 0;
-
-        const slotRow = `
+      } else if (ui.charSub === 'equip') {
+        const eqSubRow = `
           <div class="subtab-row">
-            ${EDATA.SLOTS.map((sl) => `
-              <button class="subtab-btn ${ui.selectedEquipSlot === sl.id ? 'active' : ''}" data-act="selectEquipSlot" data-val="${sl.id}">${esc(sl.name)}</button>`).join('')}
-            <button class="subtab-btn ${ui.equipUnownedOnly ? 'active' : ''}" data-act="toggleEquipFilter">${ui.equipUnownedOnly ? '未装着' : '全装備'}</button>
-            <button class="subtab-btn" data-act="autoEquipChar">最適</button>
+            <button class="subtab-btn ${ui.equipSub === 'wear' ? 'active' : ''}" data-act="setEquipSub" data-val="wear">装着</button>
+            <button class="subtab-btn ${ui.equipSub === 'sell' ? 'active' : ''}" data-act="setEquipSub" data-val="sell">売却・自動</button>
+            <button class="subtab-btn ${ui.equipSub === 'craft' ? 'active' : ''}" data-act="setEquipSub" data-val="craft">限定製作</button>
+            <button class="subtab-btn ${ui.equipSub === 'shop' ? 'active' : ''}" data-act="setEquipSub" data-val="shop">金貨還元</button>
           </div>`;
 
-        const equips = snap.equips
-          .filter((e) => {
-            if (e.slotId !== ui.selectedEquipSlot) return false;
-            if (ui.equipUnownedOnly) {
-              const ow = STATE.getEquipOwner(e.id);
-              return !ow || ow === cid;
-            }
-            return true;
-          })
-          .sort((a, b) => STATE.getEquipStatValue(b) - STATE.getEquipStatValue(a) || b.quality - a.quality);
+        if (ui.equipSub === 'wear') {
+          const charStrip = renderHorizontalCharStrip(snap, cid, 'selectChar', 'char-strip-h');
+          const curEquipped = STATE.getEquipById(r.equips[ui.selectedEquipSlot]);
+          const curVal = curEquipped ? STATE.getEquipStatValue(curEquipped) : 0;
 
-        const list = equips.map((eq) => {
-          const ser = EDATA.SERIES_MAP[eq.seriesId];
-          const sl = EDATA.SLOT_MAP[eq.slotId];
-          const owner = STATE.getEquipOwner(eq.id);
-          const isMine = owner === cid;
-          const val = STATE.getEquipStatValue(eq);
-          const diff = val - curVal;
-          const diffHtml = isMine
-            ? ''
-            : (diff > 0 ? `<span class="stat-diff-up num">(+${fnum(diff)})</span>` : (diff < 0 ? `<span class="stat-diff-down num">(${fnum(diff)})</span>` : ''));
-
-          return `
-            <div class="item-row-btn ${isMine ? 'selected' : ''}" style="flex-direction:row;align-items:center;justify-content:space-between;gap:6px">
-              <button style="flex:1;text-align:left" data-act="${isMine ? 'unequipSlot' : 'equipItem'}" data-val="${isMine ? eq.slotId : eq.id}">
-                <div class="row-between">
-                  <div class="row-left">${qualTag(eq.quality)}<span class="item-title">${esc(ser.partNames[eq.slotId])}</span></div>
-                  <span class="item-sub num" style="color:var(--gold-bright);font-weight:900">${esc(sl.statLabel)} +${fnum(val)} ${diffHtml}</span>
-                </div>
-                <div class="item-sub">${esc(ser.name)} ${owner ? (isMine ? '【装着中・タップで外す】' : `【${esc(CDATA.CHAR_MAP[owner].name)}装着中】`) : '【未装着】'}</div>
-              </button>
-              <button class="btn-secondary ${eq.locked ? 'lock-btn-locked' : ''}" style="padding:5px 7px;font-size:10px" aria-label="${eq.locked ? '装備ロック解除' : '装備ロック保護'}" data-act="toggleEquipLock" data-val="${eq.id}">${ICON.svg(eq.locked ? 'lock' : 'unlock', 12)}${eq.locked ? '保護' : ''}</button>
+          const slotRow = `
+            <div class="subtab-row">
+              ${EDATA.SLOTS.map((sl) => `
+                <button class="subtab-btn ${ui.selectedEquipSlot === sl.id ? 'active' : ''}" data-act="selectEquipSlot" data-val="${sl.id}">${esc(sl.name)}</button>`).join('')}
+              <button class="subtab-btn ${ui.equipUnownedOnly ? 'active' : ''}" data-act="toggleEquipFilter">${ui.equipUnownedOnly ? '未装着' : '全装備'}</button>
+              <button class="subtab-btn" data-act="autoEquipChar">最適</button>
             </div>`;
-        }).join('');
-        content = `${charStrip}${slotRow}<div class="scroll-list" data-scroll-key="equip-wear-${ui.selectedEquipSlot}"><div class="list-stack">${list || '<div class="item-sub">該当する装備がありません</div>'}</div></div>`;
-      } else if (ui.equipSub === 'sell') {
-        const curAuto = snap.settings.autoSellMaxQuality;
-        const autoBtns = [-1, 0, 1, 2, 3].map((q) => {
-          const lbl = q < 0 ? 'OFF' : EDATA.QUALITIES[q].name + '以下';
-          return `<button class="subtab-btn ${curAuto === q ? 'active' : ''}" data-act="setAutoSell" data-val="${q}">${lbl}</button>`;
-        }).join('');
-        content = `
-          <div class="info-box">
-            <div class="item-title">自動売却ライン</div>
-            <div class="subtab-row">${autoBtns}</div>
-          </div>
-          <div class="info-box grow">
-            <div class="item-title">一括売却</div>
-            <div class="list-grid-2">
-              <button class="btn-secondary" data-act="bulkSell" data-val="0">標準のみ売却</button>
-              <button class="btn-secondary" data-act="bulkSell" data-val="1">上質以下を売却</button>
-              <button class="btn-secondary" data-act="bulkSell" data-val="2">精巧以下を売却</button>
-              <button class="btn-danger" data-act="bulkSell" data-val="3">逸品以下を売却</button>
+
+          const equips = snap.equips
+            .filter((e) => {
+              if (e.slotId !== ui.selectedEquipSlot) return false;
+              if (ui.equipUnownedOnly) {
+                const ow = STATE.getEquipOwner(e.id);
+                return !ow || ow === cid;
+              }
+              return true;
+            })
+            .sort((a, b) => STATE.getEquipStatValue(b) - STATE.getEquipStatValue(a) || b.quality - a.quality);
+
+          const list = equips.map((eq) => {
+            const ser = EDATA.SERIES_MAP[eq.seriesId];
+            const sl = EDATA.SLOT_MAP[eq.slotId];
+            const owner = STATE.getEquipOwner(eq.id);
+            const isMine = owner === cid;
+            const val = STATE.getEquipStatValue(eq);
+            const diff = val - curVal;
+            const diffHtml = isMine
+              ? ''
+              : (diff > 0 ? `<span class="stat-diff-up num">(+${fnum(diff)})</span>` : (diff < 0 ? `<span class="stat-diff-down num">(${fnum(diff)})</span>` : ''));
+
+            return `
+              <div class="item-row-btn ${isMine ? 'selected' : ''}" style="flex-direction:row;align-items:center;justify-content:space-between;gap:6px">
+                <button style="flex:1;text-align:left" data-act="${isMine ? 'unequipSlot' : 'equipItem'}" data-val="${isMine ? eq.slotId : eq.id}">
+                  <div class="row-between">
+                    <div class="row-left">${qualTag(eq.quality)}<span class="item-title">${esc(ser.partNames[eq.slotId])}</span></div>
+                    <span class="item-sub num" style="color:var(--gold-bright);font-weight:900">${esc(sl.statLabel)} +${fnum(val)} ${diffHtml}</span>
+                  </div>
+                  <div class="item-sub">${esc(ser.name)} ${owner ? (isMine ? '【装着中・タップで外す】' : `【${esc(CDATA.CHAR_MAP[owner].name)}装着中】`) : '【未装着】'}</div>
+                </button>
+                <button class="btn-secondary ${eq.locked ? 'lock-btn-locked' : ''}" style="padding:5px 7px;font-size:10px" aria-label="${eq.locked ? '装備ロック解除' : '装備ロック保護'}" data-act="toggleEquipLock" data-val="${eq.id}">${ICON.svg(eq.locked ? 'lock' : 'unlock', 12)}${eq.locked ? '保護' : ''}</button>
+              </div>`;
+          }).join('');
+          content = `${eqSubRow}${charStrip}${slotRow}<div class="scroll-list" data-scroll-key="equip-wear-${ui.selectedEquipSlot}"><div class="list-stack">${list || '<div class="item-sub">該当する装備がありません</div>'}</div></div>`;
+        } else if (ui.equipSub === 'sell') {
+          const curAuto = snap.settings.autoSellMaxQuality;
+          const autoBtns = [-1, 0, 1, 2, 3].map((q) => {
+            const lbl = q < 0 ? 'OFF' : EDATA.QUALITIES[q].name + '以下';
+            return `<button class="subtab-btn ${curAuto === q ? 'active' : ''}" data-act="setAutoSell" data-val="${q}">${lbl}</button>`;
+          }).join('');
+          content = `
+            ${eqSubRow}
+            <div class="info-box">
+              <div class="item-title">自動売却ライン</div>
+              <div class="subtab-row">${autoBtns}</div>
             </div>
-            <div class="item-sub num">所持装備：${snap.equips.length}個 / 所持金貨：${fnum(snap.gold)}</div>
-          </div>`;
-      } else if (ui.equipSub === 'craft') {
-        const limSeries = EDATA.EQUIP_SERIES.filter((s) => s.limited);
-        const rows = limSeries.map((ser) => {
-          const raid = WDATA.RAIDS.find((x) => x.matId === ser.matId);
-          const have = snap.mats[ser.matId] || 0;
-          const sel = ui.selectedCraftSeries === ser.id;
-          return `
-            <div class="item-row-btn ${sel ? 'selected' : ''}">
-              <button style="text-align:left;width:100%" data-act="selectCraftSeries" data-val="${ser.id}">
-                <div class="row-between">
-                  <div class="row-left">${ser.el ? elBadge(ser.el) : ''}<span class="item-title">${esc(ser.name)}</span></div>
-                  <span class="item-sub num">${esc(raid ? raid.matName : '')} ${have}/${ser.matCost}</span>
+            <div class="info-box grow">
+              <div class="item-title">一括売却</div>
+              <div class="list-grid-2">
+                <button class="btn-secondary" data-act="bulkSell" data-val="0">標準のみ売却</button>
+                <button class="btn-secondary" data-act="bulkSell" data-val="1">上質以下を売却</button>
+                <button class="btn-secondary" data-act="bulkSell" data-val="2">精巧以下を売却</button>
+                <button class="btn-danger" data-act="bulkSell" data-val="3">逸品以下を売却</button>
+              </div>
+              <div class="item-sub num">所持装備：${snap.equips.length}個 / 所持金貨：${fnum(snap.gold)}</div>
+            </div>`;
+        } else if (ui.equipSub === 'craft') {
+          const limSeries = EDATA.EQUIP_SERIES.filter((s) => s.limited);
+          const rows = limSeries.map((ser) => {
+            const raid = WDATA.RAIDS.find((x) => x.matId === ser.matId);
+            const have = snap.mats[ser.matId] || 0;
+            const sel = ui.selectedCraftSeries === ser.id;
+            return `
+              <div class="item-row-btn ${sel ? 'selected' : ''}">
+                <button style="text-align:left;width:100%" data-act="selectCraftSeries" data-val="${ser.id}">
+                  <div class="row-between">
+                    <div class="row-left">${ser.el ? elBadge(ser.el) : ''}<span class="item-title">${esc(ser.name)}</span></div>
+                    <span class="item-sub num">${esc(raid ? raid.matName : '')} ${have}/${ser.matCost}</span>
+                  </div>
+                  <div class="item-sub">2部位：${esc(ser.set2.desc)}</div>
+                </button>
+                <div class="subtab-row" style="margin-top:3px">
+                  ${EDATA.SLOTS.map((sl) => `
+                    <button class="subtab-btn" data-act="craftEquip" data-series="${ser.id}" data-slot="${sl.id}" ${have < ser.matCost ? 'disabled' : ''}>${esc(sl.name)}製作</button>`).join('')}
                 </div>
-                <div class="item-sub">2部位：${esc(ser.set2.desc)}</div>
-              </button>
-              <div class="subtab-row" style="margin-top:3px">
-                ${EDATA.SLOTS.map((sl) => `
-                  <button class="subtab-btn" data-act="craftEquip" data-series="${ser.id}" data-slot="${sl.id}" ${have < ser.matCost ? 'disabled' : ''}>${esc(sl.name)}製作</button>`).join('')}
+              </div>`;
+          }).join('');
+          content = `${eqSubRow}<div class="scroll-list" data-scroll-key="equip-craft"><div class="list-stack">${rows}</div></div>`;
+        } else if (ui.equipSub === 'shop') {
+          content = `
+            ${eqSubRow}
+            <div class="info-box grow" style="justify-content:space-between;gap:6px">
+              <div class="row-between">
+                <span class="item-title">結晶へ還元</span>
+                <span class="item-sub num">1回：金貨 400 → 結晶 +160</span>
+              </div>
+              <div class="action-bar">
+                <button class="btn-primary" data-act="buyGold" data-val="crystal" data-times="1" ${snap.gold < 400 ? 'disabled' : ''}>1回交換（400金貨）</button>
+                <button class="btn-secondary" data-act="buyGold" data-val="crystal" data-times="5" ${snap.gold < 2000 ? 'disabled' : ''}>5回交換（2,000金貨）</button>
+              </div>
+              <div class="row-between" style="margin-top:2px">
+                <span class="item-title">残響石へ還元</span>
+                <span class="item-sub num">1回：金貨 600 → 石 +120</span>
+              </div>
+              <div class="action-bar">
+                <button class="btn-primary" data-act="buyGold" data-val="stone" data-times="1" ${snap.gold < 600 ? 'disabled' : ''}>1回交換（600金貨）</button>
+                <button class="btn-secondary" data-act="buyGold" data-val="stone" data-times="5" ${snap.gold < 3000 ? 'disabled' : ''}>5回交換（3,000金貨）</button>
               </div>
             </div>`;
-        }).join('');
-        content = `<div class="scroll-list" data-scroll-key="equip-craft"><div class="list-stack">${rows}</div></div>`;
-      } else if (ui.equipSub === 'shop') {
-        content = `
-          <div class="info-box grow" style="justify-content:space-between;gap:7px">
-            <div class="row-between">
-              <span class="item-title">共鳴結晶へ還元</span>
-              <span class="item-sub num">1回：金貨 400 → 結晶 +160</span>
-            </div>
-            <div class="action-bar">
-              <button class="btn-primary" data-act="buyGold" data-val="crystal" data-times="1" ${snap.gold < 400 ? 'disabled' : ''}>1回交換（400金貨）</button>
-              <button class="btn-secondary" data-act="buyGold" data-val="crystal" data-times="5" ${snap.gold < 2000 ? 'disabled' : ''}>5回交換（2,000金貨）</button>
-            </div>
-            <div class="row-between" style="margin-top:4px">
-              <span class="item-title">残響石へ還元</span>
-              <span class="item-sub num">1回：金貨 600 → 石 +120</span>
-            </div>
-            <div class="action-bar">
-              <button class="btn-primary" data-act="buyGold" data-val="stone" data-times="1" ${snap.gold < 600 ? 'disabled' : ''}>1回交換（600金貨）</button>
-              <button class="btn-secondary" data-act="buyGold" data-val="stone" data-times="5" ${snap.gold < 3000 ? 'disabled' : ''}>5回交換（3,000金貨）</button>
-            </div>
-          </div>`;
+        }
       }
 
-      body = `${subRow}${content}`;
+      body = `${mainSubRow}${content}`;
     }
 
     /* ⑤ 召喚・限定解放・覇王降臨・魂晶交換タブ */
@@ -2133,25 +2292,23 @@
       let content = '';
       if (ui.summonSub === 'gacha') {
         const isAnimating = ui.summonAnim && (ui.summonAnim.phase === 'charging' || ui.summonAnim.phase === 'reveal');
-        const urSummons = CDATA.CHARS.filter((c) => c.source === 'summon' && c.rarity === 'UR');
+        const urSummons = STATE.sortCharIds(CDATA.CHARS.filter((c) => c.source === 'summon' && c.rarity === 'UR').map((c) => c.id))
+          .map((id) => CDATA.CHAR_MAP[id]);
         const hasRes = ui.lastSummonResults && ui.lastSummonResults.length > 0 && !isAnimating;
         content = `
-          <div class="info-box grow" style="justify-content:space-between;gap:6px">
+          <div class="info-box grow" style="justify-content:space-between;gap:5px">
             <div class="row-between">
-              <span class="item-title">星海残響召喚（通常召喚UR枠）</span>
+              <span class="item-title">星海残響召喚（通常UR 全6属性）</span>
               ${hasRes ? `<button class="filter-chip active" data-act="clearSummonResults">召喚陣へ戻る</button>` : `<span class="item-sub num">所持 ${fnum(snap.stone)}石</span>`}
             </div>
-            <div class="list-grid-2">
+            <div class="summon-ur-grid">
               ${urSummons.map((u) => `
-                <div class="skill-preview-row" style="border-left-color:#ff94e6">
-                  <div class="skill-preview-head">${rarTag('UR')}<span class="item-title" style="font-size:11px">${esc(u.name)}</span>${elBadge(u.el)}</div>
-                  <div class="skill-desc">${esc(WDATA.ROLES[u.role].name)}・${esc(u.innate.name)}</div>
+                <div class="summon-ur-chip">
+                  <div class="row-left" style="gap:3px">${elBadge(u.el)}<span class="item-title" style="font-size:10.5px">${esc(u.name)}</span></div>
+                  <span class="item-sub" style="font-size:9px">${esc(WDATA.ROLES[u.role].name)}</span>
                 </div>`).join('')}
             </div>
-            <div class="skill-preview-row">
-              <div class="skill-name">召喚仕様</div>
-              <div class="skill-desc">10連召喚は10枠目SR以上確定。最大覚醒後の再獲得は魂晶と共鳴結晶へ即時変換されます。</div>
-            </div>
+            <div class="item-sub" style="line-height:1.3">10連召喚は10枠目SR以上確定。所持済みの再獲得は覚醒せず魂晶と結晶へ即時変換されます。</div>
             ${isAnimating
               ? `<div class="action-bar"><button class="btn-primary" data-act="skipSummonAnim">演出をスキップ</button></div>`
               : `<div class="action-bar">
@@ -2170,9 +2327,9 @@
             <div class="item-row-btn ${sel ? 'selected' : ''}" style="flex-direction:row;align-items:center;justify-content:space-between;gap:6px">
               <button style="flex:1;text-align:left" data-act="previewExchangeChar" data-val="${cid}">
                 <div class="row-left">${rarTag(c.rarity)}<span class="item-title">${esc(c.name)}</span>${elBadge(c.el)}${roleBadge(c.role)}</div>
-                <div class="item-sub">${owned ? `所持済（覚醒 ${snap.roster[cid].awake}/5）` : '異界討伐で鍵を5個集めて解放'}</div>
+                <div class="item-sub">${owned ? '所持済（鍵5個で魂晶・結晶へ変換可）' : '異界討伐で鍵を5個集めて解放'}</div>
               </button>
-              <button class="btn-primary" style="padding:6px 10px;font-size:10.5px" data-act="exchangeRaidChar" data-val="${cid}" ${have < 5 ? 'disabled' : ''}>鍵 ${have}/5</button>
+              <button class="btn-primary" style="padding:6px 10px;font-size:10.5px" data-act="exchangeRaidChar" data-val="${cid}" ${have < 5 ? 'disabled' : ''}>${owned ? '変換' : '解放'} ${have}/5</button>
             </div>`;
         }).join('');
         content = `<div class="scroll-list" data-scroll-key="summon-raid-char"><div class="list-stack">${list}</div></div>`;
@@ -2187,9 +2344,9 @@
             <div class="item-row-btn ${sel ? 'selected' : ''}" style="flex-direction:row;align-items:center;justify-content:space-between;gap:6px">
               <button style="flex:1;text-align:left" data-act="previewExchangeChar" data-val="${c.id}">
                 <div class="row-left">${rarTag(c.rarity)}<span class="item-title">${esc(c.name)}</span>${elBadge(c.el)}${roleBadge(c.role)}</div>
-                <div class="item-sub">${owned ? `降臨済（覚醒 ${snap.roster[c.id].awake}/5）` : `${esc(raid.bossMarkName)} 5個でUR降臨`}</div>
+                <div class="item-sub">${owned ? '降臨済（印5個で魂晶・結晶へ変換可）' : `${esc(raid.bossMarkName)} 5個でUR降臨`}</div>
               </button>
-              <button class="btn-primary" style="padding:6px 10px;font-size:10.5px" data-act="exchangeRaidBoss" data-val="${c.id}" ${have < 5 ? 'disabled' : ''}>印 ${have}/5</button>
+              <button class="btn-primary" style="padding:6px 10px;font-size:10.5px" data-act="exchangeRaidBoss" data-val="${c.id}" ${have < 5 ? 'disabled' : ''}>${owned ? '変換' : '降臨'} ${have}/5</button>
             </div>`;
         }).join('');
         content = `<div class="scroll-list" data-scroll-key="summon-raid-boss"><div class="list-stack">${list}</div></div>`;
@@ -2211,14 +2368,13 @@
       body = `${subRow}${content}`;
     }
 
-    /* ⑥ 図鑑＆設定タブ（キャラ / 敵 / 装備 / 設定） */
+    /* ④ 図鑑タブ（キャラ / 敵 / 装備の3サブタブ） */
     if (ui.tab === 'codex') {
       const subRow = `
         <div class="subtab-row">
           <button class="subtab-btn ${ui.codexSub === 'char' ? 'active' : ''}" data-act="setCodexSub" data-val="char">キャラ</button>
           <button class="subtab-btn ${ui.codexSub === 'enemy' ? 'active' : ''}" data-act="setCodexSub" data-val="enemy">敵</button>
           <button class="subtab-btn ${ui.codexSub === 'equip' ? 'active' : ''}" data-act="setCodexSub" data-val="equip">装備</button>
-          <button class="subtab-btn ${ui.codexSub === 'settings' ? 'active' : ''}" data-act="setCodexSub" data-val="settings">設定</button>
         </div>`;
 
       let content = '';
@@ -2280,7 +2436,7 @@
             </div>
           </div>
           <div class="scroll-list" data-scroll-key="codex-enemy-list"><div class="list-stack">${rows || '<div class="item-sub">該当する敵がいません</div>'}</div></div>`;
-      } else if (ui.codexSub === 'equip') {
+      } else {
         /* 装備図鑑：部位名で一覧表示・武器→防具→装飾→紋章順 ＋ 横スクロール部位フィルタ */
         const slotChips = [
           { id: 'all', lbl: '全部位' },
@@ -2308,35 +2464,47 @@
             </div>
           </div>
           <div class="scroll-list" data-scroll-key="codex-equip-list"><div class="list-stack">${rows}</div></div>`;
-      } else {
-        content = `
-          <div class="scroll-list" data-scroll-key="codex-settings">
-            <div class="list-stack">
-              <div class="item-row-btn">
-                <div class="row-between">
-                  <span class="item-title">効果音（SE）</span>
-                  <button class="btn-secondary ${snap.settings.sound ? 'active' : ''}" data-act="toggleSound">${snap.settings.sound ? 'ON' : 'OFF'}</button>
-                </div>
-              </div>
-              <div class="item-row-btn">
-                <div class="item-title">引き継ぎコード</div>
-                <div class="action-bar" style="margin-top:4px">
-                  <button class="btn-secondary" data-act="exportCode">コード発行＆コピー</button>
-                  <button class="btn-secondary" data-act="importCode">入力コードから復元</button>
-                </div>
-                <input id="transfer-input" type="text" value="${esc(ui.exportedCode)}" placeholder="引き継ぎコードを貼り付け" style="margin-top:5px;width:100%">
-              </div>
-              <div class="item-row-btn">
-                <div class="row-between">
-                  <span class="item-title">セーブデータ初期化</span>
-                  <button class="btn-danger" data-act="resetSave">${ui.confirmReset ? '本当に初期化実行' : '初期化する'}</button>
-                </div>
-              </div>
-            </div>
-          </div>`;
       }
 
       body = `${subRow}${content}`;
+    }
+
+    /* ⑤ 独立「設定」タブ下半分 */
+    if (ui.tab === 'settings') {
+      body = `
+        <div class="scroll-list" data-scroll-key="settings-main">
+          <div class="list-stack">
+            <div class="item-row-btn">
+              <div class="row-between">
+                <span class="item-title">効果音（SE）</span>
+                <button class="btn-secondary ${snap.settings.sound ? 'active' : ''}" style="padding:5px 14px" data-act="toggleSound">${snap.settings.sound ? 'ON' : 'OFF'}</button>
+              </div>
+            </div>
+            <div class="item-row-btn">
+              <div class="row-between">
+                <span class="item-title">戦闘速度</span>
+                <div class="row-left">
+                  ${[1, 2, 3].map((spd) => `
+                    <button class="subtab-btn ${snap.settings.speed === spd ? 'active' : ''}" style="min-width:44px;padding:4px 8px" data-act="setBattleSpeed" data-val="${spd}">×${spd}</button>`).join('')}
+                </div>
+              </div>
+            </div>
+            <div class="item-row-btn">
+              <div class="item-title">引き継ぎコード</div>
+              <div class="action-bar" style="margin-top:4px">
+                <button class="btn-secondary" data-act="exportCode">コード発行＆コピー</button>
+                <button class="btn-secondary" data-act="importCode">入力コードから復元</button>
+              </div>
+              <input id="transfer-input" type="text" value="${esc(ui.exportedCode)}" placeholder="引き継ぎコードを貼り付け" style="margin-top:5px;width:100%">
+            </div>
+            <div class="item-row-btn">
+              <div class="row-between">
+                <span class="item-title">セーブデータ初期化</span>
+                <button class="btn-danger" data-act="resetSave">${ui.confirmReset ? '本当に初期化実行' : '初期化する'}</button>
+              </div>
+            </div>
+          </div>
+        </div>`;
     }
 
     return `

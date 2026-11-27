@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ikai-zankyo-v5';
+const CACHE_NAME = 'ikai-zankyo-v6';
 const ASSETS = [
   './',
   './index.html',

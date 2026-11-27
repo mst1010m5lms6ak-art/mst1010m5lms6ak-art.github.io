@@ -1,24 +1,30 @@
-/* プレイアブルキャラ52体（全名短縮統一・通常召喚UR＆討伐ボスUR6体＆塔限定4体含む・共鳴盤・図鑑紹介文） */
+/* プレイアブルキャラ56体（全名短縮統一・通常召喚UR6属性完備＆討伐ボスUR6体＆塔限定4体含む・刻印12種・図鑑紹介文） */
 (function () {
   'use strict';
 
-  /* キャラ別 共鳴盤の共通6ノード定義（Lvなし・自由順解放） */
+  /* キャラ別 刻印12種（Lvなし・結晶で自由順解放） */
   const BOARD_TEMPLATES = [
-    { key: 'hp',    name: '生命の刻印',   desc: '最大HP +18%',        stat: 'hpPct',   val: 0.18, cost: 120 },
-    { key: 'atk',   name: '鋭刃の刻印',   desc: '攻撃力 +18%',        stat: 'atkPct',  val: 0.18, cost: 120 },
-    { key: 'def',   name: '堅壁の刻印',   desc: '防御力 +20%',        stat: 'defPct',  val: 0.20, cost: 120 },
-    { key: 'spd',   name: '迅雷の刻印',   desc: '速度 +12',           stat: 'spdFlat', val: 12,   cost: 160 },
-    { key: 'crit',  name: '見切りの刻印', desc: '会心+12%・会心ダメ+20%', stat: 'critPack', val: 0.12, cost: 200 },
-    { key: 'skill', name: '奥義の極み',   desc: '全技の威力・回復量 +22%', stat: 'skillPct', val: 0.22, cost: 260 }
+    { key: 'hp',     name: '生命の刻印',   desc: '最大HP +18%',                stat: 'hpPct',      val: 0.18, cost: 120 },
+    { key: 'atk',    name: '鋭刃の刻印',   desc: '攻撃力 +18%',                stat: 'atkPct',     val: 0.18, cost: 120 },
+    { key: 'def',    name: '堅壁の刻印',   desc: '防御力 +20%',                stat: 'defPct',     val: 0.20, cost: 120 },
+    { key: 'spd',    name: '迅雷の刻印',   desc: '速度 +12',                   stat: 'spdFlat',    val: 12,   cost: 160 },
+    { key: 'crit',   name: '見切りの刻印', desc: '会心+12%・会心ダメ+20%',     stat: 'critPack',   val: 0.12, cost: 200 },
+    { key: 'skill',  name: '奥義の刻印',   desc: '全技の威力・回復量 +22%',    stat: 'skillPct',   val: 0.22, cost: 260 },
+    { key: 'guard',  name: '守護の刻印',   desc: '被ダメージ -10%',            stat: 'dmgCut',     val: 0.10, cost: 180 },
+    { key: 'opener', name: '先陣の刻印',   desc: '開幕行動ゲージ +16%',        stat: 'startGauge', val: 16,   cost: 200 },
+    { key: 'cycle',  name: '連環の刻印',   desc: '行動後ゲージ +10%',          stat: 'afterGauge', val: 10,   cost: 240 },
+    { key: 'slayer', name: '覇撃の刻印',   desc: '強敵・乱入への与ダメ +18%',  stat: 'bossPct',    val: 0.18, cost: 240 },
+    { key: 'sweep',  name: '広域の刻印',   desc: '範囲・全体攻撃の与ダメ +16%', stat: 'aoePct',    val: 0.16, cost: 220 },
+    { key: 'mercy',  name: '慈愛の刻印',   desc: '回復量+18%・被回復+12%',     stat: 'healPack',   val: 0.18, cost: 200 }
   ];
 
   /*
-   * 全52体：
+   * 全56体：
    * - source: 'summon'（通常召喚） / 'raid'（異界討伐・鍵解放） / 'raidBoss'（異界討伐・覇王の印解放） / 'tower'（深淵の塔限定）
    * - すべて肩書きなしの自然な名前へ統一（kana は五十音順ソート用）
    */
   const CHARS = [
-    /* ========== UR (13体：異界討伐限定4 / 異界討伐ボス6 / 深淵の塔100F限定1 / 通常召喚2) ========== */
+    /* ========== UR (17体：異界討伐限定4 / 異界討伐ボス6 / 深淵の塔100F限定1 / 通常召喚6［全属性］) ========== */
     {
       id: 'c_ur_ignis', name: 'イグニス', kana: 'いぐにす', rarity: 'UR', el: 'fire', role: 'dealer', world: 'w2', source: 'raidBoss',
       hp: 1180, atk: 262, def: 96, spd: 116, crit: 0.24,
@@ -174,6 +180,54 @@
       innate: { name: '境界の盾', desc: '開幕時に自身へ挑発と防御上昇を付与' },
       linkBonus: { stat: 'hp', val: 18, text: '共鳴先の最大HP+18%' },
       lore: '星海回廊の零点で目覚めた白銀の守護騎士。崩れゆく異界の衝撃を一身に受け止め仲間を守り抜く。'
+    },
+    {
+      id: 'c_ur_7', name: 'ヴェルン', kana: 'ゔぇるん', rarity: 'UR', el: 'fire', role: 'dealer', world: 'w7', source: 'summon',
+      hp: 1140, atk: 256, def: 90, spd: 120, crit: 0.24,
+      skills: [
+        { slot: 1, name: '陽炎の閃刃', scope: 'single', mult: 1.18, ct: 0, desc: '敵単体に炎ダメージ＋火傷付与', debuff: { type: 'burn', val: 0.07, turns: 2 } },
+        { slot: 2, name: '紅蓮双輪斬', scope: 'area2',  mult: 1.64, ct: 2, desc: '敵2体に炎ダメージ＋防御低下', debuff: { type: 'defDown', val: 0.22, turns: 2 } },
+        { slot: 3, name: '太陽王の劫火', scope: 'all',  mult: 2.14, ct: 4, desc: '敵全体に極大炎ダメージ＋自身攻撃上昇', selfBuff: { type: 'atkUp', val: 0.26, turns: 2 } }
+      ],
+      innate: { name: '灼陽の覇気', desc: '火傷状態の敵への与ダメージ+22%・会心ダメージ+20%' },
+      linkBonus: { stat: 'atk', val: 15, text: '共鳴先の攻撃+15%' },
+      lore: '黄昏の太陽砂都で千年の炎刃を受け継ぐ孤高の剣士。真紅の陽炎を纏い、戦場のすべてを焼き尽くす。'
+    },
+    {
+      id: 'c_ur_8', name: 'セレーネ', kana: 'せれーね', rarity: 'UR', el: 'water', role: 'support', world: 'w8', source: 'summon',
+      hp: 1260, atk: 204, def: 108, spd: 126, crit: 0.14,
+      skills: [
+        { slot: 1, name: '氷晶の蒼弾', scope: 'single', mult: 1.06, ct: 0, desc: '敵単体に水ダメージ＋速度低下', debuff: { type: 'spdDown', val: 0.16, turns: 2 } },
+        { slot: 2, name: '極光の聖律', scope: 'all', kind: 'allyBuff', ct: 3, desc: '味方全体の攻撃+28%・速度+22%＋行動ゲージ+24%', buff: { type: 'atkUp', val: 0.28, turns: 2 }, buff2: { type: 'spdUp', val: 0.22, turns: 2 }, gaugeUp: 24 },
+        { slot: 3, name: '凍星の蒼穹歌', scope: 'all', kind: 'allyBuff', ct: 4, desc: '味方全体の防御+28%＋HP回復＋行動ゲージ+18%', buff: { type: 'defUp', val: 0.28, turns: 3 }, healMult: 0.72, gaugeUp: 18 }
+      ],
+      innate: { name: '氷鏡の響律', desc: '生存中、味方全体の速度+8・開幕自身の行動ゲージ+18%' },
+      linkBonus: { stat: 'spd', val: 10, text: '共鳴先の速度+10' },
+      lore: '氷晶の極光凍城で星光を紡ぐ蒼の歌姫。澄み渡る旋律は仲間の歩調を合わせ、凍てつく戦場を支配する。'
+    },
+    {
+      id: 'c_ur_9', name: 'ノクス', kana: 'のくす', rarity: 'UR', el: 'dark', role: 'dealer', world: 'w3', source: 'summon',
+      hp: 1090, atk: 260, def: 86, spd: 124, crit: 0.26,
+      skills: [
+        { slot: 1, name: '宵闇の影刃', scope: 'single', mult: 1.20, ct: 0, desc: '敵単体に闇ダメージ＋防御低下', debuff: { type: 'defDown', val: 0.18, turns: 2 } },
+        { slot: 2, name: '月蝕の連斬', scope: 'area3',  mult: 1.66, ct: 2, desc: '敵3体に闇ダメージ＋攻撃低下', debuff: { type: 'atkDown', val: 0.20, turns: 2 } },
+        { slot: 3, name: '深淵の断罪牙', scope: 'single', mult: 2.55, ct: 3, desc: '敵単体に極大闇ダメージ＋自身攻撃上昇', selfBuff: { type: 'atkUp', val: 0.28, turns: 2 } }
+      ],
+      innate: { name: '夜天の狩人', desc: 'デバフ状態の敵への与ダメージ+22%・ボスへの与ダメージ+15%' },
+      linkBonus: { stat: 'atk', val: 15, text: '共鳴先の攻撃+15%' },
+      lore: '月影に紛れて異界を駆ける黒衣の斬撃手。隙を突く一閃は強敵の堅牢な守りすら容易く貫く。'
+    },
+    {
+      id: 'c_ur_10', name: 'ジーク', kana: 'じーく', rarity: 'UR', el: 'none', role: 'tank', world: 'w5', source: 'summon',
+      hp: 1660, atk: 182, def: 144, spd: 108, crit: 0.14,
+      skills: [
+        { slot: 1, name: '白銀の鉄壁衝', scope: 'single', mult: 1.08, ct: 0, desc: '敵単体に無ダメージ＋自身に挑発', selfBuff: { type: 'taunt', val: 1, turns: 2 } },
+        { slot: 2, name: '星刻の守護陣', scope: 'all', kind: 'allyBuff', ct: 3, desc: '味方全体の防御+34%・攻撃+18%＋自身回復＋挑発', buff: { type: 'defUp', val: 0.34, turns: 3 }, buff2: { type: 'atkUp', val: 0.18, turns: 2 }, selfHeal: 0.24, selfBuff: { type: 'taunt', val: 1, turns: 2 } },
+        { slot: 3, name: '不滅の銀盾', scope: 'passive', passiveType: 'dmgCut', val: 0.22, desc: '常時自身の被ダメージ-22%・開幕自身に挑発と防御上昇を付与' }
+      ],
+      innate: { name: '星都の守護誓約', desc: '最大HP+14%・被回復量+16%' },
+      linkBonus: { stat: 'hp', val: 18, text: '共鳴先の最大HP+18%' },
+      lore: '白銀の星刻時計塔を幾世紀も守り続けた無敗の守護騎士。揺るがぬ大盾の前に敵の猛攻は悉く砕け散る。'
     },
 
     /* ========== SSR (12体：通常召喚8 / 異界討伐限定2 / 深淵の塔限定2) ========== */

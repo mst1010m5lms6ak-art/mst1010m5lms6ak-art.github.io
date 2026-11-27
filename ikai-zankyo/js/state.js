@@ -343,7 +343,7 @@
     let dmgPct = 0, dmgCut = 0, startGauge = 0, afterGauge = 0, bossPct = 0, aoePct = 0, lifesteal = 0;
     let eqHp = 0, eqAtk = 0, eqDef = 0, eqSpd = 0;
 
-    /* 固有アビリティ補正（全52体対応） */
+    /* 固有アビリティ補正（全56体対応） */
     switch (def.id) {
       case 'c_ur_ignis':  atkPct += 0.12; break;
       case 'c_ur_levia':  dmgCut += 0.16; healRcvPct += 0.18; break;
@@ -355,6 +355,10 @@
       case 'c_ur_kuchi':  lifesteal += 0.08; break;
       case 'c_tw_100':    hpPct += 0.10; atkPct += 0.10; defPct += 0.10; break;
       case 'c_ur_omega':  dmgPct += 0.18; bossPct += 0.18; break;
+      case 'c_ur_7':      critDmg += 0.20; break;
+      case 'c_ur_8':      startGauge += 18; break;
+      case 'c_ur_9':      bossPct += 0.15; break;
+      case 'c_ur_10':     hpPct += 0.14; healRcvPct += 0.16; break;
       case 'c_ssr_9':     hpPct += 0.12; dmgCut += 0.10; break;
       case 'c_ssr_3':     healPct += 0.15; break;
       case 'c_ssr_4':     bossPct += 0.16; break;
@@ -397,7 +401,7 @@
       }
     });
 
-    /* ① 共鳴盤ノード */
+    /* ① 刻印（12種・自由順解放） */
     if (owned) {
       owned.board.forEach((key) => {
         const node = CDATA.BOARD_TEMPLATES.find((t) => t.key === key);
@@ -408,6 +412,12 @@
         if (node.stat === 'spdFlat') spdFlat += node.val;
         if (node.stat === 'critPack') { crit += 0.12; critDmg += 0.20; }
         if (node.stat === 'skillPct') skillPct += node.val;
+        if (node.stat === 'dmgCut') dmgCut += node.val;
+        if (node.stat === 'startGauge') startGauge += node.val;
+        if (node.stat === 'afterGauge') afterGauge += node.val;
+        if (node.stat === 'bossPct') bossPct += node.val;
+        if (node.stat === 'aoePct') aoePct += node.val;
+        if (node.stat === 'healPack') { healPct += 0.18; healRcvPct += 0.12; }
       });
     }
 
@@ -502,7 +512,7 @@
       const linkOwned = S.roster[owned.linkCharId];
       const isInActiveParty = Array.isArray(partyIds) && partyIds.includes(owned.linkCharId);
       if (!isInActiveParty && linkDef) {
-        const linkScale = 1 + linkOwned.awake * 0.12 + linkOwned.board.length * 0.08;
+        const linkScale = 1 + linkOwned.awake * 0.12 + linkOwned.board.length * 0.04;
         const lb = linkDef.linkBonus;
         if (lb.stat === 'hp') hpPct += (lb.val / 100) * linkScale;
         if (lb.stat === 'atk') atkPct += (lb.val / 100) * linkScale;
@@ -561,7 +571,7 @@
     };
   }
 
-  /* キャラ入手（初回登録・覚醒進行・覚醒上限超過時は魂晶＆共鳴結晶へ自動変換） */
+  /* キャラ入手（初回登録・重複時は覚醒させず魂晶＆結晶へ即時変換） */
   function grantChar(charId) {
     const def = CDATA.CHAR_MAP[charId];
     if (!def) return null;
@@ -574,11 +584,6 @@
         linkCharId: null
       };
       return { charId, status: 'new', name: def.name, rarity: def.rarity, el: def.el, role: def.role };
-    }
-    const r = S.roster[charId];
-    if (r.awake < 5) {
-      r.awake += 1;
-      return { charId, status: 'awake', awake: r.awake, name: def.name, rarity: def.rarity, el: def.el, role: def.role };
     }
     const soulMap = { N: 18, R: 32, SR: 65, SSR: 140, UR: 260 };
     const cryMap = { N: 35, R: 60, SR: 110, SSR: 220, UR: 400 };
@@ -659,13 +664,13 @@
     return { ok: true, awake: r.awake, cost };
   }
 
-  /* 共鳴盤ノード解放 */
+  /* 刻印解放 */
   function unlockBoardNode(charId, nodeKey) {
     const r = S.roster[charId];
     const node = CDATA.BOARD_TEMPLATES.find((t) => t.key === nodeKey);
-    if (!r || !node) return { ok: false, msg: '無効なノードです' };
+    if (!r || !node) return { ok: false, msg: '無効な刻印です' };
     if (r.board.includes(nodeKey)) return { ok: false, msg: '解放済みです' };
-    if (S.crystal < node.cost) return { ok: false, msg: `共鳴結晶が${node.cost}必要です` };
+    if (S.crystal < node.cost) return { ok: false, msg: `結晶が${node.cost}必要です` };
     S.crystal -= node.cost;
     r.board.push(nodeKey);
     persist();
@@ -899,7 +904,7 @@
     return { soldCount, totalGold };
   }
 
-  /* 金貨→共鳴結晶・残響石への還元交換（1回／5回まとめて対応） */
+  /* 金貨→結晶・残響石への還元交換（1回／5回まとめて対応） */
   function buyResourceWithGold(kind, times) {
     const n = times === 5 ? 5 : 1;
     if (kind === 'crystal') {
@@ -908,7 +913,7 @@
       S.gold -= cost;
       S.crystal += 160 * n;
       persist();
-      return { ok: true, msg: `共鳴結晶 +${160 * n} を獲得しました` };
+      return { ok: true, msg: `結晶 +${160 * n} を獲得しました` };
     }
     if (kind === 'stone') {
       const cost = 600 * n;
@@ -1025,6 +1030,10 @@
     };
   }
 
+  function getBattleSpeed() {
+    return (S && S.settings && S.settings.speed) ? S.settings.speed : 2;
+  }
+
   function setSpeed(spd) {
     S.settings.speed = [1, 2, 3].includes(spd) ? spd : 2;
     persist();
@@ -1094,6 +1103,7 @@
       buyResourceWithGold,
       applyBattleReward,
       checkTrialRule,
+      getBattleSpeed,
       setSpeed,
       setSound,
       setAutoSellQuality,

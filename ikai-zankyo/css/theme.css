@@ -1,0 +1,216 @@
+/* 6異界テーマ・属性・レアリティ・品質・ロールのカラー＆装飾定義 */
+
+/* 異界ごとの世界観カラー切替 */
+#app-shell[data-world="w1"] {
+  --world-accent: #6cb8ff;
+  --world-accent-soft: rgba(108, 184, 255, 0.22);
+  --world-bg-top: #10203a;
+  --world-bg-mid: #0a1222;
+}
+#app-shell[data-world="w2"] {
+  --world-accent: #ff6e48;
+  --world-accent-soft: rgba(255, 110, 72, 0.22);
+  --world-bg-top: #341410;
+  --world-bg-mid: #1c0c0d;
+}
+#app-shell[data-world="w3"] {
+  --world-accent: #f38bb8;
+  --world-accent-soft: rgba(243, 139, 184, 0.22);
+  --world-bg-top: #2c1426;
+  --world-bg-mid: #160c1a;
+}
+#app-shell[data-world="w4"] {
+  --world-accent: #38d6c4;
+  --world-accent-soft: rgba(56, 214, 196, 0.22);
+  --world-bg-top: #0b2a2f;
+  --world-bg-mid: #08181f;
+}
+#app-shell[data-world="w5"] {
+  --world-accent: #a6d4ff;
+  --world-accent-soft: rgba(166, 212, 255, 0.22);
+  --world-bg-top: #172336;
+  --world-bg-mid: #0d1320;
+}
+#app-shell[data-world="w6"] {
+  --world-accent: #b882ff;
+  --world-accent-soft: rgba(184, 130, 255, 0.24);
+  --world-bg-top: #21123a;
+  --world-bg-mid: #100a21;
+}
+
+/* 属性カラー */
+.el-fire  { --el-color: #ff6247; --el-bg: rgba(255, 98, 71, 0.18); }
+.el-water { --el-color: #4db8ff; --el-bg: rgba(77, 184, 255, 0.18); }
+.el-wind  { --el-color: #4ee08e; --el-bg: rgba(78, 224, 142, 0.18); }
+.el-light { --el-color: #ffd85c; --el-bg: rgba(255, 216, 92, 0.18); }
+.el-dark  { --el-color: #c278ff; --el-bg: rgba(194, 120, 255, 0.18); }
+.el-none  { --el-color: #c5ccd9; --el-bg: rgba(197, 204, 217, 0.18); }
+
+.el-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--el-color);
+  background: var(--el-bg);
+  border: 1px solid color-mix(in srgb, var(--el-color) 48%, transparent);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* ロールバッジ */
+.role-tank    { --role-color: #6ab7ff; }
+.role-dealer  { --role-color: #ff7666; }
+.role-support { --role-color: #c792ff; }
+.role-healer  { --role-color: #5ee69c; }
+
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--role-color);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid color-mix(in srgb, var(--role-color) 42%, transparent);
+  white-space: nowrap;
+}
+
+/* レアリティ装飾 */
+.rar-N   { --rar-color: #a9b2c4; --rar-glow: rgba(169, 178, 196, 0.15); }
+.rar-R   { --rar-color: #5bc2ff; --rar-glow: rgba(91, 194, 255, 0.24); }
+.rar-SR  { --rar-color: #c982ff; --rar-glow: rgba(201, 130, 255, 0.28); }
+.rar-SSR { --rar-color: #f4c95d; --rar-glow: rgba(244, 201, 93, 0.34); }
+.rar-UR  { --rar-color: #ff8de0; --rar-glow: rgba(255, 141, 224, 0.42); }
+
+.rar-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--rar-color);
+  background: rgba(8, 10, 18, 0.8);
+  border: 1px solid var(--rar-color);
+  box-shadow: 0 0 8px var(--rar-glow);
+}
+
+.rar-UR.rar-tag, .rar-tag.rar-UR {
+  background: linear-gradient(135deg, rgba(255, 118, 188, 0.28), rgba(130, 200, 255, 0.28), rgba(255, 220, 110, 0.28));
+  color: #fff6d9;
+  border-color: #ffd788;
+}
+
+/* 装備品質装飾（標準 < 上質 < 精巧 < 逸品 < 至宝） */
+.qual-0 { --qual-color: #9ca6b8; --qual-bg: rgba(156, 166, 184, 0.14); }
+.qual-1 { --qual-color: #5ee09b; --qual-bg: rgba(94, 224, 155, 0.16); }
+.qual-2 { --qual-color: #5cb8ff; --qual-bg: rgba(92, 184, 255, 0.18); }
+.qual-3 { --qual-color: #ce82ff; --qual-bg: rgba(206, 130, 255, 0.20); }
+.qual-4 { --qual-color: #ffd564; --qual-bg: rgba(255, 213, 100, 0.24); }
+
+.qual-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--qual-color);
+  background: var(--qual-bg);
+  border: 1px solid color-mix(in srgb, var(--qual-color) 65%, transparent);
+  white-space: nowrap;
+}
+
+.qual-4.qual-tag, .qual-tag.qual-4 {
+  box-shadow: 0 0 10px rgba(255, 213, 100, 0.45);
+}
+
+/* 技の対象範囲バッジ（単体 / 範囲 / 全体 / 常時） */
+.scope-single { color: #ffad78; background: rgba(255, 173, 120, 0.16); border-color: rgba(255, 173, 120, 0.48); }
+.scope-area   { color: #78c8ff; background: rgba(120, 200, 255, 0.16); border-color: rgba(120, 200, 255, 0.48); }
+.scope-all    { color: #f28dff; background: rgba(242, 141, 255, 0.18); border-color: rgba(242, 141, 255, 0.54); }
+.scope-passive{ color: #ffd970; background: rgba(255, 217, 112, 0.16); border-color: rgba(255, 217, 112, 0.5); }
+
+.scope-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid;
+  white-space: nowrap;
+}
+
+/* 共通リッチボタン */
+.btn-primary {
+  background: linear-gradient(180deg, #e5c374 0%, #b58c38 100%);
+  color: #120e06;
+  font-weight: 800;
+  border-radius: 9px;
+  border: 1px solid #ffe7a8;
+  box-shadow: 0 3px 12px rgba(216, 181, 102, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  padding: 9px 12px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.btn-secondary {
+  background: linear-gradient(180deg, #1d2438 0%, #131827 100%);
+  color: var(--text-main);
+  font-weight: 700;
+  border-radius: 9px;
+  border: 1px solid var(--border-subtle);
+  padding: 8px 11px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.btn-secondary.active {
+  border-color: var(--gold-bright);
+  background: linear-gradient(180deg, rgba(216, 181, 102, 0.25) 0%, rgba(127, 105, 56, 0.22) 100%);
+  color: var(--gold-bright);
+}
+
+.btn-danger {
+  background: linear-gradient(180deg, #69232c 0%, #44151c 100%);
+  color: #ffd7dc;
+  font-weight: 700;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 118, 132, 0.55);
+  padding: 8px 11px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+/* 繊細な背景幾何学パターン（軽量CSSのみ・発熱ゼロ） */
+.upper-bg-ornament {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.25;
+  background-image:
+    radial-gradient(circle at 18% 24%, var(--world-accent) 0, transparent 2px),
+    radial-gradient(circle at 82% 16%, var(--gold-bright) 0, transparent 1.5px),
+    radial-gradient(circle at 68% 72%, var(--world-accent) 0, transparent 2px),
+    radial-gradient(circle at 26% 78%, var(--gold-main) 0, transparent 1.5px);
+}

@@ -1,0 +1,26 @@
+{
+  "name": "異界残響",
+  "short_name": "異界残響",
+  "description": "多彩な異界を巡り編成と共鳴を極める買い切り2D戦略RPG",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#080a10",
+  "theme_color": "#080a10",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='36' fill='%230b0e18'/%3E%3Cpolygon points='96,24 164,96 96,168 28,96' fill='none' stroke='%23d4af37' stroke-width='9'/%3E%3Cpolygon points='96,50 138,96 96,142 54,96' fill='%23d4af37' fill-opacity='0.24' stroke='%23f2d679' stroke-width='4'/%3E%3Ccircle cx='96' cy='96' r='15' fill='%23f2d679'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%230b0e18'/%3E%3Cpolygon points='256,64 438,256 256,448 74,256' fill='none' stroke='%23d4af37' stroke-width='22'/%3E%3Cpolygon points='256,132 370,256 256,380 142,256' fill='%23d4af37' fill-opacity='0.24' stroke='%23f2d679' stroke-width='10'/%3E%3Ccircle cx='256' cy='256' r='40' fill='%23f2d679'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

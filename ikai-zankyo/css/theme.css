@@ -1,50 +1,84 @@
-/* 6異界テーマ・属性・レアリティ・品質・ロールのカラー＆装飾定義 */
+/* 10異界クリスタル・エレメンタルテーマ ＋ ダークラグジュアリー×タクティカル装飾 */
 
-/* 異界ごとの世界観カラー切替 */
+/* 10異界ごとのダイナミック世界観カラー切替 */
 #app-shell[data-world="w1"] {
-  --world-accent: #6cb8ff;
-  --world-accent-soft: rgba(108, 184, 255, 0.22);
-  --world-bg-top: #10203a;
-  --world-bg-mid: #0a1222;
+  --world-accent: #5ec2ff;
+  --world-accent-2: #a5e0ff;
+  --world-accent-soft: rgba(94, 194, 255, 0.26);
+  --world-bg-top: #0f2442;
+  --world-bg-mid: #091326;
 }
 #app-shell[data-world="w2"] {
-  --world-accent: #ff6e48;
-  --world-accent-soft: rgba(255, 110, 72, 0.22);
-  --world-bg-top: #341410;
-  --world-bg-mid: #1c0c0d;
+  --world-accent: #ff6b42;
+  --world-accent-2: #ffad78;
+  --world-accent-soft: rgba(255, 107, 66, 0.26);
+  --world-bg-top: #3a140e;
+  --world-bg-mid: #1c0b0c;
 }
 #app-shell[data-world="w3"] {
-  --world-accent: #f38bb8;
-  --world-accent-soft: rgba(243, 139, 184, 0.22);
-  --world-bg-top: #2c1426;
-  --world-bg-mid: #160c1a;
+  --world-accent: #f47cb6;
+  --world-accent-2: #ffb8dc;
+  --world-accent-soft: rgba(244, 124, 182, 0.25);
+  --world-bg-top: #311229;
+  --world-bg-mid: #170a1b;
 }
 #app-shell[data-world="w4"] {
-  --world-accent: #38d6c4;
-  --world-accent-soft: rgba(56, 214, 196, 0.22);
-  --world-bg-top: #0b2a2f;
-  --world-bg-mid: #08181f;
+  --world-accent: #2ee2cf;
+  --world-accent-2: #8ef5e9;
+  --world-accent-soft: rgba(46, 226, 207, 0.25);
+  --world-bg-top: #092d35;
+  --world-bg-mid: #071720;
 }
 #app-shell[data-world="w5"] {
-  --world-accent: #a6d4ff;
-  --world-accent-soft: rgba(166, 212, 255, 0.22);
-  --world-bg-top: #172336;
-  --world-bg-mid: #0d1320;
+  --world-accent: #9dd4ff;
+  --world-accent-2: #e3f3ff;
+  --world-accent-soft: rgba(157, 212, 255, 0.25);
+  --world-bg-top: #17263d;
+  --world-bg-mid: #0c1423;
 }
 #app-shell[data-world="w6"] {
-  --world-accent: #b882ff;
-  --world-accent-soft: rgba(184, 130, 255, 0.24);
-  --world-bg-top: #21123a;
-  --world-bg-mid: #100a21;
+  --world-accent: #44e69b;
+  --world-accent-2: #9bf5cb;
+  --world-accent-soft: rgba(68, 230, 155, 0.24);
+  --world-bg-top: #0c2f24;
+  --world-bg-mid: #081916;
+}
+#app-shell[data-world="w7"] {
+  --world-accent: #ffb84d;
+  --world-accent-2: #ffe09b;
+  --world-accent-soft: rgba(255, 184, 77, 0.26);
+  --world-bg-top: #35210c;
+  --world-bg-mid: #1a1109;
+}
+#app-shell[data-world="w8"] {
+  --world-accent: #7ae2ff;
+  --world-accent-2: #d0f4ff;
+  --world-accent-soft: rgba(122, 226, 255, 0.26);
+  --world-bg-top: #0f2b40;
+  --world-bg-mid: #091726;
+}
+#app-shell[data-world="w9"] {
+  --world-accent: #68f0ff;
+  --world-accent-2: #ffe46e;
+  --world-accent-soft: rgba(104, 240, 255, 0.26);
+  --world-bg-top: #122444;
+  --world-bg-mid: #0a1026;
+}
+#app-shell[data-world="w10"] {
+  --world-accent: #b87dff;
+  --world-accent-2: #e2c2ff;
+  --world-accent-soft: rgba(184, 125, 255, 0.28);
+  --world-bg-top: #23113f;
+  --world-bg-mid: #0e0920;
 }
 
 /* 属性カラー */
-.el-fire  { --el-color: #ff6247; --el-bg: rgba(255, 98, 71, 0.18); }
-.el-water { --el-color: #4db8ff; --el-bg: rgba(77, 184, 255, 0.18); }
-.el-wind  { --el-color: #4ee08e; --el-bg: rgba(78, 224, 142, 0.18); }
-.el-light { --el-color: #ffd85c; --el-bg: rgba(255, 216, 92, 0.18); }
-.el-dark  { --el-color: #c278ff; --el-bg: rgba(194, 120, 255, 0.18); }
-.el-none  { --el-color: #c5ccd9; --el-bg: rgba(197, 204, 217, 0.18); }
+.el-fire  { --el-color: #ff694b; --el-bg: rgba(255, 105, 75, 0.18); }
+.el-water { --el-color: #48beff; --el-bg: rgba(72, 190, 255, 0.18); }
+.el-wind  { --el-color: #4be896; --el-bg: rgba(75, 232, 150, 0.18); }
+.el-light { --el-color: #ffdd66; --el-bg: rgba(255, 221, 102, 0.18); }
+.el-dark  { --el-color: #c87dff; --el-bg: rgba(200, 125, 255, 0.18); }
+.el-none  { --el-color: #ccd3e0; --el-bg: rgba(204, 211, 224, 0.16); }
 
 .el-badge {
   display: inline-flex;
@@ -53,20 +87,20 @@
   gap: 2px;
   padding: 1px 5px;
   border-radius: 4px;
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 9.5px;
+  font-weight: 800;
   color: var(--el-color);
   background: var(--el-bg);
-  border: 1px solid color-mix(in srgb, var(--el-color) 48%, transparent);
-  line-height: 1.2;
+  border: 1px solid color-mix(in srgb, var(--el-color) 52%, transparent);
+  line-height: 1.15;
   white-space: nowrap;
 }
 
 /* ロールバッジ */
-.role-tank    { --role-color: #6ab7ff; }
-.role-dealer  { --role-color: #ff7666; }
-.role-support { --role-color: #c792ff; }
-.role-healer  { --role-color: #5ee69c; }
+.role-tank    { --role-color: #6ab9ff; }
+.role-dealer  { --role-color: #ff7968; }
+.role-support { --role-color: #cc94ff; }
+.role-healer  { --role-color: #5eeaa0; }
 
 .role-badge {
   display: inline-flex;
@@ -74,20 +108,21 @@
   gap: 2px;
   padding: 1px 5px;
   border-radius: 4px;
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 9.5px;
+  font-weight: 800;
   color: var(--role-color);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid color-mix(in srgb, var(--role-color) 42%, transparent);
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid color-mix(in srgb, var(--role-color) 46%, transparent);
+  line-height: 1.15;
   white-space: nowrap;
 }
 
 /* レアリティ装飾 */
-.rar-N   { --rar-color: #a9b2c4; --rar-glow: rgba(169, 178, 196, 0.15); }
-.rar-R   { --rar-color: #5bc2ff; --rar-glow: rgba(91, 194, 255, 0.24); }
-.rar-SR  { --rar-color: #c982ff; --rar-glow: rgba(201, 130, 255, 0.28); }
-.rar-SSR { --rar-color: #f4c95d; --rar-glow: rgba(244, 201, 93, 0.34); }
-.rar-UR  { --rar-color: #ff8de0; --rar-glow: rgba(255, 141, 224, 0.42); }
+.rar-N   { --rar-color: #aeb8ca; --rar-glow: rgba(174, 184, 202, 0.16); }
+.rar-R   { --rar-color: #58c4ff; --rar-glow: rgba(88, 196, 255, 0.28); }
+.rar-SR  { --rar-color: #cb84ff; --rar-glow: rgba(203, 132, 255, 0.34); }
+.rar-SSR { --rar-color: #f7cd5c; --rar-glow: rgba(247, 205, 92, 0.42); }
+.rar-UR  { --rar-color: #ff94e6; --rar-glow: rgba(255, 148, 230, 0.55); }
 
 .rar-tag {
   display: inline-flex;
@@ -96,72 +131,82 @@
   min-width: 28px;
   padding: 1px 5px;
   border-radius: 4px;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
+  font-size: 9.5px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
   color: var(--rar-color);
-  background: rgba(8, 10, 18, 0.8);
+  background: rgba(7, 10, 18, 0.88);
   border: 1px solid var(--rar-color);
   box-shadow: 0 0 8px var(--rar-glow);
+  line-height: 1.15;
 }
 
 .rar-UR.rar-tag, .rar-tag.rar-UR {
-  background: linear-gradient(135deg, rgba(255, 118, 188, 0.28), rgba(130, 200, 255, 0.28), rgba(255, 220, 110, 0.28));
-  color: #fff6d9;
-  border-color: #ffd788;
+  background: linear-gradient(135deg, rgba(255, 114, 198, 0.34), rgba(96, 206, 255, 0.32), rgba(255, 224, 110, 0.36));
+  color: #fff8de;
+  border-color: #ffe08a;
+  box-shadow: 0 0 12px rgba(255, 196, 128, 0.55);
 }
 
 /* 装備品質装飾（標準 < 上質 < 精巧 < 逸品 < 至宝） */
-.qual-0 { --qual-color: #9ca6b8; --qual-bg: rgba(156, 166, 184, 0.14); }
-.qual-1 { --qual-color: #5ee09b; --qual-bg: rgba(94, 224, 155, 0.16); }
-.qual-2 { --qual-color: #5cb8ff; --qual-bg: rgba(92, 184, 255, 0.18); }
-.qual-3 { --qual-color: #ce82ff; --qual-bg: rgba(206, 130, 255, 0.20); }
-.qual-4 { --qual-color: #ffd564; --qual-bg: rgba(255, 213, 100, 0.24); }
+.qual-0 { --qual-color: #a1abbe; --qual-bg: rgba(161, 171, 190, 0.14); }
+.qual-1 { --qual-color: #5ee69f; --qual-bg: rgba(94, 230, 159, 0.16); }
+.qual-2 { --qual-color: #5cbcff; --qual-bg: rgba(92, 188, 255, 0.18); }
+.qual-3 { --qual-color: #d286ff; --qual-bg: rgba(210, 134, 255, 0.22); }
+.qual-4 { --qual-color: #ffd866; --qual-bg: rgba(255, 216, 102, 0.26); }
 
 .qual-tag {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   padding: 1px 5px;
   border-radius: 4px;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 800;
   color: var(--qual-color);
   background: var(--qual-bg);
   border: 1px solid color-mix(in srgb, var(--qual-color) 65%, transparent);
+  line-height: 1.15;
   white-space: nowrap;
 }
 
 .qual-4.qual-tag, .qual-tag.qual-4 {
-  box-shadow: 0 0 10px rgba(255, 213, 100, 0.45);
+  box-shadow: 0 0 10px rgba(255, 216, 102, 0.48);
 }
 
-/* 技の対象範囲バッジ（単体 / 範囲 / 全体 / 常時） */
-.scope-single { color: #ffad78; background: rgba(255, 173, 120, 0.16); border-color: rgba(255, 173, 120, 0.48); }
-.scope-area   { color: #78c8ff; background: rgba(120, 200, 255, 0.16); border-color: rgba(120, 200, 255, 0.48); }
-.scope-all    { color: #f28dff; background: rgba(242, 141, 255, 0.18); border-color: rgba(242, 141, 255, 0.54); }
-.scope-passive{ color: #ffd970; background: rgba(255, 217, 112, 0.16); border-color: rgba(255, 217, 112, 0.5); }
+/* 技の対象範囲バッジ */
+.scope-single { color: #ffae78; background: rgba(255, 174, 120, 0.16); border-color: rgba(255, 174, 120, 0.52); }
+.scope-area   { color: #74ccff; background: rgba(116, 204, 255, 0.16); border-color: rgba(116, 204, 255, 0.52); }
+.scope-all    { color: #f492ff; background: rgba(244, 146, 255, 0.18); border-color: rgba(244, 146, 255, 0.56); }
+.scope-passive{ color: #ffdd72; background: rgba(255, 221, 114, 0.16); border-color: rgba(255, 221, 114, 0.52); }
 
 .scope-badge {
   display: inline-flex;
   align-items: center;
   padding: 1px 5px;
   border-radius: 4px;
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 9.5px;
+  font-weight: 800;
   border: 1px solid;
+  line-height: 1.15;
   white-space: nowrap;
 }
 
-/* 共通リッチボタン */
+/* ゲーム感あるリッチタクティカルボタン群 */
 .btn-primary {
-  background: linear-gradient(180deg, #e5c374 0%, #b58c38 100%);
-  color: #120e06;
-  font-weight: 800;
-  border-radius: 9px;
-  border: 1px solid #ffe7a8;
-  box-shadow: 0 3px 12px rgba(216, 181, 102, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.45);
-  padding: 9px 12px;
+  position: relative;
+  background: linear-gradient(180deg, #f0cf7b 0%, #c6963a 55%, #9f7426 100%);
+  color: #140e04;
+  font-weight: 900;
+  border-radius: 8px;
+  border: 1px solid #ffebb3;
+  box-shadow:
+    0 3px 14px rgba(216, 181, 100, 0.36),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -2px 0 rgba(88, 56, 10, 0.45);
+  padding: 8px 12px;
   font-size: 12px;
+  letter-spacing: 0.03em;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -169,13 +214,14 @@
 }
 
 .btn-secondary {
-  background: linear-gradient(180deg, #1d2438 0%, #131827 100%);
+  background: linear-gradient(180deg, #1d263e 0%, #111728 100%);
   color: var(--text-main);
-  font-weight: 700;
-  border-radius: 9px;
-  border: 1px solid var(--border-subtle);
-  padding: 8px 11px;
-  font-size: 12px;
+  font-weight: 800;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--world-accent) 32%, var(--border-subtle));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  padding: 8px 10px;
+  font-size: 11.5px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -184,33 +230,38 @@
 
 .btn-secondary.active {
   border-color: var(--gold-bright);
-  background: linear-gradient(180deg, rgba(216, 181, 102, 0.25) 0%, rgba(127, 105, 56, 0.22) 100%);
+  background: linear-gradient(180deg, rgba(216, 181, 100, 0.28) 0%, rgba(124, 101, 51, 0.24) 100%);
   color: var(--gold-bright);
+  box-shadow: 0 0 10px rgba(247, 225, 160, 0.22);
 }
 
 .btn-danger {
-  background: linear-gradient(180deg, #69232c 0%, #44151c 100%);
-  color: #ffd7dc;
-  font-weight: 700;
-  border-radius: 9px;
-  border: 1px solid rgba(255, 118, 132, 0.55);
-  padding: 8px 11px;
-  font-size: 12px;
+  background: linear-gradient(180deg, #7d2430 0%, #4d131c 100%);
+  color: #ffe0e4;
+  font-weight: 800;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 126, 142, 0.62);
+  box-shadow: 0 2px 10px rgba(210, 48, 72, 0.3), inset 0 1px 0 rgba(255, 200, 206, 0.2);
+  padding: 8px 10px;
+  font-size: 11.5px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
 }
 
-/* 繊細な背景幾何学パターン（軽量CSSのみ・発熱ゼロ） */
+/* クリスタル幾何学オーナメント背景（軽量CSS・低発熱） */
 .upper-bg-ornament {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.25;
+  opacity: 0.34;
   background-image:
-    radial-gradient(circle at 18% 24%, var(--world-accent) 0, transparent 2px),
-    radial-gradient(circle at 82% 16%, var(--gold-bright) 0, transparent 1.5px),
-    radial-gradient(circle at 68% 72%, var(--world-accent) 0, transparent 2px),
-    radial-gradient(circle at 26% 78%, var(--gold-main) 0, transparent 1.5px);
+    linear-gradient(135deg, color-mix(in srgb, var(--world-accent) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(225deg, color-mix(in srgb, var(--gold-main) 5%, transparent) 1px, transparent 1px),
+    radial-gradient(circle at 18% 22%, var(--world-accent) 0, transparent 2px),
+    radial-gradient(circle at 84% 16%, var(--gold-bright) 0, transparent 1.6px),
+    radial-gradient(circle at 72% 76%, var(--world-accent) 0, transparent 2px),
+    radial-gradient(circle at 22% 80%, var(--gold-main) 0, transparent 1.6px);
+  background-size: 46px 46px, 46px 46px, 100% 100%, 100% 100%, 100% 100%, 100% 100%;
 }

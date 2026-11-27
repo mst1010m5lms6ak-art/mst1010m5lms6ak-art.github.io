@@ -60,9 +60,19 @@
         tone(340, 0.14, 'square', 0.055, 620);
         setTimeout(() => tone(460, 0.18, 'square', 0.055, 790), 110);
         break;
+      case 'summonCharge':
+        tone(240, 0.36, 'sine', 0.05, 760);
+        setTimeout(() => tone(480, 0.22, 'triangle', 0.045, 960), 180);
+        break;
       case 'summon':
         tone(440, 0.12, 'triangle', 0.05, 660);
         setTimeout(() => tone(660, 0.16, 'sine', 0.055, 990), 90);
+        break;
+      case 'summonUR':
+        tone(523, 0.14, 'triangle', 0.06, 784);
+        setTimeout(() => tone(659, 0.14, 'triangle', 0.06, 988), 90);
+        setTimeout(() => tone(784, 0.18, 'sine', 0.07, 1175), 180);
+        setTimeout(() => tone(1046, 0.30, 'sine', 0.075, 1568), 280);
         break;
       case 'rare':
         tone(523, 0.1, 'triangle', 0.055, 659);

@@ -1,10 +1,9 @@
-/* 速度ATBタイムライン・フルオートバトル・ボス/乱入単独戦・一括DPS4項目集計・自動周回エンジン */
+/* ノンストップ速度ATBバトル・攻撃軌跡エフェクト連携・自動周回フリーズ完全修正エンジン */
 (function () {
   'use strict';
 
   const WDATA = window.__IZ_WORLDS__;
   const CDATA = window.__IZ_CHARS__;
-  const EDATA = window.__IZ_EQUIP__;
   const STATE = window.__IZ_STATE__;
   const AUDIO = window.__IZ_AUDIO__;
 
@@ -13,6 +12,7 @@
   let lastTs = 0;
   let onUpdateCb = null;
   let onFinishCb = null;
+  let fxSeq = 0;
 
   /* 属性相性倍率（炎＞風＞水＞炎、光⇔闇相互有利、無は相性なし） */
   function getElementMult(atkEl, defEl) {
@@ -63,21 +63,24 @@
         bossPct: comp.bossPct,
         aoePct: comp.aoePct,
         lifesteal: comp.lifesteal,
-        atb: Math.min(95, 10 + comp.startGauge + idx * 4),
+        atb: Math.min(95, 12 + comp.startGauge + idx * 5),
         skills: comp.def.skills,
         cds: [0, 0, 0],
         buffs: [],
         debuffs: [],
         dead: false,
         fxPop: null,
-        fxTag: ''
+        fxTag: '',
+        fxTagTtl: 0
       };
     });
 
     /* 開幕パッシブ・固有効果適用 */
-    const hasTeamStartGauge = units.some((u) => u.charId === 'c_ur_3');
+    const teamStartBonus =
+      (units.some((u) => u.charId === 'c_ur_3') ? 15 : 0) +
+      (units.some((u) => u.charId === 'c_tw_100') ? 12 : 0);
     units.forEach((u) => {
-      if (hasTeamStartGauge) u.atb = Math.min(98, u.atb + 15);
+      if (teamStartBonus > 0) u.atb = Math.min(98, u.atb + teamStartBonus);
       if (u.charId === 'c_ur_4') {
         addStatus(u.buffs, 'taunt', 1, 2);
         addStatus(u.buffs, 'defUp', 0.2, 2);
@@ -108,14 +111,15 @@
       spd: e.spd,
       crit: e.kind === 'normal' ? 0.08 : 0.14,
       critDmg: 1.4,
-      atb: Math.min(60, 8 + idx * 6),
+      atb: Math.min(60, 8 + idx * 7),
       skills: e.skills,
       cds: [0, 1],
       buffs: [],
       debuffs: [],
       dead: false,
       fxPop: null,
-      fxTag: ''
+      fxTag: '',
+      fxTagTtl: 0
     };
   }
 
@@ -147,6 +151,8 @@
         m.skills.forEach((sk) => {
           if (sk.scope === 'passive' && sk.passiveType === 'teamAtk') mult += sk.val;
         });
+        if (m.charId === 'c_r_2' && u.el === 'fire') mult += 0.08;
+        if (m.charId === 'c_tw_25' && u.el === 'fire') mult += 0.08;
       });
     }
     return Math.max(10, u.atk * Math.max(0.45, mult));
@@ -166,18 +172,20 @@
         m.skills.forEach((sk) => {
           if (sk.scope === 'passive' && sk.passiveType === 'teamSpd') bonus += sk.val;
         });
+        if (m.charId === 'c_ur_chrono') bonus += 10;
       });
     }
     const mult = 1 + getStatusSum(u.buffs, 'spdUp') - getStatusSum(u.debuffs, 'spdDown');
     return Math.max(40, (u.spd + bonus) * Math.max(0.5, mult));
   }
 
-  /* WAVE敵編成生成（ボス・乱入は必ず単独出現！） */
+  /* WAVE敵編成生成（ボス・乱入は必ず単独出現） */
   function spawnWave(cfg, waveNum) {
     session.wave = waveNum;
     session.isBossWave = false;
     session.isIntruderWave = false;
     session.encounterBanner = null;
+    session.activeFx = null;
 
     if (cfg.mode === 'main') {
       const world = WDATA.WORLDS.find((w) => w.id === cfg.worldId);
@@ -185,16 +193,15 @@
       const isFinalBoss = stage.isBoss && waveNum === 5;
       if (isFinalBoss) {
         session.isBossWave = true;
-        session.encounterBanner = { kind: 'boss', text: `BOSS 出現 — ${WDATA.ENEMIES[stage.bossId].name}`, timer: 1.25 };
+        session.encounterBanner = { kind: 'boss', text: `強敵出現 — ${WDATA.ENEMIES[stage.bossId].name}`, timer: 1.15 };
         AUDIO.play('boss');
         return [buildEnemyUnit(stage.bossId, stage.power, 0, true)];
       }
-      /* ボスWAVE以外で確率乱入（1周最大1回・必ず単独出現！） */
       if (!session.runHadIntruder && Math.random() < 0.16) {
         session.runHadIntruder = true;
         session.isIntruderWave = true;
         const intEnemy = WDATA.ENEMIES[world.intruderId];
-        session.encounterBanner = { kind: 'intruder', text: `乱入出現 — ${intEnemy.name}`, timer: 1.35 };
+        session.encounterBanner = { kind: 'intruder', text: `乱入出現 — ${intEnemy.name}`, timer: 1.25 };
         AUDIO.play('intruder');
         return [buildEnemyUnit(world.intruderId, stage.power * 1.06, 0, true)];
       }
@@ -213,7 +220,7 @@
       const raid = WDATA.RAIDS.find((r) => r.id === cfg.raidId);
       const diffMult = [1.0, 1.55, 2.25][cfg.diffIdx || 0];
       session.isBossWave = true;
-      session.encounterBanner = { kind: 'boss', text: `討伐BOSS — ${WDATA.ENEMIES[raid.bossId].name}`, timer: 1.3 };
+      session.encounterBanner = { kind: 'boss', text: `討伐戦 — ${WDATA.ENEMIES[raid.bossId].name}`, timer: 1.2 };
       AUDIO.play('boss');
       return [buildEnemyUnit(raid.bossId, raid.power * diffMult, 0, true)];
     }
@@ -222,7 +229,7 @@
       const g = WDATA.GAUNTLETS.find((x) => x.id === cfg.gauntletId);
       const st = g.stages[waveNum - 1];
       session.isBossWave = true;
-      session.encounterBanner = { kind: 'boss', text: `総力連戦 ${st.label} — ${WDATA.ENEMIES[st.bossId].name}`, timer: 1.25 };
+      session.encounterBanner = { kind: 'boss', text: `総力連戦 ${st.label} — ${WDATA.ENEMIES[st.bossId].name}`, timer: 1.15 };
       AUDIO.play('boss');
       return [buildEnemyUnit(st.bossId, g.power * st.mult, 0, true)];
     }
@@ -231,7 +238,7 @@
       const tf = WDATA.getTowerFloor(cfg.floor);
       if (tf.isBoss && waveNum === session.maxWave) {
         session.isBossWave = true;
-        session.encounterBanner = { kind: 'boss', text: `第${tf.floor}層 BOSS — ${WDATA.ENEMIES[tf.bossId].name}`, timer: 1.25 };
+        session.encounterBanner = { kind: 'boss', text: `第${tf.floor}層 守護者 — ${WDATA.ENEMIES[tf.bossId].name}`, timer: 1.15 };
         AUDIO.play('boss');
         return [buildEnemyUnit(tf.bossId, tf.power, 0, true)];
       }
@@ -249,7 +256,7 @@
       const tr = WDATA.TRIALS.find((t) => t.id === cfg.trialId);
       if (waveNum === session.maxWave) {
         session.isBossWave = true;
-        session.encounterBanner = { kind: 'boss', text: `試練BOSS — ${WDATA.ENEMIES[tr.bossId].name}`, timer: 1.25 };
+        session.encounterBanner = { kind: 'boss', text: `試練の主 — ${WDATA.ENEMIES[tr.bossId].name}`, timer: 1.15 };
         AUDIO.play('boss');
         return [buildEnemyUnit(tr.bossId, tr.power, 0, true)];
       }
@@ -283,7 +290,6 @@
       return sorted.slice(0, cnt);
     }
 
-    /* 最初の1体（挑発優先または重みランダム） */
     let first = null;
     if (preferTaunt) {
       const taunters = alive.filter((u) => hasStatus(u.buffs, 'taunt'));
@@ -323,12 +329,11 @@
       if (needHeal && heals.length > 0) return heals[0];
       return usable.find((o) => o.sk.kind !== 'heal') || usable[0];
     }
-    /* 基本は強い技（3 → 2 → 1）を優先発動 */
     usable.sort((a, b) => b.idx - a.idx);
     return usable[0];
   }
 
-  /* 敵AI技選択（技2枠：CT上がれば技2優先） */
+  /* 敵AI技選択 */
   function chooseEnemySkill(u) {
     if (u.skills[1] && u.cds[1] <= 0) return { sk: u.skills[1], idx: 1 };
     return { sk: u.skills[0], idx: 0 };
@@ -336,10 +341,17 @@
 
   function scopeLabel(scope) {
     if (scope === 'single') return '単体';
-    if (scope === 'area2') return '範囲(2体)';
-    if (scope === 'area3') return '範囲(3体)';
+    if (scope === 'area2') return '範囲2体';
+    if (scope === 'area3') return '範囲3体';
     if (scope === 'all') return '全体';
     return '常時';
+  }
+
+  function buildTargetSummary(targets, scope, isFriendly) {
+    if (targets.length === 0) return '';
+    if (scope === 'all') return isFriendly ? '味方全体' : '敵全体';
+    if (targets.length === 1) return targets[0].name;
+    return `${targets[0].name} ほか${targets.length - 1}体`;
   }
 
   /* 1アクション実行 */
@@ -354,9 +366,13 @@
     if (burnVal > 0 && !actor.dead) {
       const bDmg = Math.max(1, Math.round(actor.maxHp * burnVal));
       actor.hp = Math.max(0, actor.hp - bDmg);
-      actor.fxPop = { text: `-${bDmg}`, cls: 'dmg', ttl: 0.65 };
+      actor.fxPop = { text: `火傷 -${bDmg}`, cls: 'dmg', ttl: 0.65, seq: ++fxSeq };
       if (actor.side === 'ally') getDpsRec(actor.charId).dmgTaken += bDmg;
-      if (actor.hp <= 0) actor.dead = true;
+      if (actor.hp <= 0) {
+        actor.dead = true;
+        actor.atb = 0;
+        if (actor.side === 'enemy') session.defeatedThisRun.push(actor.enemyId);
+      }
     }
     if (actor.dead) return;
 
@@ -369,47 +385,46 @@
     const sk = picked.sk;
     if (sk.ct > 0) actor.cds[picked.idx] = sk.ct;
 
-    /* 演出クリア＆セット */
-    allies.forEach((u) => { u.fxTag = ''; });
-    enemies.forEach((u) => { u.fxTag = ''; });
     actor.fxTag = 'acting';
-
-    session.actionBanner = {
-      side: actor.side,
-      actorName: actor.name,
-      skillName: sk.name,
-      scope: sk.scope,
-      scopeText: scopeLabel(sk.scope)
-    };
+    actor.fxTagTtl = 0.44;
 
     const skillBonus = 1 + (actor.skillPct || 0);
+    let targets = [];
+    let fxKind = 'attack';
 
     /* 回復技 */
     if (sk.kind === 'heal') {
-      const targets = pickTargets(sk.scope, ownTeam, false, true);
+      fxKind = 'heal';
+      targets = pickTargets(sk.scope, ownTeam, false, true);
       const baseHeal = effAtk(actor, ownTeam) * (sk.mult || 1.2) * (1 + (actor.healPct || 0)) * skillBonus;
-      const ariaBonus = allies.some((a) => !a.dead && a.charId === 'c_ssr_8') ? 0.14 : 0;
+      const teamHealBonus =
+        (allies.some((a) => !a.dead && a.charId === 'c_ssr_8') ? 0.14 : 0) +
+        (allies.some((a) => !a.dead && a.charId === 'c_ur_6') ? 0.14 : 0);
       targets.forEach((t) => {
-        const amount = Math.max(1, Math.round(baseHeal * (1 + (t.healRcvPct || 0) + ariaBonus)));
-        const before = t.hp;
+        const amount = Math.max(1, Math.round(baseHeal * (1 + (t.healRcvPct || 0) + teamHealBonus)));
         t.hp = Math.min(t.maxHp, t.hp + amount);
         t.trailHp = t.hp;
-        t.fxTag = 'healed';
-        t.fxPop = { text: `+${amount}`, cls: 'heal', ttl: 0.68 };
+        if (t.uid !== actor.uid) {
+          t.fxTag = 'healed';
+          t.fxTagTtl = 0.44;
+        }
+        t.fxPop = { text: `+${amount}`, cls: 'heal', ttl: 0.70, seq: ++fxSeq };
         if (sk.cleanse) t.debuffs = [];
         if (sk.buff) addStatus(t.buffs, sk.buff.type, sk.buff.val, sk.buff.turns);
         if (actor.side === 'ally') {
-          const actual = Math.max(1, t.hp - before > 0 ? amount : amount);
-          getDpsRec(actor.charId).healDone += actual;
-          getDpsRec(t.charId).healRcvd += actual;
+          getDpsRec(actor.charId).healDone += amount;
+          getDpsRec(t.charId).healRcvd += amount;
         }
       });
       AUDIO.play('heal');
     } else if (sk.kind === 'allyBuff') {
-      /* 味方バフ技 */
-      const targets = pickTargets(sk.scope, ownTeam, false, false);
+      fxKind = 'allyBuff';
+      targets = pickTargets(sk.scope, ownTeam, false, false);
       targets.forEach((t) => {
-        t.fxTag = 'healed';
+        if (t.uid !== actor.uid) {
+          t.fxTag = 'healed';
+          t.fxTagTtl = 0.44;
+        }
         if (sk.buff) addStatus(t.buffs, sk.buff.type, sk.buff.val, sk.buff.turns);
         if (sk.buff2) addStatus(t.buffs, sk.buff2.type, sk.buff2.val, sk.buff2.turns);
         if (sk.gaugeUp) t.atb = Math.min(99, t.atb + sk.gaugeUp);
@@ -417,20 +432,20 @@
           const amt = Math.max(1, Math.round(effAtk(actor, ownTeam) * sk.healMult * (1 + (actor.healPct || 0))));
           t.hp = Math.min(t.maxHp, t.hp + amt);
           t.trailHp = t.hp;
-          t.fxPop = { text: `+${amt}`, cls: 'heal', ttl: 0.65 };
+          t.fxPop = { text: `+${amt}`, cls: 'heal', ttl: 0.68, seq: ++fxSeq };
           if (actor.side === 'ally') {
             getDpsRec(actor.charId).healDone += amt;
             getDpsRec(t.charId).healRcvd += amt;
           }
         } else {
-          t.fxPop = { text: '強化', cls: 'buff', ttl: 0.55 };
+          t.fxPop = { text: '強化', cls: 'buff', ttl: 0.56, seq: ++fxSeq };
         }
       });
       if (sk.selfHeal) {
         const sh = Math.round(actor.maxHp * sk.selfHeal);
         actor.hp = Math.min(actor.maxHp, actor.hp + sh);
         actor.trailHp = actor.hp;
-        actor.fxPop = { text: `+${sh}`, cls: 'heal', ttl: 0.65 };
+        actor.fxPop = { text: `+${sh}`, cls: 'heal', ttl: 0.68, seq: ++fxSeq };
         if (actor.side === 'ally') {
           getDpsRec(actor.charId).healDone += sh;
           getDpsRec(actor.charId).healRcvd += sh;
@@ -439,8 +454,8 @@
       if (sk.selfBuff) addStatus(actor.buffs, sk.selfBuff.type, sk.selfBuff.val, sk.selfBuff.turns);
       AUDIO.play('heal');
     } else {
-      /* 攻撃技 */
-      const targets = pickTargets(sk.scope, oppTeam, actor.side === 'enemy', false);
+      fxKind = 'attack';
+      targets = pickTargets(sk.scope, oppTeam, actor.side === 'enemy', false);
       const isAoe = sk.scope !== 'single';
       let anyCrit = false;
 
@@ -453,9 +468,12 @@
         let extraDmg = 1 + (actor.dmgPct || 0);
         if (isAoe) extraDmg += (actor.aoePct || 0);
         if (actor.side === 'ally' && t.kind !== 'normal') extraDmg += (actor.bossPct || 0);
-        if (actor.charId === 'c_ur_2' && (t.hp / t.maxHp) >= 0.7) extraDmg += 0.2;
+        if (actor.charId === 'c_ur_2' && (t.hp / t.maxHp) >= 0.7) extraDmg += 0.20;
+        if (actor.charId === 'c_ur_ignis' && hasStatus(t.debuffs, 'burn')) extraDmg += 0.25;
+        if (actor.charId === 'c_ur_kuchi' && t.debuffs.length > 0) extraDmg += 0.24;
+        if (actor.charId === 'c_ur_5' && t.el === 'dark') extraDmg += 0.18;
         if (actor.charId === 'c_ssr_2' && hasStatus(t.debuffs, 'burn')) extraDmg += 0.22;
-        if (actor.charId === 'c_ssr_4' && sk.scope === 'single') extraDmg += 0.2;
+        if (actor.charId === 'c_ssr_4' && sk.scope === 'single') extraDmg += 0.20;
         if (actor.side === 'ally' && allies.some((a) => !a.dead && a.charId === 'c_ssr_5') && actor.el === 'water') extraDmg += 0.12;
         if (actor.side === 'ally' && allies.some((a) => !a.dead && a.charId === 'c_ssr_7') && t.debuffs.length > 0) extraDmg += 0.10;
         if (actor.charId === 'c_r_5' && t.el === 'dark') extraDmg += 0.12;
@@ -470,11 +488,12 @@
 
         t.hp = Math.max(0, t.hp - dmg);
         t.fxTag = 'targeted';
+        t.fxTagTtl = 0.44;
         const popLabel = isCrit
           ? `会心 ${dmg}`
           : (elMult > 1.05 ? `弱点 ${dmg}` : (elMult < 0.95 ? `軽減 ${dmg}` : `${dmg}`));
         const popCls = isCrit ? 'crit' : (elMult > 1.05 ? 'weak' : (elMult < 0.95 ? 'resist' : 'dmg'));
-        t.fxPop = { text: popLabel, cls: popCls, ttl: 0.72 };
+        t.fxPop = { text: popLabel, cls: popCls, ttl: 0.72, seq: ++fxSeq };
 
         if (actor.side === 'ally') {
           getDpsRec(actor.charId).dmgDealt += dmg;
@@ -487,7 +506,6 @@
           }
         } else {
           getDpsRec(t.charId).dmgTaken += dmg;
-          /* 零翼ノヴァの被弾時パッシブ */
           if (t.charId === 'c_ur_4' && t.hp > 0) {
             allies.forEach((a) => { if (!a.dead) a.atb = Math.min(99, a.atb + 5); });
           }
@@ -498,9 +516,9 @@
 
         if (t.hp <= 0) {
           t.dead = true;
+          t.atb = 0;
           if (t.side === 'enemy') {
             session.defeatedThisRun.push(t.enemyId);
-            /* 夜叉姫カグヤ撃破時ゲージ回収 */
             if (actor.charId === 'c_ur_2') actor.atb = Math.min(99, actor.atb + 35);
           }
         }
@@ -512,6 +530,29 @@
       }
       AUDIO.play(anyCrit ? 'crit' : 'hit');
     }
+
+    const targetSummary = buildTargetSummary(targets, sk.scope, fxKind !== 'attack');
+    session.actionBanner = {
+      side: actor.side,
+      el: actor.el,
+      kind: fxKind,
+      actorName: actor.name,
+      skillName: sk.name,
+      targetSummary,
+      scope: sk.scope,
+      scopeText: scopeLabel(sk.scope)
+    };
+
+    session.activeFx = {
+      seq: ++fxSeq,
+      actorUid: actor.uid,
+      actorSide: actor.side,
+      el: actor.el,
+      kind: fxKind,
+      targetUids: targets.map((t) => t.uid),
+      ttl: 0.56,
+      maxTtl: 0.56
+    };
 
     /* 行動終了パッシブ（自動回復オーラ） */
     if (actor.side === 'ally' && !actor.dead) {
@@ -544,7 +585,6 @@
     if (won) agg.wins += 1; else agg.losses += 1;
     if (session.runHadIntruder && won) agg.intruders += 1;
 
-    /* 累計DPS合算 */
     session.dps.forEach((d) => {
       let t = agg.dps.find((x) => x.charId === d.charId);
       if (!t) {
@@ -559,7 +599,8 @@
 
     const reward = {
       stone: 0, crystal: 0, gold: 0, soul: 0,
-      mats: {}, shards: {},
+      mats: {}, shards: {}, bossMarks: {},
+      grantCharIds: [],
       defeatedEnemyIds: session.defeatedThisRun.slice(),
       hadIntruder: session.runHadIntruder && won,
       clearKey: null,
@@ -567,19 +608,19 @@
     };
 
     if (won) {
+      const snapBefore = STATE.getSnapshot();
       if (cfg.mode === 'main') {
         const wIdx = WDATA.WORLDS.findIndex((w) => w.id === cfg.worldId);
         const world = WDATA.WORLDS[wIdx];
         const stage = world.stages[cfg.stageNum - 1];
         const stageKey = `${world.id}_${stage.num}`;
-        const firstClear = !STATE.getSnapshot().clearedStages[stageKey];
+        const firstClear = !snapBefore.clearedStages[stageKey];
 
-        reward.stone = (firstClear ? 140 : 28) + wIdx * 8 + (stage.isBoss ? 18 : 0) + (session.runHadIntruder ? 45 : 0);
-        reward.crystal = 36 + wIdx * 18 + stage.num * 6 + (stage.isBoss ? 25 : 0);
-        reward.gold = 95 + wIdx * 45 + stage.num * 18;
+        reward.stone = (firstClear ? 140 : 28) + wIdx * 10 + (stage.isBoss ? 22 : 0) + (session.runHadIntruder ? 45 : 0);
+        reward.crystal = 36 + wIdx * 20 + stage.num * 6 + (stage.isBoss ? 26 : 0);
+        reward.gold = 95 + wIdx * 50 + stage.num * 18;
         reward.clearKey = { mode: 'main', id: stageKey };
 
-        /* 通常装備ドロップ（1〜2個、乱入撃破時はさらに+1高品質寄り！） */
         const dropCount = (stage.isBoss ? 2 : 1) + (session.runHadIntruder ? 1 : 0);
         for (let i = 0; i < dropCount; i++) {
           const sid = world.drops[Math.floor(Math.random() * world.drops.length)];
@@ -593,21 +634,22 @@
           }
         }
       } else if (cfg.mode === 'raid') {
-        /* 異界討伐：通常装備ドロップは一切なし！限定装備素材＆限定キャラ欠片を報酬とする */
         const raid = WDATA.RAIDS.find((r) => r.id === cfg.raidId);
         const diffIdx = cfg.diffIdx || 0;
-        const firstClear = !STATE.getSnapshot().clearedRaids[raid.id];
+        const firstClear = !snapBefore.clearedRaids[raid.id];
         const matGain = 1 + diffIdx;
         const shardGain = diffIdx >= 2 ? 2 : 1;
+        const markGain = diffIdx === 2 ? 2 : (diffIdx === 1 ? 1 : (firstClear || Math.random() < 0.55 ? 1 : 0));
         reward.stone = (firstClear ? 220 : 40) + diffIdx * 20;
         reward.crystal = 75 + diffIdx * 45;
         reward.gold = 220 + diffIdx * 120;
         reward.mats[raid.matId] = matGain;
         reward.shards[raid.charId] = shardGain;
+        if (markGain > 0) reward.bossMarks[raid.bossCharId] = markGain;
         reward.clearKey = { mode: 'raid', id: raid.id };
       } else if (cfg.mode === 'gauntlet') {
         const g = WDATA.GAUNTLETS.find((x) => x.id === cfg.gauntletId);
-        const firstClear = !STATE.getSnapshot().clearedGauntlets[g.id];
+        const firstClear = !snapBefore.clearedGauntlets[g.id];
         reward.stone = firstClear ? g.rewardStone : Math.round(g.rewardStone * 0.25);
         reward.crystal = 180;
         reward.soul = 65;
@@ -615,16 +657,18 @@
         reward.clearKey = { mode: 'gauntlet', id: g.id };
       } else if (cfg.mode === 'tower') {
         const tf = WDATA.getTowerFloor(cfg.floor);
-        const firstClear = tf.floor > STATE.getSnapshot().towerMaxCleared;
+        const firstClear = tf.floor > snapBefore.towerMaxCleared;
         reward.stone = firstClear ? tf.firstStone : 35;
         reward.crystal = 60 + tf.floor * 8;
         reward.gold = 140 + tf.floor * 20;
         reward.clearKey = { mode: 'tower', floor: tf.floor };
-        if (firstClear && tf.floor === 5) reward.unlockAbility = 'ab_tower_5';
-        if (firstClear && tf.floor === 15) reward.unlockAbility = 'ab_tower_15';
+        if (firstClear && tf.milestone) {
+          if (tf.milestone.kind === 'ability') reward.unlockAbility = tf.milestone.id;
+          if (tf.milestone.kind === 'char') reward.grantCharIds.push(tf.milestone.id);
+        }
       } else if (cfg.mode === 'trial') {
         const tr = WDATA.TRIALS.find((t) => t.id === cfg.trialId);
-        const firstClear = !STATE.getSnapshot().clearedTrials[tr.id];
+        const firstClear = !snapBefore.clearedTrials[tr.id];
         reward.stone = firstClear ? tr.rewardStone : 45;
         reward.crystal = 120;
         reward.soul = 45;
@@ -638,22 +682,30 @@
       agg.soul += reward.soul;
       Object.entries(reward.mats).forEach(([k, v]) => { agg.mats[k] = (agg.mats[k] || 0) + v; });
       Object.entries(reward.shards).forEach(([k, v]) => { agg.shards[k] = (agg.shards[k] || 0) + v; });
+      Object.entries(reward.bossMarks).forEach(([k, v]) => { agg.bossMarks[k] = (agg.bossMarks[k] || 0) + v; });
       if (reward.unlockAbility) agg.unlockedAbilities.push(reward.unlockAbility);
       AUDIO.play('win');
     }
 
-    STATE.applyBattleReward(reward);
+    const applied = STATE.applyBattleReward(reward);
+    if (applied && applied.grantedChars && applied.grantedChars.length > 0) {
+      applied.grantedChars.forEach((gc) => agg.grantedChars.push(gc));
+    }
 
-    /* 自動周回判定：敗北しても自動リトライ継続！手動で停止予約されたらその周終了後にトータルリザルトへ！ */
+    /* 自動周回判定：停止予約がなければ次の周へスムーズに連続移行 */
     if (session.autoLoop && !session.stopRequested) {
-      session.transitionTimer = 0.65;
+      session.transitionTimer = 0.55;
       session.pendingRestart = true;
+      session.activeFx = null;
       session.actionBanner = {
         side: won ? 'ally' : 'enemy',
+        el: 'none',
+        kind: 'info',
         actorName: won ? `第${agg.runs}周 勝利` : `第${agg.runs}周 敗北`,
         skillName: '次の周回へ移行中',
+        targetSummary: `累計${agg.runs}周`,
         scope: 'all',
-        scopeText: `累計${agg.runs}周`
+        scopeText: ''
       };
       return;
     }
@@ -676,8 +728,11 @@
     session.runHadIntruder = false;
     session.defeatedThisRun = [];
     session.pendingRestart = false;
-    session.actionDelay = 0.35;
+    session.transitionTimer = 0;
+    session.waveWaitTimer = 0;
+    session.turnCooldown = 0.22;
     session.actionBanner = null;
+    session.activeFx = null;
 
     if (cfg.mode === 'gauntlet') {
       session.maxWave = 3;
@@ -693,11 +748,11 @@
     session.enemies = spawnWave(cfg, 1);
   }
 
-  /* メインバトルティック（ぬるぬる60fps対応・軽量計算） */
+  /* メインバトルティック（ノンストップATB進行＋周回フリーズ完全防止） */
   function tick(ts) {
     if (!session) return;
     if (!lastTs) lastTs = ts;
-    const rawDt = Math.min(0.08, (ts - lastTs) / 1000);
+    const rawDt = Math.min(0.08, Math.max(0.001, (ts - lastTs) / 1000));
     lastTs = ts;
     const speed = STATE.getSnapshot().settings.speed || 2;
     const dt = rawDt * speed;
@@ -707,12 +762,23 @@
       session.encounterBanner.timer -= rawDt;
       if (session.encounterBanner.timer <= 0) session.encounterBanner = null;
     }
+    if (session.activeFx) {
+      session.activeFx.ttl -= rawDt;
+      if (session.activeFx.ttl <= 0) session.activeFx = null;
+    }
 
     const updateFx = (u) => {
-      if (u.trailHp > u.hp) u.trailHp = Math.max(u.hp, u.trailHp - u.maxHp * rawDt * 1.4);
+      if (u.trailHp > u.hp) u.trailHp = Math.max(u.hp, u.trailHp - u.maxHp * rawDt * 1.5);
       if (u.fxPop) {
         u.fxPop.ttl -= rawDt;
         if (u.fxPop.ttl <= 0) u.fxPop = null;
+      }
+      if (u.fxTagTtl > 0) {
+        u.fxTagTtl -= rawDt;
+        if (u.fxTagTtl <= 0) {
+          u.fxTagTtl = 0;
+          u.fxTag = '';
+        }
       }
     };
     session.allies.forEach(updateFx);
@@ -721,10 +787,23 @@
     if (session.pendingRestart) {
       session.transitionTimer -= rawDt;
       if (session.transitionTimer <= 0) {
+        /* 待機中に停止予約された場合は即座にリザルトへ終了 */
+        if (session.stopRequested) {
+          const finalReport = {
+            cfg: { ...session.cfg },
+            lastWon: session.aggregate.wins > 0,
+            autoLoop: session.autoLoop,
+            aggregate: session.aggregate
+          };
+          stopLoop();
+          session = null;
+          if (onFinishCb) onFinishCb(finalReport);
+          return;
+        }
         startRunInstance();
       }
-      if (onUpdateCb) onUpdateCb(session);
-      rafId = requestAnimationFrame(tick);
+      if (session && onUpdateCb) onUpdateCb(session);
+      if (session) rafId = requestAnimationFrame(tick);
       return;
     }
 
@@ -733,12 +812,10 @@
       if (session.waveWaitTimer <= 0) {
         const nextWave = session.wave + 1;
         if (session.cfg.mode === 'gauntlet') {
-          /* 総力連戦：次のパーティへ交代！ */
           const nextTeam = STATE.getSnapshot().gauntletParties[nextWave - 1].filter(Boolean);
           session.allies = buildAllyUnits(nextTeam);
           session.allies.forEach((a) => getDpsRec(a.charId));
         } else {
-          /* WAVE跨ぎ小回復＆クールタイム1短縮で快適な周回テンポ */
           session.allies.forEach((a) => {
             if (!a.dead) {
               a.hp = Math.min(a.maxHp, a.hp + Math.round(a.maxHp * 0.08));
@@ -747,46 +824,51 @@
           });
         }
         session.enemies = spawnWave(session.cfg, nextWave);
-        session.actionDelay = 0.25;
+        session.turnCooldown = 0.2;
       }
-      if (onUpdateCb) onUpdateCb(session);
-      rafId = requestAnimationFrame(tick);
+      if (session && onUpdateCb) onUpdateCb(session);
+      if (session) rafId = requestAnimationFrame(tick);
       return;
     }
 
-    if (session.actionDelay > 0) {
-      session.actionDelay -= dt;
-    } else {
-      /* 全生存ユニットのATBゲージをぬるぬる加算 */
-      const allAlive = session.allies.concat(session.enemies).filter((u) => !u.dead);
-      let ready = null;
-      for (const u of allAlive) {
-        const team = u.side === 'ally' ? session.allies : session.enemies;
-        u.atb += effSpd(u, team) * dt * 0.42;
-        if (u.atb >= 100 && (!ready || u.atb > ready.atb)) ready = u;
-      }
-      if (ready) {
-        executeTurn(ready);
-        session.actionDelay = 0.52;
-
-        const enemiesAlive = session.enemies.some((e) => !e.dead);
-        const alliesAlive = session.allies.some((a) => !a.dead);
-        if (!enemiesAlive) {
-          if (session.wave < session.maxWave) {
-            session.waveWaitTimer = 0.48;
-          } else {
-            finishSingleRun(true);
-            return;
-          }
-        } else if (!alliesAlive) {
-          finishSingleRun(false);
-          return;
+    /* ノンストップATB：攻撃演出中も全生存ユニットのゲージと行動順が止まらず進行する！ */
+    const allAlive = session.allies.concat(session.enemies).filter((u) => !u.dead);
+    let ready = null;
+    for (const u of allAlive) {
+      const team = u.side === 'ally' ? session.allies : session.enemies;
+      u.atb = Math.min(100, u.atb + effSpd(u, team) * dt * 0.48);
+      if (u.atb >= 100) {
+        if (!ready || effSpd(u, team) > effSpd(ready, ready.side === 'ally' ? session.allies : session.enemies)) {
+          ready = u;
         }
       }
     }
 
-    if (onUpdateCb) onUpdateCb(session);
-    rafId = requestAnimationFrame(tick);
+    if (session.turnCooldown > 0) {
+      session.turnCooldown = Math.max(0, session.turnCooldown - dt);
+    }
+
+    if (session.turnCooldown <= 0 && ready) {
+      executeTurn(ready);
+      session.turnCooldown = 0.36;
+
+      const enemiesAlive = session.enemies.some((e) => !e.dead);
+      const alliesAlive = session.allies.some((a) => !a.dead);
+      if (!enemiesAlive) {
+        if (session.wave < session.maxWave) {
+          session.waveWaitTimer = 0.42;
+        } else {
+          finishSingleRun(true);
+          if (!session) return; /* 通常終了時はここで安全離脱。周回継続時は下段でRAF継続！ */
+        }
+      } else if (!alliesAlive) {
+        finishSingleRun(false);
+        if (!session) return;
+      }
+    }
+
+    if (session && onUpdateCb) onUpdateCb(session);
+    if (session) rafId = requestAnimationFrame(tick);
   }
 
   function stopLoop() {
@@ -816,7 +898,8 @@
       dps: [],
       actionBanner: null,
       encounterBanner: null,
-      actionDelay: 0.35,
+      activeFx: null,
+      turnCooldown: 0.22,
       waveWaitTimer: 0,
       pendingRestart: false,
       transitionTimer: 0,
@@ -831,6 +914,8 @@
         soul: 0,
         mats: {},
         shards: {},
+        bossMarks: {},
+        grantedChars: [],
         equips: [],
         autoSoldCount: 0,
         autoSoldGold: 0,

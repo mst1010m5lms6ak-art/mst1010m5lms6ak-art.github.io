@@ -1,13 +1,13 @@
 {
   "name": "異界残響",
   "short_name": "異界残響",
-  "description": "多彩な異界を巡り編成と共鳴を極める買い切り2D戦略RPG",
+  "description": "十の異界を巡り編成と共鳴を極める買い切り2D戦略RPG",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#080a10",
-  "theme_color": "#080a10",
+  "background_color": "#05070d",
+  "theme_color": "#05070d",
   "lang": "ja",
   "icons": [
     {

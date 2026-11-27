@@ -1,4 +1,4 @@
-/* 状態管理（IIFE完全隠蔽・厳密ソート・育成・装備・自動/一括売却・召喚・クラフト・セキュリティ永続化） */
+/* 状態管理（IIFE完全隠蔽・必須4段ソート・共鳴・覇王の印・塔100F・装備80部位図鑑・暗号化永続化） */
 (function () {
   'use strict';
 
@@ -75,13 +75,14 @@
       .map((a) => a.id);
 
     return {
-      ver: 1,
+      ver: 2,
       stone: 1500,
       crystal: 450,
       soul: 120,
       gold: 1600,
       mats: {},
       shards: {},
+      bossMarks: {},
       roster,
       party: ['c_n_1', 'c_n_2', 'c_n_5', 'c_n_4'],
       gauntletParties: [
@@ -97,7 +98,12 @@
       clearedTrials: {},
       towerMaxCleared: 0,
       codexEnemies: {},
-      codexEquips: { s_sky: true, s_oath: true },
+      codexEquips: {
+        's_sky:weapon': true,
+        's_sky:emblem': true,
+        's_oath:armor': true,
+        's_oath:accessory': true
+      },
       stats: { totalRuns: 0, totalIntruders: 0, totalSummons: 0 },
       settings: {
         speed: 2,
@@ -107,7 +113,7 @@
     };
   }
 
-  /* スキーマ・範囲の厳密検証（改ざん・破損対策） */
+  /* スキーマ・範囲の厳密検証（旧セーブ互換＆改ざん・破損対策） */
   function sanitizeState(raw) {
     const base = createInitialState();
     if (!raw || typeof raw !== 'object') return base;
@@ -129,11 +135,17 @@
         if (CDATA.CHAR_MAP[k]) base.shards[k] = SEC.clampInt(v, 0, 9999, 0);
       });
     }
+    if (raw.bossMarks && typeof raw.bossMarks === 'object') {
+      base.bossMarks = {};
+      Object.entries(raw.bossMarks).forEach(([k, v]) => {
+        if (CDATA.CHAR_MAP[k]) base.bossMarks[k] = SEC.clampInt(v, 0, 9999, 0);
+      });
+    }
 
     if (Array.isArray(raw.equips)) {
       const seen = new Set();
       base.equips = [];
-      raw.equips.slice(0, 600).forEach((eq) => {
+      raw.equips.slice(0, 800).forEach((eq) => {
         if (!eq || typeof eq.id !== 'string' || seen.has(eq.id)) return;
         if (!EDATA.SERIES_MAP[eq.seriesId]) return;
         if (!EDATA.SLOTS.some((sl) => sl.id === eq.slotId)) return;
@@ -164,7 +176,7 @@
           ? r.board.filter((k) => CDATA.BOARD_TEMPLATES.some((t) => t.key === k))
           : [];
         const abilities = Array.isArray(r.abilities)
-          ? r.abilities.filter((id) => Boolean(EDATA.ABILITY_MAP[id])).slice(0, 3)
+          ? r.abilities.map((id) => (id === 'ab_tower_5' ? 'ab_tower_10' : (id === 'ab_tower_15' ? 'ab_tower_40' : id))).filter((id) => Boolean(EDATA.ABILITY_MAP[id])).slice(0, 3)
           : [];
         base.roster[cid] = {
           awake: SEC.clampInt(r.awake, 0, 5, 0),
@@ -194,7 +206,10 @@
 
     if (Array.isArray(raw.unlockedAbilities)) {
       const set = new Set(base.unlockedAbilities);
-      raw.unlockedAbilities.forEach((id) => { if (EDATA.ABILITY_MAP[id]) set.add(id); });
+      raw.unlockedAbilities.forEach((rawId) => {
+        const id = rawId === 'ab_tower_5' ? 'ab_tower_10' : (rawId === 'ab_tower_15' ? 'ab_tower_40' : rawId);
+        if (EDATA.ABILITY_MAP[id]) set.add(id);
+      });
       base.unlockedAbilities = Array.from(set);
     }
 
@@ -213,9 +228,19 @@
     if (raw.codexEquips && typeof raw.codexEquips === 'object') {
       base.codexEquips = { ...base.codexEquips };
       Object.keys(raw.codexEquips).forEach((k) => {
-        if (EDATA.SERIES_MAP[k]) base.codexEquips[k] = true;
+        if (EDATA.PART_MAP[k]) {
+          base.codexEquips[k] = true;
+        } else if (EDATA.SERIES_MAP[k]) {
+          /* 旧シリーズ単位セーブを4部位へ互換展開 */
+          EDATA.SLOTS.forEach((sl) => { base.codexEquips[`${k}:${sl.id}`] = true; });
+        }
       });
     }
+    /* 所持装備は図鑑発見済みに反映 */
+    base.equips.forEach((eq) => {
+      base.codexEquips[`${eq.seriesId}:${eq.slotId}`] = true;
+    });
+
     if (raw.stats && typeof raw.stats === 'object') {
       base.stats = {
         totalRuns: SEC.clampInt(raw.stats.totalRuns, 0, 99999999, 0),
@@ -239,10 +264,10 @@
       S = sanitizeState(loaded.data);
     } else if (loaded.status === 'restored_backup') {
       S = sanitizeState(loaded.data);
-      loadNotice = 'データ整合性を検証し、直前の正常バックアップから復旧しました';
+      loadNotice = '直前の正常な記録から復旧しました';
     } else if (loaded.status === 'tampered') {
       S = createInitialState();
-      loadNotice = '不正なデータ改変を検知したため、安全な初期状態で起動しました';
+      loadNotice = 'データの異常を検知したため初期状態で開始しました';
       persist();
     } else {
       S = createInitialState();
@@ -279,9 +304,22 @@
   /* 装備単体ステータス値（品質倍率×シリーズ階級） */
   function getEquipStatValue(eq) {
     const series = EDATA.SERIES_MAP[eq.seriesId];
-    const slot = EDATA.SLOTS.find((s) => s.id === eq.slotId);
+    const slot = EDATA.SLOT_MAP[eq.slotId];
     const qual = EDATA.QUALITIES[eq.quality];
+    if (!series || !slot || !qual) return 0;
     return Math.round(slot.baseVal * series.tier * qual.mult);
+  }
+
+  /* 装備図鑑用：品質5段階すべてのパラメータ上昇値一覧 */
+  function getEquipPartPreviewValues(seriesId, slotId) {
+    const series = EDATA.SERIES_MAP[seriesId];
+    const slot = EDATA.SLOT_MAP[slotId];
+    if (!series || !slot) return [];
+    return EDATA.QUALITIES.map((q) => ({
+      qId: q.id,
+      name: q.name,
+      val: Math.round(slot.baseVal * series.tier * q.mult)
+    }));
   }
 
   /* キャラの自由アビリティ解放枠数（覚醒0-1:1枠, 覚醒2-3:2枠, 覚醒4-5:3枠） */
@@ -305,26 +343,51 @@
     let dmgPct = 0, dmgCut = 0, startGauge = 0, afterGauge = 0, bossPct = 0, aoePct = 0, lifesteal = 0;
     let eqHp = 0, eqAtk = 0, eqDef = 0, eqSpd = 0;
 
-    /* 固有アビリティ簡易補正 */
-    if (def.id === 'c_ur_1') { crit += 0.10; dmgPct += 0.12; }
-    if (def.id === 'c_ssr_3') healPct += 0.15;
-    if (def.id === 'c_ssr_4') bossPct += 0.16;
-    if (def.id === 'c_ssr_6') dmgPct += 0.12;
-    if (def.id === 'c_sr_1') healPct += 0.10;
-    if (def.id === 'c_sr_2') hpPct += 0.10;
-    if (def.id === 'c_sr_3') dmgPct += 0.10;
-    if (def.id === 'c_sr_4') crit += 0.10;
-    if (def.id === 'c_sr_6') healRcvPct += 0.15;
-    if (def.id === 'c_sr_7') spdFlat += 6;
-    if (def.id === 'c_sr_8') startGauge += 20;
-    if (def.id === 'c_sr_9') defPct += 0.12;
-    if (def.id === 'c_sr_10') healPct += 0.12;
-    if (def.id === 'c_r_1' || def.id === 'c_n_3') spdFlat += 5;
-    if (def.id === 'c_r_3') defPct += 0.10;
-    if (def.id === 'c_r_4' || def.id === 'c_n_4') healPct += 0.08;
-    if (def.id === 'c_r_6') spdFlat += 6;
-    if (def.id === 'c_n_2') atkPct += 0.08;
-    if (def.id === 'c_n_6') defPct += 0.08;
+    /* 固有アビリティ補正（全52体対応） */
+    switch (def.id) {
+      case 'c_ur_ignis':  atkPct += 0.12; break;
+      case 'c_ur_levia':  dmgCut += 0.16; healRcvPct += 0.18; break;
+      case 'c_ur_1':      crit += 0.10; dmgPct += 0.12; break;
+      case 'c_ur_valk':   startGauge += 20; dmgPct += 0.14; break;
+      case 'c_ur_6':      healPct += 0.20; break;
+      case 'c_ur_5':      spdFlat += 6; bossPct += 0.18; break;
+      case 'c_ur_chrono': startGauge += 12; break;
+      case 'c_ur_kuchi':  lifesteal += 0.08; break;
+      case 'c_tw_100':    hpPct += 0.10; atkPct += 0.10; defPct += 0.10; break;
+      case 'c_ur_omega':  dmgPct += 0.18; bossPct += 0.18; break;
+      case 'c_ssr_9':     hpPct += 0.12; dmgCut += 0.10; break;
+      case 'c_ssr_3':     healPct += 0.15; break;
+      case 'c_ssr_4':     bossPct += 0.16; break;
+      case 'c_tw_50':     dmgPct += 0.14; crit += 0.08; break;
+      case 'c_ssr_10':    startGauge += 18; spdFlat += 6; break;
+      case 'c_tw_75':     spdFlat += 8; critDmg += 0.20; break;
+      case 'c_ssr_6':     dmgPct += 0.12; break;
+      case 'c_sr_1':      healPct += 0.10; break;
+      case 'c_sr_2':      hpPct += 0.10; break;
+      case 'c_sr_3':      dmgPct += 0.10; break;
+      case 'c_tw_25':     healPct += 0.12; break;
+      case 'c_sr_4':      crit += 0.10; break;
+      case 'c_sr_6':      healRcvPct += 0.15; break;
+      case 'c_sr_7':      spdFlat += 6; break;
+      case 'c_sr_8':      startGauge += 20; break;
+      case 'c_sr_9':      defPct += 0.12; break;
+      case 'c_sr_10':     healPct += 0.12; break;
+      case 'c_sr_11':     spdFlat += 6; crit += 0.08; break;
+      case 'c_sr_12':     spdFlat += 6; startGauge += 12; break;
+      case 'c_r_1':
+      case 'c_n_3':       spdFlat += 5; break;
+      case 'c_r_3':       defPct += 0.10; break;
+      case 'c_r_4':
+      case 'c_n_4':       healPct += 0.08; break;
+      case 'c_r_6':       spdFlat += 6; break;
+      case 'c_r_7':
+      case 'c_n_5':       spdFlat += 4; break;
+      case 'c_r_8':       dmgPct += 0.08; break;
+      case 'c_n_1':       hpPct += 0.08; break;
+      case 'c_n_2':       atkPct += 0.08; break;
+      case 'c_n_6':       defPct += 0.08; break;
+      default: break;
+    }
 
     /* パッシブ技（常時系） */
     def.skills.forEach((sk) => {
@@ -377,9 +440,12 @@
           if (s2.stat === 'crit') crit += s2.val * avgQ;
           if (s2.stat === 'healPct') healPct += s2.val * avgQ;
           if (s2.stat === 'allPct') { hpPct += s2.val * avgQ; atkPct += s2.val * avgQ; defPct += s2.val * avgQ; }
+          if (s2.extraHp) hpPct += s2.extraHp * avgQ;
+          if (s2.extraDef) defPct += s2.extraDef * avgQ;
           if (s2.extraSpd) spdFlat += Math.round(s2.extraSpd * avgQ);
           if (s2.extraCrit) crit += s2.extraCrit * avgQ;
           if (s2.extraHeal) healPct += s2.extraHeal * avgQ;
+          if (s2.extraSkill) skillPct += s2.extraSkill * avgQ;
         }
         if (arr.length >= 4) {
           const s4 = ser.set4;
@@ -429,7 +495,7 @@
       });
     }
 
-    /* ④ 共鳴リンク（余った控えキャラの育成がメインを強化！） */
+    /* ④ 共鳴（控えキャラを共鳴させて能力＆特性加算） */
     let linkInfo = null;
     if (owned && owned.linkCharId && S.roster[owned.linkCharId]) {
       const linkDef = CDATA.CHAR_MAP[owned.linkCharId];
@@ -495,7 +561,7 @@
     };
   }
 
-  /* キャラ入手（初回登録・覚醒進行・覚醒上限超過時は万能結晶へ自動変換！） */
+  /* キャラ入手（初回登録・覚醒進行・覚醒上限超過時は魂晶＆共鳴結晶へ自動変換） */
   function grantChar(charId) {
     const def = CDATA.CHAR_MAP[charId];
     if (!def) return null;
@@ -507,24 +573,23 @@
         abilities: [],
         linkCharId: null
       };
-      return { charId, status: 'new', name: def.name, rarity: def.rarity };
+      return { charId, status: 'new', name: def.name, rarity: def.rarity, el: def.el, role: def.role };
     }
     const r = S.roster[charId];
     if (r.awake < 5) {
       r.awake += 1;
-      return { charId, status: 'awake', awake: r.awake, name: def.name, rarity: def.rarity };
+      return { charId, status: 'awake', awake: r.awake, name: def.name, rarity: def.rarity, el: def.el, role: def.role };
     }
-    /* 上限超過：万能魂晶＆共鳴結晶へ自動変換 */
     const soulMap = { N: 18, R: 32, SR: 65, SSR: 140, UR: 260 };
     const cryMap = { N: 35, R: 60, SR: 110, SSR: 220, UR: 400 };
     const gainSoul = soulMap[def.rarity] || 20;
     const gainCry = cryMap[def.rarity] || 40;
     S.soul += gainSoul;
     S.crystal += gainCry;
-    return { charId, status: 'convert', gainSoul, gainCry, name: def.name, rarity: def.rarity };
+    return { charId, status: 'convert', gainSoul, gainCry, name: def.name, rarity: def.rarity, el: def.el, role: def.role };
   }
 
-  /* 無料召喚（1回:120石 / 10連:1100石・SR以上1枠保証） */
+  /* 残響召喚（1回:120石 / 10連:1,100石・UR3% SSR10% SR25% R34% N28%・10枠目SR以上確定） */
   function doSummon(count) {
     const cost = count === 10 ? 1100 : 120;
     if (S.stone < cost) return { ok: false, msg: '残響石が不足しています' };
@@ -536,10 +601,12 @@
       const roll = Math.random();
       let rar = 'N';
       if (forceHigh) {
-        rar = roll < 0.24 ? 'SSR' : 'SR';
-      } else if (roll < 0.11) {
+        rar = roll < 0.05 ? 'UR' : (roll < 0.25 ? 'SSR' : 'SR');
+      } else if (roll < 0.03) {
+        rar = 'UR';
+      } else if (roll < 0.13) {
         rar = 'SSR';
-      } else if (roll < 0.37) {
+      } else if (roll < 0.38) {
         rar = 'SR';
       } else if (roll < 0.72) {
         rar = 'R';
@@ -550,16 +617,28 @@
       const picked = candidates[Math.floor(Math.random() * candidates.length)] || pool[0];
       results.push(grantChar(picked.id));
     }
+    const order = { UR: 0, SSR: 1, SR: 2, R: 3, N: 4 };
+    const highestRarity = results.reduce((best, r) => (order[r.rarity] < order[best] ? r.rarity : best), 'N');
     S.stats.totalSummons += count;
     persist();
-    return { ok: true, results };
+    return { ok: true, results, highestRarity };
   }
 
-  /* 限定キャラ解放（異界討伐の欠片5個で確定解放/覚醒！） */
+  /* 異界討伐・限定キャラ解放（鍵5個で確定解放/覚醒） */
   function exchangeRaidChar(charId) {
     const have = S.shards[charId] || 0;
-    if (have < 5) return { ok: false, msg: '鍵の欠片が5個必要です' };
+    if (have < 5) return { ok: false, msg: '解放の鍵が5個必要です' };
     S.shards[charId] -= 5;
+    const res = grantChar(charId);
+    persist();
+    return { ok: true, result: res };
+  }
+
+  /* 異界討伐ボスUR 覇王降臨（覇王の印5個で確定解放/覚醒） */
+  function exchangeRaidBoss(charId) {
+    const have = S.bossMarks[charId] || 0;
+    if (have < 5) return { ok: false, msg: '覇王の印が5個必要です' };
+    S.bossMarks[charId] -= 5;
     const res = grantChar(charId);
     persist();
     return { ok: true, result: res };
@@ -624,7 +703,7 @@
     return { ok: true, action: 'equipped' };
   }
 
-  /* 共鳴リンク設定（出撃メンバー以外の控えキャラをリンク） */
+  /* 共鳴設定（出撃メンバー以外の控えキャラを共鳴） */
   function setCharLink(charId, linkCharId) {
     const r = S.roster[charId];
     if (!r) return { ok: false, msg: '対象が存在しません' };
@@ -633,8 +712,7 @@
       persist();
       return { ok: true };
     }
-    if (linkCharId === charId || !S.roster[linkCharId]) return { ok: false, msg: 'リンクできません' };
-    /* 他キャラにリンク済みなら付け替え */
+    if (linkCharId === charId || !S.roster[linkCharId]) return { ok: false, msg: '共鳴できません' };
     Object.values(S.roster).forEach((other) => {
       if (other.linkCharId === linkCharId) other.linkCharId = null;
     });
@@ -673,7 +751,6 @@
       return { ok: true };
     }
     if (!S.roster[charId]) return { ok: false };
-    /* 別枠に入っていれば外す */
     S.gauntletParties.forEach((team) => {
       for (let i = 0; i < 4; i++) {
         if (team[i] === charId) team[i] = null;
@@ -686,7 +763,7 @@
 
   /* 品質抽選（常に高品質ほど低確率） */
   function rollQuality(bonusTier) {
-    const shift = Math.min(0.45, (bonusTier || 0) * 0.06);
+    const shift = Math.min(0.45, (bonusTier || 0) * 0.05);
     const weights = [
       Math.max(24, 50 - shift * 35),
       28,
@@ -703,11 +780,11 @@
     return 0;
   }
 
-  /* 装備ドロップ付与（自動売却設定を即時判定） */
+  /* 装備ドロップ付与（自動売却設定を即時判定・部位単位で図鑑登録） */
   function grantEquipDrop(seriesId, bonusTier) {
     const slot = EDATA.SLOTS[Math.floor(Math.random() * EDATA.SLOTS.length)];
     const quality = rollQuality(bonusTier);
-    S.codexEquips[seriesId] = true;
+    S.codexEquips[`${seriesId}:${slot.id}`] = true;
     if (quality <= S.settings.autoSellMaxQuality) {
       const gold = EDATA.QUALITIES[quality].sellVal;
       S.gold += gold;
@@ -728,7 +805,7 @@
     const quality = rollQuality(3);
     const eq = makeEquipObj(seriesId, slotId, quality);
     S.equips.push(eq);
-    S.codexEquips[seriesId] = true;
+    S.codexEquips[`${seriesId}:${slotId}`] = true;
     persist();
     return { ok: true, equip: eq };
   }
@@ -738,7 +815,6 @@
     const r = S.roster[charId];
     const eq = getEquipById(equipId);
     if (!r || !eq) return { ok: false };
-    /* 既に他人が装着していたら外す */
     const owner = getEquipOwner(equipId);
     if (owner) S.roster[owner].equips[eq.slotId] = null;
     r.equips[eq.slotId] = equipId;
@@ -754,7 +830,7 @@
     return { ok: true };
   }
 
-  /* おまかせ最適装備（未装着の高品質から自動装備・更新件数を正確に返却） */
+  /* おまかせ最適装備 */
   function autoEquipChar(charId) {
     const r = S.roster[charId];
     if (!r) return { ok: false, changed: 0 };
@@ -776,7 +852,7 @@
     return { ok: true, changed };
   }
 
-  /* 総力連戦3部隊のおまかせ自動編成（所持キャラを戦力上位から重複なく3部隊へ均等配置） */
+  /* 総力連戦3部隊のおまかせ自動編成 */
   function autoFillGauntletParties() {
     const ownedIds = Object.keys(S.roster);
     if (ownedIds.length < 3) return { ok: false, msg: '総力連戦には最低3体のキャラが必要です' };
@@ -785,7 +861,6 @@
       .sort((a, b) => b.power - a.power)
       .map((x) => x.id);
     const teams = [[null, null, null, null], [null, null, null, null], [null, null, null, null]];
-    /* まず各部隊に最低1〜4人ずつラウンドロビンでバランス配置 */
     for (let i = 0; i < Math.min(12, ranked.length); i++) {
       const tIdx = i % 3;
       const sIdx = Math.floor(i / 3);
@@ -803,7 +878,7 @@
     persist();
   }
 
-  /* 一括売却（指定品質以下・装着中とロック品は絶対保護！） */
+  /* 一括売却（装着中・ロック保護済みは完全保護） */
   function bulkSellEquips(maxQuality) {
     const equippedSet = new Set();
     Object.values(S.roster).forEach((r) => {
@@ -824,26 +899,29 @@
     return { soldCount, totalGold };
   }
 
-  /* 金貨→共鳴結晶・残響石への還元交換（自動/一括売却で得た金貨を有意義に活用！） */
-  function buyResourceWithGold(kind) {
+  /* 金貨→共鳴結晶・残響石への還元交換（1回／5回まとめて対応） */
+  function buyResourceWithGold(kind, times) {
+    const n = times === 5 ? 5 : 1;
     if (kind === 'crystal') {
-      if (S.gold < 400) return { ok: false, msg: '金貨が400必要です' };
-      S.gold -= 400;
-      S.crystal += 160;
+      const cost = 400 * n;
+      if (S.gold < cost) return { ok: false, msg: `金貨が${cost}必要です` };
+      S.gold -= cost;
+      S.crystal += 160 * n;
       persist();
-      return { ok: true, msg: '共鳴結晶 +160 を獲得しました' };
+      return { ok: true, msg: `共鳴結晶 +${160 * n} を獲得しました` };
     }
     if (kind === 'stone') {
-      if (S.gold < 600) return { ok: false, msg: '金貨が600必要です' };
-      S.gold -= 600;
-      S.stone += 120;
+      const cost = 600 * n;
+      if (S.gold < cost) return { ok: false, msg: `金貨が${cost}必要です` };
+      S.gold -= cost;
+      S.stone += 120 * n;
       persist();
-      return { ok: true, msg: '残響石 +120 を獲得しました' };
+      return { ok: true, msg: `残響石 +${120 * n} を獲得しました` };
     }
     return { ok: false };
   }
 
-  /* バトル報酬適用 */
+  /* バトル報酬適用（覇王の印・塔限定キャラ加入も一括処理） */
   function applyBattleReward(reward) {
     S.stone += reward.stone || 0;
     S.crystal += reward.crystal || 0;
@@ -859,12 +937,24 @@
         S.shards[k] = (S.shards[k] || 0) + v;
       });
     }
+    if (reward.bossMarks) {
+      Object.entries(reward.bossMarks).forEach(([k, v]) => {
+        S.bossMarks[k] = (S.bossMarks[k] || 0) + v;
+      });
+    }
+    const grantedChars = [];
+    if (Array.isArray(reward.grantCharIds)) {
+      reward.grantCharIds.forEach((cid) => {
+        const gr = grantChar(cid);
+        if (gr) grantedChars.push(gr);
+      });
+    }
     if (reward.unlockAbility && !S.unlockedAbilities.includes(reward.unlockAbility)) {
       S.unlockedAbilities.push(reward.unlockAbility);
     }
     if (reward.defeatedEnemyIds) {
       reward.defeatedEnemyIds.forEach((eid) => {
-        S.codexEnemies[eid] = (S.codexEnemies[eid] || 0) + 1;
+        S.codexEnemies[eid] = 1;
       });
     }
     if (reward.clearKey) {
@@ -878,6 +968,7 @@
     S.stats.totalRuns += 1;
     if (reward.hadIntruder) S.stats.totalIntruders += 1;
     persist();
+    return { grantedChars };
   }
 
   /* 試練の狭間 編成条件検証 */
@@ -916,6 +1007,7 @@
       gold: S.gold,
       mats: { ...S.mats },
       shards: { ...S.shards },
+      bossMarks: { ...S.bossMarks },
       roster: S.roster,
       party: S.party.slice(),
       gauntletParties: S.gauntletParties.map((p) => p.slice()),
@@ -955,11 +1047,11 @@
 
   function importCode(code) {
     const res = SEC.importTransferCode(code);
-    if (!res.ok) return { ok: false, msg: '引き継ぎコードが不正または改ざんされています' };
+    if (!res.ok) return { ok: false, msg: '引き継ぎコードが正しくありません' };
     S = sanitizeState(res.data);
     persist();
     window.__IZ_AUDIO__.setEnabled(S.settings.sound);
-    return { ok: true, msg: 'データを安全に復元しました' };
+    return { ok: true, msg: 'データを復元しました' };
   }
 
   function resetAllData() {
@@ -979,9 +1071,11 @@
       getEquipOwner,
       getEquipById,
       getEquipStatValue,
+      getEquipPartPreviewValues,
       getAbilitySlotCount,
       doSummon,
       exchangeRaidChar,
+      exchangeRaidBoss,
       awakeWithSoul,
       unlockBoardNode,
       unlockAbility,

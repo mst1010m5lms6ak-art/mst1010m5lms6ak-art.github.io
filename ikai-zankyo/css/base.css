@@ -1,4 +1,4 @@
-/* 基盤リセット・SafeArea境界線・上下50:50完全分離・スクロール制御 */
+/* 基盤リセット・iOS PWA完全適合SafeArea・上下50:50完全分離・フォント体系・縦横リストスクロール制御 */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -10,80 +10,86 @@
 }
 
 :root {
-  --safe-top: env(safe-area-inset-top, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --safe-left: env(safe-area-inset-left, 0px);
-  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-top-min: 6px;
+  --safe-bottom-min: 6px;
 
-  --bg-void: #07090f;
-  --bg-panel: #101420;
-  --bg-panel-elev: #161b2c;
-  --bg-card: #131827;
-  --bg-card-deep: #0c101b;
+  --bg-void: #05070d;
+  --bg-panel: #0d1220;
+  --bg-panel-elev: #141b2e;
+  --bg-card: #111728;
+  --bg-card-deep: #090d18;
 
-  --gold-main: #d8b566;
-  --gold-bright: #f4dc96;
-  --gold-dim: #7f6938;
-  --border-subtle: rgba(216, 181, 102, 0.24);
-  --border-strong: rgba(244, 220, 150, 0.56);
+  --gold-main: #d8b564;
+  --gold-bright: #f7e1a0;
+  --gold-dim: #7c6533;
+  --border-subtle: rgba(216, 181, 100, 0.26);
+  --border-strong: rgba(247, 225, 160, 0.62);
 
-  --text-main: #f3f1ea;
-  --text-sub: #b2b8cb;
-  --text-muted: #7a8299;
+  --text-main: #f5f3ec;
+  --text-sub: #b9c1d6;
+  --text-muted: #7c86a1;
 
-  --world-accent: #5ba4f5;
-  --world-accent-soft: rgba(91, 164, 245, 0.16);
-  --world-bg-top: #0e1a2e;
-  --world-bg-mid: #0a101d;
+  --world-accent: #5baeff;
+  --world-accent-2: #8cd3ff;
+  --world-accent-soft: rgba(91, 174, 255, 0.20);
+  --world-bg-top: #0f203d;
+  --world-bg-mid: #091121;
 
-  --font-sans: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif;
-  --font-serif: "Hiragino Mincho ProN", "Yu Mincho", "Georgia", serif;
+  /* 完全オフライン最適フォント：荘厳な見出し明朝 ＋ 高判読性モダンゴシック */
+  --font-display: "Hiragino Mincho ProN", "YuMincho", "Yu Mincho", "BIZ UDMincho", "Georgia", serif;
+  --font-sans: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "BIZ UDPGothic", -apple-system, BlinkMacSystemFont, "Yu Gothic UI", "Meiryo", sans-serif;
 }
 
 html, body {
+  position: fixed;
+  inset: 0;
   width: 100%;
   height: 100%;
-  height: 100dvh;
   overflow: hidden;
   overscroll-behavior: none;
-  background: #040509;
+  background: #05070d;
   color: var(--text-main);
   font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1.35;
   touch-action: manipulation;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-/* 等幅数値（数字が増えてもずれない） */
+/* 等幅数値（桁変動で1pxもズレない） */
 .num, .stat-val, .dps-num, .badge-num {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
 }
 
-/* デバイスステージ（実機スマホはフル画面、PC時はiPhone 14比率フレーム） */
+/* デバイスステージ（実機iOS Safari / PWAスタンドアロンは物理画面100%へ完全固定） */
 #device-stage {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   width: 100%;
   height: 100%;
-  height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: radial-gradient(circle at 50% 20%, #111624 0%, #05060a 75%);
+  background: radial-gradient(circle at 50% 18%, #12182b 0%, #05070d 78%);
 }
 
 #app-shell {
   position: relative;
   width: 100%;
   height: 100%;
-  height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background: var(--bg-void);
-  padding-left: var(--safe-left);
-  padding-right: var(--safe-right);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
 }
 
 /* PC大画面閲覧時：iPhone 14実寸(390x844)比率＋擬似SafeArea領域で綺麗に収める */
@@ -92,35 +98,46 @@ html, body {
     width: min(390px, calc(96dvh * 390 / 844));
     height: min(844px, 96dvh);
     border-radius: 38px;
-    border: 2px solid rgba(216, 181, 102, 0.35);
-    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
-    --safe-top: 38px;
-    --safe-bottom: 24px;
+    border: 2px solid rgba(216, 181, 100, 0.42);
+    box-shadow: 0 26px 70px rgba(0, 0, 0, 0.88), 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+    --safe-top-min: 38px;
+    --safe-bottom-min: 24px;
   }
 }
 
-/* 狭幅ブラウザ（PCの390x844ウィンドウ含む）でもSafeArea境界帯を明瞭維持（実機iOS時はenv()が優先） */
+/* SafeArea帯（iOS env()を直接評価＋PWA cold-start保護フォールバック） */
 .safe-area-top {
-  flex: 0 0 max(var(--safe-top), 6px);
-  height: max(var(--safe-top), 6px);
-  background: linear-gradient(180deg, #040508 0%, #090c14 100%);
+  flex: 0 0 auto;
+  height: max(env(safe-area-inset-top, 0px), var(--safe-top-min, 6px));
+  background: linear-gradient(180deg, #030408 0%, #080c16 100%);
   position: relative;
+  z-index: 22;
 }
 
 .safe-area-bottom {
-  flex: 0 0 max(var(--safe-bottom), 6px);
-  height: max(var(--safe-bottom), 6px);
-  background: linear-gradient(0deg, #040508 0%, #090c14 100%);
+  flex: 0 0 auto;
+  height: max(env(safe-area-inset-bottom, 0px), var(--safe-bottom-min, 6px));
+  background: linear-gradient(0deg, #030408 0%, #080c16 100%);
   position: relative;
+  z-index: 22;
 }
 
 .safe-boundary {
+  display: block;
   flex: 0 0 2px;
   height: 2px;
+  min-height: 2px;
   width: 100%;
-  background: linear-gradient(90deg, rgba(127, 105, 56, 0.3) 0%, var(--gold-main) 25%, var(--gold-bright) 50%, var(--gold-main) 75%, rgba(127, 105, 56, 0.3) 100%);
-  box-shadow: 0 0 8px rgba(216, 181, 102, 0.45);
-  z-index: 20;
+  background: linear-gradient(
+    90deg,
+    rgba(216, 181, 100, 0.35) 0%,
+    var(--world-accent) 18%,
+    var(--gold-bright) 50%,
+    var(--world-accent) 82%,
+    rgba(216, 181, 100, 0.35) 100%
+  );
+  box-shadow: 0 0 10px color-mix(in srgb, var(--world-accent) 50%, var(--gold-main));
+  z-index: 25;
 }
 
 /* ゲーム本体：上下ちょうど50:50完全固定グリッド */
@@ -145,32 +162,41 @@ html, body {
   display: flex;
   flex-direction: column;
   background:
-    radial-gradient(ellipse at 50% 18%, var(--world-accent-soft) 0%, transparent 65%),
-    linear-gradient(180deg, var(--world-bg-top) 0%, var(--world-bg-mid) 62%, #090c15 100%);
+    radial-gradient(ellipse at 50% 10%, var(--world-accent-soft) 0%, transparent 62%),
+    radial-gradient(circle at 86% 84%, color-mix(in srgb, var(--world-accent) 12%, transparent) 0%, transparent 48%),
+    linear-gradient(180deg, var(--world-bg-top) 0%, var(--world-bg-mid) 58%, #080c16 100%);
 }
 
-/* 上下境界ライン */
+/* 上下境界ライン（タクティカルクリスタル装飾） */
 .split-divider {
   position: relative;
   width: 100%;
   height: 2px;
-  background: linear-gradient(90deg, rgba(216, 181, 102, 0.18) 0%, var(--gold-main) 30%, var(--gold-bright) 50%, var(--gold-main) 70%, rgba(216, 181, 102, 0.18) 100%);
-  z-index: 15;
+  background: linear-gradient(
+    90deg,
+    rgba(216, 181, 100, 0.16) 0%,
+    var(--world-accent) 22%,
+    var(--gold-bright) 50%,
+    var(--world-accent) 78%,
+    rgba(216, 181, 100, 0.16) 100%
+  );
+  box-shadow: 0 0 10px rgba(247, 225, 160, 0.42);
+  z-index: 20;
 }
 
 .split-gem {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   transform: translate(-50%, -50%) rotate(45deg);
-  background: var(--gold-bright);
+  background: linear-gradient(135deg, #fff6d4 0%, var(--gold-main) 55%, var(--world-accent) 100%);
   border: 1px solid #090c15;
-  box-shadow: 0 0 8px rgba(244, 220, 150, 0.8);
+  box-shadow: 0 0 10px rgba(247, 225, 160, 0.85);
 }
 
-/* 下半分：全操作エリア（リスト以外は一切スクロール不可） */
+/* 下半分：全操作エリア（リスト以外は縦スクロール不可） */
 #lower-control {
   position: relative;
   width: 100%;
@@ -179,10 +205,12 @@ html, body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, #0d111d 0%, #090c14 100%);
+  background:
+    radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--world-accent) 9%, transparent) 0%, transparent 46%),
+    linear-gradient(180deg, #0d1221 0%, #070a13 100%);
 }
 
-/* リスト系UI専用スクロール領域（スクロールバー完全非表示） */
+/* 縦リスト専用スクロール領域（スクロールバー完全非表示） */
 .scroll-list {
   flex: 1 1 auto;
   min-height: 0;
@@ -200,6 +228,48 @@ html, body {
   height: 0;
 }
 
+/* 横リスト・選択バー専用横スクロール領域（スクロールバー完全非表示＋右端スクロール気配フェード） */
+.h-scroll-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.h-scroll-wrap::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, rgba(9, 13, 24, 0.88) 100%);
+}
+
+.h-scroll-row {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding: 0 14px 1px 0;
+}
+
+.h-scroll-row::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.h-scroll-row > * {
+  flex: 0 0 auto;
+}
+
 /* 高感度ボタン共通仕様 */
 button {
   font-family: inherit;
@@ -208,45 +278,43 @@ button {
   border: none;
   cursor: pointer;
   touch-action: manipulation;
-  outline: none;
-  transition: transform 0.08s ease, filter 0.12s ease, border-color 0.12s ease, background-color 0.12s ease;
+  transition: transform 0.08s ease, filter 0.12s ease, border-color 0.14s ease, background-color 0.14s ease, box-shadow 0.14s ease;
 }
 
 button:active:not(:disabled) {
-  transform: scale(0.96);
-  filter: brightness(1.16);
+  transform: scale(0.965);
+  filter: brightness(1.12);
 }
 
 button:disabled {
-  opacity: 0.42;
-  cursor: default;
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
-/* テキスト入力（引き継ぎコード用：iOSズーム防止の16px維持） */
-textarea, input[type="text"] {
+/* テキスト入力は許可（引き継ぎコード入力欄） */
+input[type="text"], textarea {
   user-select: text;
   -webkit-user-select: text;
-  font-size: 16px;
   font-family: var(--font-sans);
   color: var(--text-main);
-  background: #0a0e18;
+  background: #080c17;
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  padding: 8px 10px;
+  border-radius: 7px;
+  padding: 6px 8px;
+  font-size: 16px; /* iOS Safari自動ズーム防止 */
   outline: none;
 }
 
-textarea:focus, input[type="text"]:focus {
+input[type="text"]:focus, textarea:focus {
   border-color: var(--gold-bright);
+  box-shadow: 0 0 0 1px rgba(247, 225, 160, 0.25);
 }
 
-/* 名前省略「・・・」完全禁止 */
+/* 「…」省略を完全禁止 */
 .no-ellipsis {
-  text-overflow: clip;
-  white-space: nowrap;
+  text-overflow: clip !important;
 }
 
-/* SVG汎用アイコン共通 */
 .ui-svg {
   display: inline-block;
   vertical-align: middle;

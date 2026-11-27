@@ -1,4 +1,4 @@
-/* アプリ初期化・高感度タップイベント委譲・PWAオフライン登録・メインコントローラー（改修版） */
+/* アプリ初期化・iOS PWA安全域補正・召喚演出制御・高感度タップイベント委譲コントローラー */
 (function () {
   'use strict';
 
@@ -10,16 +10,18 @@
   const AUDIO = window.__IZ_AUDIO__;
 
   let toastTimer = null;
+  let summonAnimTimers = [];
 
   const ui = {
     tab: 'quest',
     questSub: 'main',
     selectedWorldId: 'w1',
     selectedStageNum: 1,
-    selectedRaidId: 'r1',
+    selectedRaidId: 'r2',
     selectedRaidDiff: 0,
     selectedGauntletId: 'g1',
     selectedTowerFloor: 1,
+    selectedTowerBand: 0,
     selectedTrialId: 't1',
     partySub: 'main',
     gauntletTeamIdx: 0,
@@ -28,15 +30,22 @@
     selectedCharId: 'c_n_2',
     equipSub: 'wear',
     selectedEquipSlot: 'weapon',
+    selectedCraftSeries: 's_lim_flame',
     equipUnownedOnly: false,
     filterEl: 'all',
     filterRole: 'all',
     summonSub: 'gacha',
+    selectedExchangeCharId: 'c_ur_ignis',
     lastSummonResults: [],
+    lastSummonTopRar: 'N',
+    summonAnim: null,
     codexSub: 'char',
-    codexCharId: 'c_ur_1',
-    codexEnemyId: 'boss_w1_3',
-    codexEquipId: 's_sky',
+    codexCharId: 'c_ur_ignis',
+    codexEnemyId: 'en_w2_1',
+    codexEnemyKind: 'all',
+    codexEnemyEl: 'all',
+    codexEquipSlot: 'all',
+    codexEquipPartKey: 's_sky:weapon',
     resultReport: null,
     lastBattleCfg: null,
     lastBattleAuto: false,
@@ -44,6 +53,37 @@
     confirmReset: false,
     toast: ''
   };
+
+  /* iPhone PWAスタンドアロン起動時のenv(safe-area-inset)未解決対策（実機iOS保護） */
+  function syncIosSafeAreaGuard() {
+    const shell = document.getElementById('app-shell');
+    if (!shell) return;
+    const isStandalone = window.navigator.standalone === true ||
+      (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+    const isTouchPhone = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    const isNotchIphone = /iPhone|iPod/i.test(navigator.userAgent) && Math.max(window.screen.width, window.screen.height) >= 812;
+
+    if (!isStandalone || !isTouchPhone || !isNotchIphone) return;
+
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;top:0;left:0;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);';
+    document.body.appendChild(probe);
+    const cs = window.getComputedStyle(probe);
+    const topPx = parseFloat(cs.paddingTop) || 0;
+    const bottomPx = parseFloat(cs.paddingBottom) || 0;
+    probe.remove();
+
+    if (topPx < 20) {
+      shell.style.setProperty('--safe-top-min', '54px');
+    } else {
+      shell.style.setProperty('--safe-top-min', '6px');
+    }
+    if (bottomPx < 16) {
+      shell.style.setProperty('--safe-bottom-min', '34px');
+    } else {
+      shell.style.setProperty('--safe-bottom-min', '6px');
+    }
+  }
 
   function clearToast() {
     ui.toast = '';
@@ -60,6 +100,63 @@
       ui.toast = '';
       if (!BATTLE.isActive()) UI.renderFull(ui);
     }, 1700);
+  }
+
+  function clearSummonAnimTimers() {
+    summonAnimTimers.forEach((t) => clearTimeout(t));
+    summonAnimTimers = [];
+  }
+
+  function finishSummonAnim(silent) {
+    clearSummonAnimTimers();
+    if (!ui.summonAnim) return;
+    const topRar = ui.lastSummonTopRar;
+    ui.summonAnim = null;
+    if (!silent) {
+      const msg = topRar === 'UR'
+        ? 'URの残響が降臨しました！'
+        : (topRar === 'SSR' ? 'SSRの残響が応えました！' : `${ui.lastSummonResults.length}体の残響を召喚しました`);
+      showToast(msg);
+    }
+    if (!BATTLE.isActive()) UI.renderFull(ui);
+  }
+
+  function startSummonAnimation(results, highestRarity) {
+    clearSummonAnimTimers();
+    ui.lastSummonResults = results;
+    ui.lastSummonTopRar = highestRarity;
+    ui.summonAnim = {
+      phase: 'charging',
+      highestRarity,
+      revealedCount: 0
+    };
+    AUDIO.play('summonCharge');
+    UI.renderFull(ui);
+
+    const chargeTimer = setTimeout(() => {
+      if (!ui.summonAnim) return;
+      ui.summonAnim.phase = 'reveal';
+      ui.summonAnim.revealedCount = 1;
+      AUDIO.play(highestRarity === 'UR' ? 'summonUR' : (highestRarity === 'SSR' ? 'rare' : 'summon'));
+      UI.renderFull(ui);
+
+      if (results.length <= 1) {
+        summonAnimTimers.push(setTimeout(() => finishSummonAnim(false), 320));
+        return;
+      }
+
+      for (let i = 2; i <= results.length; i++) {
+        summonAnimTimers.push(setTimeout(() => {
+          if (!ui.summonAnim) return;
+          ui.summonAnim.revealedCount = i;
+          UI.renderFull(ui);
+          if (i === results.length) {
+            summonAnimTimers.push(setTimeout(() => finishSummonAnim(false), 260));
+          }
+        }, (i - 1) * 95));
+      }
+    }, 540);
+    summonAnimTimers.push(chargeTimer);
   }
 
   function buildBattleConfig() {
@@ -91,6 +188,7 @@
 
   function launchBattle(cfg, autoLoop) {
     clearToast();
+    finishSummonAnim(true);
     ui.resultReport = null;
     ui.lastBattleCfg = cfg;
     ui.lastBattleAuto = Boolean(autoLoop);
@@ -109,6 +207,7 @@
         if (report.cfg.mode === 'tower' && report.lastWon) {
           const maxNext = Math.min(WDATA.TOWER_MAX_FLOOR, STATE.getSnapshot().towerMaxCleared + 1);
           ui.selectedTowerFloor = maxNext;
+          ui.selectedTowerBand = Math.floor((maxNext - 1) / 10);
         }
         UI.renderFull(ui);
       }
@@ -124,7 +223,7 @@
     AUDIO.unlock();
     AUDIO.play('tap');
 
-    /* 戦闘中操作（倍速・自動周回ON/停止予約のみ・撤退禁止） */
+    /* 戦闘中操作（倍速・自動周回ON/停止予約のみ・撤退なし） */
     if (act === 'cycleSpeed') {
       const cur = STATE.getSnapshot().settings.speed;
       const next = cur === 1 ? 2 : (cur === 2 ? 3 : 1);
@@ -143,6 +242,7 @@
     switch (act) {
       case 'setTab':
         clearToast();
+        finishSummonAnim(true);
         ui.tab = val;
         ui.resultReport = null;
         break;
@@ -156,7 +256,9 @@
         clearToast();
         ui.questSub = val;
         if (val === 'tower') {
-          ui.selectedTowerFloor = Math.min(WDATA.TOWER_MAX_FLOOR, STATE.getSnapshot().towerMaxCleared + 1);
+          const nextF = Math.min(WDATA.TOWER_MAX_FLOOR, STATE.getSnapshot().towerMaxCleared + 1);
+          ui.selectedTowerFloor = nextF;
+          ui.selectedTowerBand = Math.floor((nextF - 1) / 10);
         }
         break;
       case 'selectWorld':
@@ -175,6 +277,13 @@
       case 'selectGauntlet':
         ui.selectedGauntletId = val;
         break;
+      case 'selectTowerBand': {
+        const b = Number(val);
+        ui.selectedTowerBand = b;
+        const maxAvail = Math.min(WDATA.TOWER_MAX_FLOOR, STATE.getSnapshot().towerMaxCleared + 1);
+        ui.selectedTowerFloor = Math.min(maxAvail, (b + 1) * 10);
+        break;
+      }
       case 'selectTower':
         ui.selectedTowerFloor = Number(val);
         break;
@@ -271,7 +380,7 @@
         const res = STATE.awakeWithSoul(ui.selectedCharId);
         if (res.ok) {
           AUDIO.play('rare');
-          showToast(`覚醒${res.awake}へ到達しました`);
+          showToast(`覚醒 ${res.awake} へ到達しました`);
         } else {
           showToast(res.msg);
         }
@@ -284,12 +393,12 @@
       }
       case 'setCharLink': {
         const res = STATE.setCharLink(ui.selectedCharId, val);
-        if (res.ok) showToast('共鳴リンクを設定しました');
+        if (res.ok) showToast('共鳴を設定しました');
         break;
       }
       case 'clearCharLink':
         STATE.setCharLink(ui.selectedCharId, null);
-        showToast('共鳴リンクを解除しました');
+        showToast('共鳴を解除しました');
         break;
 
       /* 装備 */
@@ -297,15 +406,14 @@
         clearToast();
         ui.equipSub = val;
         break;
-      case 'selectEquipChar':
-        ui.selectedCharId = val;
-        ui.equipSub = 'wear';
-        break;
       case 'toggleEquipFilter':
         ui.equipUnownedOnly = !ui.equipUnownedOnly;
         break;
       case 'selectEquipSlot':
         ui.selectedEquipSlot = val;
+        break;
+      case 'selectCraftSeries':
+        ui.selectedCraftSeries = val;
         break;
       case 'equipItem':
         STATE.equipItem(ui.selectedCharId, val);
@@ -332,6 +440,14 @@
         STATE.setAutoSellQuality(Number(val));
         showToast('自動売却設定を更新しました');
         break;
+      case 'cycleAutoSellQuick': {
+        const cur = STATE.getSnapshot().settings.autoSellMaxQuality;
+        const next = cur >= 3 ? -1 : cur + 1;
+        STATE.setAutoSellQuality(next);
+        const lbl = next < 0 ? 'OFF' : EDATA.QUALITIES[next].name + '以下';
+        showToast(`自動売却：${lbl} に変更しました`);
+        break;
+      }
       case 'bulkSell': {
         const res = STATE.bulkSellEquips(Number(val));
         if (res.soldCount > 0) {
@@ -344,6 +460,7 @@
       }
       case 'craftEquip': {
         const res = STATE.craftLimitedEquip(btn.dataset.series, btn.dataset.slot);
+        ui.selectedCraftSeries = btn.dataset.series;
         if (res.ok) {
           AUDIO.play('rare');
           const qName = EDATA.QUALITIES[res.equip.quality].name;
@@ -355,33 +472,56 @@
         break;
       }
       case 'buyGold': {
-        const res = STATE.buyResourceWithGold(val);
+        const times = Number(btn.dataset.times || 1);
+        const res = STATE.buyResourceWithGold(val, times);
         showToast(res.msg || '交換できません');
         break;
       }
 
-      /* 召喚・交換 */
+      /* 召喚・限定解放・覇王降臨・魂晶交換 */
       case 'setSummonSub':
         clearToast();
+        finishSummonAnim(true);
         ui.summonSub = val;
+        if (val === 'raidChar') ui.selectedExchangeCharId = 'c_ur_1';
+        if (val === 'raidBoss') ui.selectedExchangeCharId = 'c_ur_ignis';
+        break;
+      case 'clearSummonResults':
+        finishSummonAnim(true);
+        ui.lastSummonResults = [];
         break;
       case 'summon': {
         const res = STATE.doSummon(Number(val));
         if (res.ok) {
-          ui.lastSummonResults = res.results;
-          const hasHigh = res.results.some((r) => r.rarity === 'SSR' || r.rarity === 'UR');
-          AUDIO.play(hasHigh ? 'rare' : 'summon');
-          showToast(hasHigh ? '高レアリティの残響が応えました！' : `${res.results.length}体の残響を召喚しました`);
+          startSummonAnimation(res.results, res.highestRarity);
+          return;
+        }
+        showToast(res.msg);
+        break;
+      }
+      case 'skipSummonAnim':
+        finishSummonAnim(false);
+        return;
+      case 'previewExchangeChar':
+        ui.selectedExchangeCharId = val;
+        break;
+      case 'exchangeRaidChar': {
+        ui.selectedExchangeCharId = val;
+        const res = STATE.exchangeRaidChar(val);
+        if (res.ok) {
+          AUDIO.play('rare');
+          showToast(`${res.result.name} を解放・強化しました！`);
         } else {
           showToast(res.msg);
         }
         break;
       }
-      case 'exchangeRaidChar': {
-        const res = STATE.exchangeRaidChar(val);
+      case 'exchangeRaidBoss': {
+        ui.selectedExchangeCharId = val;
+        const res = STATE.exchangeRaidBoss(val);
         if (res.ok) {
-          AUDIO.play('rare');
-          showToast(`${res.result.name} を解放・強化しました！`);
+          AUDIO.play('summonUR');
+          showToast(`UR「${res.result.name}」が降臨しました！`);
         } else {
           showToast(res.msg);
         }
@@ -409,8 +549,17 @@
       case 'selectCodexEnemy':
         ui.codexEnemyId = val;
         break;
+      case 'setCodexEnemyKind':
+        ui.codexEnemyKind = val;
+        break;
+      case 'setCodexEnemyEl':
+        ui.codexEnemyEl = val;
+        break;
       case 'selectCodexEquip':
-        ui.codexEquipId = val;
+        ui.codexEquipPartKey = val;
+        break;
+      case 'setCodexEquipSlot':
+        ui.codexEquipSlot = val;
         break;
       case 'toggleSound':
         STATE.setSound(!STATE.getSnapshot().settings.sound);
@@ -441,6 +590,7 @@
           showToast('もう一度タップするとデータを初期化します');
         } else {
           ui.confirmReset = false;
+          finishSummonAnim(true);
           STATE.resetAllData();
           ui.lastSummonResults = [];
           ui.resultReport = null;
@@ -462,6 +612,11 @@
   }
 
   function boot() {
+    syncIosSafeAreaGuard();
+    setTimeout(syncIosSafeAreaGuard, 220);
+    window.addEventListener('resize', syncIosSafeAreaGuard);
+    window.addEventListener('orientationchange', () => setTimeout(syncIosSafeAreaGuard, 180));
+
     STATE.init();
     const notice = STATE.consumeLoadNotice();
     if (notice) showToast(notice);

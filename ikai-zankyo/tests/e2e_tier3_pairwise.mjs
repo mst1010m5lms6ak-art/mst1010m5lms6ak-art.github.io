@@ -38,11 +38,19 @@ async function runBattleToCompletion(browser, { maxSteps = 120, stepMs = 1000, r
       const r = IkaiApp.CombatEngine.step(${stepMs});
       const cur = r || IkaiApp.CombatEngine.getSnapshot();
       return cur ? {
-        finished: Boolean(cur.finished),
-        victory: Boolean(cur.victory ?? (cur.result === 'victory'))
+        status: cur.status,
+        finished: cur.status !== 'ongoing',
+        victory: cur.status === 'victory'
       } : null;
     })()`);
     if (snap?.finished) {
+      await browser.waitFor(
+        () => {
+          const ui = IkaiApp.App.getUiState();
+          return ui && ui.mode === 'result';
+        },
+        { timeoutMs: 5000, label: 'battle result mode settled' }
+      );
       return snap;
     }
   }
@@ -95,7 +103,7 @@ describe('Tier 3: Cross-Feature Pairwise Interactions (18 scenarios)', () => {
     })()`);
 
     for (let b = 0; b < 3; b++) {
-      await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 })`);
+      await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-1' })`);
       const fin = await runBattleToCompletion(sharedBrowser);
       assert.equal(fin.victory, true);
     }
@@ -124,7 +132,7 @@ describe('Tier 3: Cross-Feature Pairwise Interactions (18 scenarios)', () => {
   it('T3-PW-02: 共鳴支援4枠 × パーティ基礎ステ × タイムライン戦闘', async () => {
     await ensureBootedHttp(true);
     const res = await sharedBrowser.eval(`(() => {
-      IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+      IkaiApp.App.startBattle('stage', { stageId: '1-1' });
       const b0 = IkaiApp.CombatEngine.getSnapshot().allies[0];
       let st = JSON.parse(JSON.stringify(IkaiApp.StateStore.getState()));
       const resIds = ['char_kiryu_takashi', 'char_kujo_renji', 'char_minase_shiori', 'char_kanzaki_mio'];
@@ -134,7 +142,7 @@ describe('Tier 3: Cross-Feature Pairwise Interactions (18 scenarios)', () => {
         st = out.state || out;
       });
       IkaiApp.StateStore.setState(st);
-      IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+      IkaiApp.App.startBattle('stage', { stageId: '1-1' });
       const b1 = IkaiApp.CombatEngine.getSnapshot().allies[0];
       return {
         resCount: st.resonanceSlots.filter(Boolean).length,
@@ -177,7 +185,7 @@ describe('Tier 3: Cross-Feature Pairwise Interactions (18 scenarios)', () => {
         st = out.state || out;
       }
       IkaiApp.StateStore.setState(st);
-      IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+      IkaiApp.App.startBattle('stage', { stageId: '1-1' });
       const ally = IkaiApp.CombatEngine.getSnapshot().allies[0];
       return {
         awakening: st.roster[cid].awakening,
@@ -291,9 +299,14 @@ describe('Tier 3: Cross-Feature Pairwise Interactions (18 scenarios)', () => {
   it('T3-PW-07: 戦術AI事前設定 × 戦闘中下半分介入（切り札予約・目標切替）', async () => {
     await ensureBootedHttp(true);
     await openTab(sharedBrowser, 'party');
-    const policySpec = { labelRegex: /作戦方針|作戦/, testId: 'tactic-policy-select', selector: 'select[data-testid="tactic-policy-select"], select[data-tactic="policy"]', scope: 'lower' };
+    const policySpec = {
+      labelRegex: /^方針：/,
+      selector: '[data-action="cycle-roster-policy"][data-char-id="char_todo_seiichi"]',
+      scope: 'lower'
+    };
     assert.equal((await sharedBrowser.queryControl(policySpec)).found, true);
-    await sharedBrowser.selectValue(policySpec, /温存|conserve/);
+    await sharedBrowser.tap(policySpec);
+    await sharedBrowser.tap(policySpec);
 
     await openTab(sharedBrowser, 'sortie');
     await sharedBrowser.tap({ labelRegex: /出撃開始|出撃する/, testId: ['start-battle-btn', 'sortie-start-btn'], scope: 'lower' });
@@ -303,26 +316,32 @@ describe('Tier 3: Cross-Feature Pairwise Interactions (18 scenarios)', () => {
     assert.equal((await sharedBrowser.queryControl(trumpSpec)).found, true);
     await sharedBrowser.tap(trumpSpec);
 
-    const targetCtrl = await sharedBrowser.queryControl({ testId: 'battle-target-select', selector: 'select[data-testid="battle-target-select"], [data-testid="battle-target-btn"]', scope: 'lower' });
+    const targetSpec = {
+      labelRegex: /^ボス優先$/,
+      selector: 'button[data-action="battle-global-target"][data-target="boss_first"]',
+      scope: 'lower'
+    };
+    const targetCtrl = await sharedBrowser.queryControl(targetSpec);
     assert.equal(targetCtrl.found, true, 'In-battle target policy control must exist in lower deck');
-    if (targetCtrl.tagName === 'select') {
-      await sharedBrowser.selectValue({ testId: 'battle-target-select', scope: 'lower' }, /ボス|boss_first/);
-    } else {
-      await sharedBrowser.tap({ testId: 'battle-target-btn', scope: 'lower' });
-    }
+    await sharedBrowser.tap(targetSpec);
 
     const res = await sharedBrowser.eval(`(() => {
       const snap0 = IkaiApp.CombatEngine.getSnapshot();
       const reserved = snap0.allies.some(a => Boolean(a.reservedSkillId)) || Boolean(snap0.reservedSkill);
+      const target0 = snap0.globalTargetPolicy;
       for (let i = 0; i < 6; i++) IkaiApp.CombatEngine.step(800);
       const snap1 = IkaiApp.CombatEngine.getSnapshot();
       return {
         policy: IkaiApp.StateStore.getState().roster[IkaiApp.StateStore.getState().party[0]].tactic.policy,
+        battlePolicy: snap0.allies[0]?.tactic?.policy,
+        target0,
         reserved,
         logsLen: (snap1.logs || []).length
       };
     })()`);
     assert.equal(res.policy, 'conserve');
+    assert.equal(res.battlePolicy, 'conserve');
+    assert.equal(res.target0, 'boss_first');
     assert.equal(res.reserved, true);
     assert.ok(res.logsLen >= 1);
     await sharedBrowser.assertZeroErrors();
@@ -330,20 +349,56 @@ describe('Tier 3: Cross-Feature Pairwise Interactions (18 scenarios)', () => {
 
   it('T3-PW-08: Stage 6 ボス技予告バー × 4項目DPSメーター（被ダメ・回復・被回復）', async () => {
     await ensureBootedHttp(true);
-    await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 5, startWave: 4 })`);
+    await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-6' })`);
     await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
-    for (let i = 0; i < 12; i++) {
-      const ok = await sharedBrowser.eval('Boolean(IkaiApp.CombatEngine.step(700))');
-      assert.equal(ok, true);
-    }
-    const res = await sharedBrowser.eval(`({
-      txt: document.querySelector('.upper-stage')?.innerText || '',
-      dealt: IkaiApp.CombatEngine.getSnapshot()?.dps?.dealt || 0
-    })`);
+    const reachedBossWave = await sharedBrowser.eval(`(() => {
+      for (let i = 0; i < 80; i++) {
+        const s = IkaiApp.CombatEngine.step(800);
+        if (!s) break;
+        if (s.waveIndex === 4) {
+          for (let j = 0; j < 12; j++) {
+            const cur = IkaiApp.CombatEngine.step(700);
+            if (!cur || cur.status !== 'ongoing') break;
+            const t = cur.dpsMeters?.totals;
+            if (j >= 5 && t && t.damageDealt > 0 && t.damageTaken > 0 && t.healingDone > 0 && t.healingReceived > 0) break;
+          }
+          const cur = IkaiApp.CombatEngine.getSnapshot();
+          return { ok: true, waveIndex: cur?.waveIndex, status: cur?.status };
+        }
+        if (s.status !== 'ongoing') return { ok: false, waveIndex: s.waveIndex, status: s.status };
+      }
+      const cur = IkaiApp.CombatEngine.getSnapshot();
+      return { ok: Boolean(cur && cur.waveIndex === 4), waveIndex: cur?.waveIndex, status: cur?.status };
+    })()`);
+    assert.equal(reachedBossWave.ok, true, `Expected stage 1-6 to reach boss wave 5 (idx 4), got ${JSON.stringify(reachedBossWave)}`);
+    await sharedBrowser.waitFor(
+      () => document.querySelector('[data-testid="boss-plate"]') && document.querySelector('[data-testid="boss-telegraph"]'),
+      { label: 'stage 1-6 boss plate & telegraph DOM' }
+    );
+    const res = await sharedBrowser.eval(`(() => {
+      const snap = IkaiApp.CombatEngine.getSnapshot();
+      const totals = snap?.dpsMeters?.totals || {};
+      return {
+        txt: document.querySelector('.upper-stage')?.innerText || '',
+        hasBossPlate: Boolean(document.querySelector('[data-testid="boss-plate"]')),
+        hasBossTelegraph: Boolean(document.querySelector('[data-testid="boss-telegraph"]')),
+        totals: {
+          damageDealt: totals.damageDealt || 0,
+          damageTaken: totals.damageTaken || 0,
+          healingDone: totals.healingDone || 0,
+          healingReceived: totals.healingReceived || 0
+        }
+      };
+    })()`);
+    assert.equal(res.hasBossPlate, true);
+    assert.equal(res.hasBossTelegraph, true);
     for (const lbl of ['与ダメージ', '被ダメージ', '回復量', '被回復量']) {
       assert.ok(res.txt.includes(lbl), `Missing ${lbl} during Stage 6 boss`);
     }
-    assert.ok(res.dealt > 0);
+    assert.ok(res.totals.damageDealt > 0, `Expected damageDealt > 0, got ${res.totals.damageDealt}`);
+    assert.ok(res.totals.damageTaken > 0, `Expected damageTaken > 0, got ${res.totals.damageTaken}`);
+    assert.ok(res.totals.healingDone > 0, `Expected healingDone > 0, got ${res.totals.healingDone}`);
+    assert.ok(res.totals.healingReceived > 0, `Expected healingReceived > 0, got ${res.totals.healingReceived}`);
     await sharedBrowser.assertZeroErrors();
   });
 
@@ -362,28 +417,37 @@ describe('Tier 3: Cross-Feature Pairwise Interactions (18 scenarios)', () => {
         s.roster[s.party[1]].tactic.skillPriority = 'collect_first';
         s.roster[s.party[2]].tactic.skillPriority = 'collect_first';
       });
-      IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+      IkaiApp.App.startBattle('stage', { stageId: '1-1' });
     })()`);
     await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
     const res = await sharedBrowser.eval(`(() => {
       let tauntSeen = false;
-      for (let i = 0; i < 40; i++) {
+      for (let i = 0; i < 60; i++) {
         IkaiApp.CombatEngine.step(800);
         const s = IkaiApp.CombatEngine.getSnapshot();
         if (s.allies.some(a => (a.buffs || []).some(b => b.stat === 'taunt' || b.id === 'taunt'))) {
           tauntSeen = true;
         }
-        if (s.finished) break;
+        if (s.status !== 'ongoing') {
+          return { tauntSeen, finished: true, status: s.status };
+        }
       }
-      const inv = IkaiApp.StateStore.getState().skillInventory;
+      return { tauntSeen, finished: false, status: IkaiApp.CombatEngine.getSnapshot()?.status };
+    })()`);
+    assert.equal(res.finished, true, `T3-PW-09 battle must finish, got ${JSON.stringify(res)}`);
+    await sharedBrowser.waitFor(() => IkaiApp.App.getUiState()?.mode === 'result', {
+      timeoutMs: 5000,
+      label: 'T3-PW-09 result mode settled'
+    });
+    const inv = await sharedBrowser.eval(`(() => {
+      const skillInv = IkaiApp.StateStore.getState().skillInventory;
       return {
-        tauntSeen,
-        rangeUses: inv.sk_r_soutou.uses,
-        allUses: inv.sk_r_shogekiha.uses
+        rangeUses: skillInv.sk_r_soutou.uses,
+        allUses: skillInv.sk_r_shogekiha.uses
       };
     })()`);
     assert.equal(res.tauntSeen, true, 'Taunt must be observed during multi-enemy battle');
-    assert.ok(res.rangeUses >= 1 && res.allUses >= 1, 'Range and AOE collectible skills must trigger');
+    assert.ok(inv.rangeUses >= 1 && inv.allUses >= 1, 'Range and AOE collectible skills must trigger');
     await sharedBrowser.assertZeroErrors();
   });
 
@@ -395,7 +459,7 @@ describe('Tier 3: Cross-Feature Pairwise Interactions (18 scenarios)', () => {
         s.roster[cid] = { ...(${ROSTER_ENTRY_EXPR}), awakening: 2, emblemNodes: [1, 2, 3, 4, 5, 6, 7, 8, 9] };
         s.party = [cid, ...s.party.filter(x => x && x !== cid).slice(0, 3)];
       });
-      IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+      IkaiApp.App.startBattle('stage', { stageId: '1-1' });
     })()`);
     const snap = await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
     const shiori = snap.allies.find((a) => a.id === 'char_minase_shiori');
@@ -420,7 +484,7 @@ describe('Tier 3: Cross-Feature Pairwise Interactions (18 scenarios)', () => {
           s.roster[cid].equipped[tpl.slot] = 'pw11_' + i;
         });
       });
-      IkaiApp.App.startBattle('raid', { raidId: IkaiApp.MasterData.RAID_BOSSES[0].id, difficulty: 0 });
+      IkaiApp.App.startBattle('raid', { raidId: IkaiApp.MasterData.RAID_BOSSES[0].id, difficultyId: 'easy' });
       return IkaiApp.CombatEngine.getSnapshot().allies[0].crit;
     })()`);
     assert.ok(critCheck >= 20, `Expected 蒼焔の印 crit bonus applied, got ${critCheck}`);
@@ -430,7 +494,7 @@ describe('Tier 3: Cross-Feature Pairwise Interactions (18 scenarios)', () => {
     }
     const res = await sharedBrowser.eval(`({
       txt: document.querySelector('.upper-stage')?.innerText || '',
-      dealt: IkaiApp.CombatEngine.getSnapshot()?.dps?.dealt || 0
+      dealt: IkaiApp.CombatEngine.getSnapshot()?.dpsMeters?.totals?.damageDealt || 0
     })`);
     assert.ok(res.txt.includes('与ダメージ') && res.txt.includes('被回復量'));
     assert.ok(res.dealt > 0);
@@ -548,12 +612,15 @@ describe('Tier 3: Cross-Feature Pairwise Interactions (18 scenarios)', () => {
         s.settings.autoRepeatCount = 3;
         s.party = ['char_nakamura_yui', null, null, null];
       });
-      IkaiApp.App.startBattle('main', { areaId: 'area_5', stageIndex: 5, startWave: 4 });
+      IkaiApp.App.startBattle('stage', { stageId: '5-6' });
     })()`);
     const defeatSnap = await runBattleToCompletion(sharedBrowser);
     assert.equal(defeatSnap.victory, false, 'Solo R healer on 5-6 must lose');
     const repeatAfterDefeat = await sharedBrowser.eval('IkaiApp.StateStore.getState().settings.autoRepeatCount');
     assert.equal(repeatAfterDefeat, 0, 'Auto-repeat must stop safely on defeat');
+
+    await sharedBrowser.tap({ labelRegex: /^拠点へ戻る$/, selector: '[data-action="return-hub"]', scope: 'lower' });
+    await sharedBrowser.waitFor(() => IkaiApp.App.getUiState()?.mode === 'hub', { label: 'return hub after defeat' });
 
     await openTab(sharedBrowser, 'enhance');
     await sharedBrowser.eval(`IkaiApp.StateStore.update(s => {
@@ -561,6 +628,7 @@ describe('Tier 3: Cross-Feature Pairwise Interactions (18 scenarios)', () => {
       s.roster.char_todo_seiichi.emblemNodes.push(1);
     })`);
     await openTab(sharedBrowser, 'sortie');
+    await sharedBrowser.tap({ selector: '[data-action="select-area"][data-area-id="area_1"]', scope: 'lower' });
     await sharedBrowser.tap({ labelRegex: /1-1|終電後の改札/, testId: 'stage-select-1-1', scope: 'lower' });
     await sharedBrowser.tap({ labelRegex: /出撃開始|出撃する/, testId: ['start-battle-btn', 'sortie-start-btn'], scope: 'lower' });
     const winSnap = await runBattleToCompletion(sharedBrowser);
@@ -583,7 +651,7 @@ describe('Tier 3: Cross-Feature Pairwise Interactions (18 scenarios)', () => {
           for (const id of ids) if (!s.roster[id]) s.roster[id] = ${ROSTER_ENTRY_EXPR};
           s.party = ids;
         });
-        IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+        IkaiApp.App.startBattle('stage', { stageId: '1-1' });
       })()`);
       await b.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
       const split = await b.auditUpperLowerSplit();
@@ -607,7 +675,7 @@ describe('Tier 3: Cross-Feature Pairwise Interactions (18 scenarios)', () => {
       });
       return IkaiApp.StateStore.getState().skillInventory[sid].uses;
     })()`);
-    await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 })`);
+    await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-1' })`);
     const fin = await runBattleToCompletion(sharedBrowser);
     assert.equal(fin.victory, true);
     const after = await sharedBrowser.eval(`({

@@ -56,6 +56,8 @@
   let upperEl = null;
   let lowerEl = null;
   let latestSnapshot = null;
+  let isRendering = false;
+  let suppressStateRender = false;
   let loopHandle = null;
   let loopUsesRaf = false;
   let lastTickTs = 0;
@@ -104,17 +106,49 @@
   }
 
   function pruneEquipSelection(state) {
-    const uidSet = new Set((state && Array.isArray(state.equips))
-      ? state.equips.map(function (e) { return e.uid; })
-      : []);
-    if (uiState.selectedEquipUid && !uidSet.has(uiState.selectedEquipUid)) {
+    const equipMap = new Map();
+    if (state && Array.isArray(state.equips)) {
+      for (let i = 0; i < state.equips.length; i += 1) {
+        const eq = state.equips[i];
+        if (eq && eq.uid) equipMap.set(eq.uid, eq);
+      }
+    }
+    const equippedUidSet = new Set();
+    if (state && state.roster) {
+      const rosterKeys = Object.keys(state.roster);
+      for (let i = 0; i < rosterKeys.length; i += 1) {
+        const entry = state.roster[rosterKeys[i]];
+        const eqMap = entry && entry.equipped;
+        if (!eqMap) continue;
+        const slotKeys = Object.keys(eqMap);
+        for (let j = 0; j < slotKeys.length; j += 1) {
+          const uid = eqMap[slotKeys[j]];
+          if (uid) equippedUidSet.add(uid);
+        }
+      }
+    }
+    if (uiState.selectedEquipUid && !equipMap.has(uiState.selectedEquipUid)) {
       uiState.selectedEquipUid = null;
     }
-    if (uiState.synthBaseUid && !uidSet.has(uiState.synthBaseUid)) {
+    if (uiState.synthBaseUid && !equipMap.has(uiState.synthBaseUid)) {
       uiState.synthBaseUid = null;
     }
-    if (uiState.synthMatUid && !uidSet.has(uiState.synthMatUid)) {
-      uiState.synthMatUid = null;
+    if (uiState.synthMatUid) {
+      const matUid = uiState.synthMatUid;
+      const matEq = equipMap.get(matUid);
+      const baseEq = uiState.synthBaseUid ? equipMap.get(uiState.synthBaseUid) : null;
+      if (
+        !matEq ||
+        matEq.locked ||
+        equippedUidSet.has(matUid) ||
+        matUid === uiState.synthBaseUid ||
+        !baseEq ||
+        baseEq.qualityIdx >= 4 ||
+        matEq.equipId !== baseEq.equipId ||
+        matEq.qualityIdx !== baseEq.qualityIdx
+      ) {
+        uiState.synthMatUid = null;
+      }
     }
   }
 
@@ -286,6 +320,12 @@
       uiState.autoRepeatRemaining -= 1;
     } else if (snapshot.status !== 'victory') {
       uiState.autoRepeatRemaining = 0;
+      uiState.autoRepeatPending = false;
+      if (IkaiApp.StateStore.getState().settings.autoRepeatCount !== 0) {
+        IkaiApp.StateStore.update(function (draft) {
+          draft.settings.autoRepeatCount = 0;
+        });
+      }
     }
 
     if (snapshot.status === 'victory' && canRepeatMode && snapshot.autoRepeat > 0 && uiState.autoRepeatRemaining > 0) {
@@ -357,9 +397,29 @@
     const targetMode = mode || 'stage';
     const state = IkaiApp.StateStore.getState();
 
-    if (targetMode === 'trial' && !options.skipTrialCheck) {
+    const hasPartyOverride = Array.isArray(options.partyOverride);
+    const partySource = hasPartyOverride
+      ? options.partyOverride
+      : (Array.isArray(state.party) ? state.party : []);
+    const seenParty = new Set();
+    const validParty = [];
+    for (let i = 0; i < partySource.length; i += 1) {
+      const cid = partySource[i];
+      if (cid && hasOwn(IkaiApp.MasterData.CHARACTER_MAP, cid) && !seenParty.has(cid)) {
+        seenParty.add(cid);
+        validParty.push(cid);
+        if (validParty.length >= 4) break;
+      }
+    }
+    if (validParty.length === 0) {
+      uiState.notice = { type: 'error', text: '出撃編成に最低1名の仲間が必要です。' };
+      renderAll();
+      return null;
+    }
+
+    if (targetMode === 'trial') {
       const tid = p.trialId || uiState.selectedTrialId || 'trial_1';
-      const check = IkaiApp.Progression.validateTrialEntry(state, tid, state.party);
+      const check = IkaiApp.Progression.validateTrialEntry(state, tid, validParty);
       if (!check.ok) {
         uiState.notice = { type: 'error', text: check.reasons.join(' ／ ') };
         renderAll();
@@ -416,6 +476,9 @@
       globalTactic: uiState.hubGlobalPolicy,
       seed: options.seed
     };
+    if (hasPartyOverride) {
+      cfg.partyIds = validParty;
+    }
 
     if (targetMode === 'stage') {
       const targetStageId = p.stageId || uiState.selectedStageId || '1-1';
@@ -451,6 +514,11 @@
     };
 
     const battle = IkaiApp.CombatEngine.createBattle(cfg);
+    if (!battle) {
+      uiState.notice = { type: 'error', text: '戦闘を開始できませんでした。' };
+      renderAll();
+      return null;
+    }
     if (uiState.hubGlobalPolicy && uiState.hubGlobalPolicy !== 'balanced') {
       IkaiApp.CombatEngine.setGlobalTactic(battle, uiState.hubGlobalPolicy);
     }
@@ -475,13 +543,30 @@
   }
 
   function renderAll() {
-    const state = IkaiApp.StateStore.getState();
-    IkaiApp.UIRenderer.renderAll(upperEl, lowerEl, state, uiState, latestSnapshot);
+    if (isRendering) {
+      return;
+    }
+    isRendering = true;
+    try {
+      const state = IkaiApp.StateStore.getState();
+      IkaiApp.UIRenderer.renderAll(upperEl, lowerEl, state, uiState, latestSnapshot);
+    } finally {
+      isRendering = false;
+    }
   }
 
   function cycleArrayValue(arr, current) {
     const idx = arr.indexOf(current);
     return arr[(idx + 1) % arr.length];
+  }
+
+  function setStateSilently(nextState, opts) {
+    suppressStateRender = true;
+    try {
+      return IkaiApp.StateStore.setState(nextState, opts);
+    } finally {
+      suppressStateRender = false;
+    }
   }
 
   function applyProgressionResult(res, successNoticeText) {
@@ -491,7 +576,7 @@
       renderAll();
       return false;
     }
-    const nextState = IkaiApp.StateStore.setState(res.state);
+    const nextState = setStateSilently(res.state);
     syncExpCandidates(nextState);
     pruneEquipSelection(nextState);
     if (successNoticeText) {
@@ -513,6 +598,7 @@
     const UIRenderer = IkaiApp.UIRenderer;
 
     if (action === 'switch-tab') {
+      if (uiState.mode !== 'hub') return;
       uiState.activeTab = actionEl.dataset.tabId || 'roster';
       uiState.confirmResetArmed = false;
       uiState.notice = null;
@@ -986,6 +1072,7 @@
     }
 
     if (action === 'start-stage') {
+      if (uiState.mode !== 'hub') return;
       const stageId = actionEl.dataset.stageId || uiState.selectedStageId;
       if (!Progression.isStageUnlocked(StateStore.getState(), stageId)) {
         AudioSE.play('ui_tap');
@@ -1014,6 +1101,7 @@
     }
 
     if (action === 'start-abyss') {
+      if (uiState.mode !== 'hub') return;
       AudioSE.play('ui_tap');
       startBattle('abyss', { floor: Number(actionEl.dataset.floor) || uiState.selectedAbyssFloor });
       return;
@@ -1034,6 +1122,7 @@
     }
 
     if (action === 'start-raid') {
+      if (uiState.mode !== 'hub') return;
       AudioSE.play('ui_tap');
       startBattle('raid', {
         raidId: actionEl.dataset.raidId || uiState.selectedRaidId,
@@ -1059,6 +1148,7 @@
     }
 
     if (action === 'start-trial') {
+      if (uiState.mode !== 'hub') return;
       AudioSE.play('ui_tap');
       startBattle('trial', { trialId: actionEl.dataset.trialId || uiState.selectedTrialId });
       return;
@@ -1066,6 +1156,7 @@
 
     // In-battle interventions
     if (action === 'battle-speed') {
+      if (uiState.mode !== 'battle') return;
       const spd = Math.min(3, Math.max(1, Math.round(Number(actionEl.dataset.speed) || 1)));
       CombatEngine.setSpeed(spd);
       StateStore.update(function (draft) {
@@ -1080,6 +1171,7 @@
     }
 
     if (action === 'toggle-battle-repeat') {
+      if (uiState.mode !== 'battle') return;
       const current = CombatEngine.getSnapshot();
       if (!current || current.mode === 'trial') {
         return;
@@ -1121,6 +1213,7 @@
     }
 
     if (action === 'toggle-dps-detail') {
+      if (uiState.mode !== 'battle') return;
       uiState.showDpsDetail = !uiState.showDpsDetail;
       AudioSE.play('ui_tap');
       if (latestSnapshot) {
@@ -1130,6 +1223,7 @@
     }
 
     if (action === 'switch-battle-detail') {
+      if (uiState.mode !== 'battle') return;
       const mode = actionEl.dataset.detailMode || 'dps';
       uiState.battleDetailMode = mode;
       uiState.showDpsDetail = true;
@@ -1148,6 +1242,7 @@
     }
 
     if (action === 'battle-global-policy') {
+      if (uiState.mode !== 'battle') return;
       const pol = actionEl.dataset.policy;
       CombatEngine.setGlobalTactic(pol);
       latestSnapshot = CombatEngine.getSnapshot();
@@ -1159,6 +1254,7 @@
     }
 
     if (action === 'battle-global-target') {
+      if (uiState.mode !== 'battle') return;
       const tgt = actionEl.dataset.target;
       CombatEngine.setGlobalTargetPolicy(tgt);
       latestSnapshot = CombatEngine.getSnapshot();
@@ -1170,6 +1266,7 @@
     }
 
     if (action === 'cycle-unit-tactic') {
+      if (uiState.mode !== 'battle') return;
       const uid = actionEl.dataset.unitId;
       const snap = CombatEngine.getSnapshot();
       const ally = snap && snap.allies.find(function (a) { return a.id === uid; });
@@ -1186,6 +1283,7 @@
     }
 
     if (action === 'reserve-skill') {
+      if (uiState.mode !== 'battle') return;
       const uid = actionEl.dataset.unitId;
       const skId = actionEl.dataset.skillId || 'unique';
       const snap = CombatEngine.getSnapshot();
@@ -1203,6 +1301,7 @@
     }
 
     if (action === 'retreat-battle') {
+      if (uiState.mode !== 'battle') return;
       stopBattleLoop();
       cancelAutoRepeatTimer();
       uiState.autoRepeatRemaining = 0;
@@ -1237,6 +1336,7 @@
     }
 
     if (action === 'cancel-auto-repeat') {
+      if (uiState.mode !== 'result') return;
       cancelAutoRepeatTimer();
       uiState.autoRepeatRemaining = 0;
       AudioSE.play('ui_tap');
@@ -1245,6 +1345,7 @@
     }
 
     if (action === 'retry-battle') {
+      if (uiState.mode !== 'result') return;
       AudioSE.play('ui_tap');
       const p = uiState.activeBattleParams || { mode: 'stage', stageId: uiState.selectedStageId };
       startBattle(p.mode, p);
@@ -1252,7 +1353,14 @@
     }
 
     if (action === 'next-stage') {
-      if (uiState.nextStageId) {
+      if (uiState.mode !== 'result') return;
+      if (
+        latestSnapshot &&
+        latestSnapshot.mode === 'stage' &&
+        latestSnapshot.status === 'victory' &&
+        uiState.nextStageId &&
+        Progression.isStageUnlocked(StateStore.getState(), uiState.nextStageId)
+      ) {
         AudioSE.play('ui_tap');
         startStageBattle(uiState.nextStageId);
       }
@@ -1260,6 +1368,8 @@
     }
 
     if (action === 'next-abyss-floor') {
+      if (uiState.mode !== 'result') return;
+      if (!latestSnapshot || latestSnapshot.mode !== 'abyss' || latestSnapshot.status !== 'victory') return;
       AudioSE.play('ui_tap');
       const nextFl = Math.max(1, (uiState.activeBattleParams.floor || uiState.selectedAbyssFloor || 1) + 1);
       startBattle('abyss', { floor: nextFl });
@@ -1373,11 +1483,11 @@
           uiState.notice = { type: 'error', text: '復元拒否：' + (verified.reason || '改ざんまたは不正データです') };
           return;
         }
-        const restored = StateStore.setState(verified.state);
+        const restored = setStateSilently(verified.state);
         syncExpCandidates(restored);
         pruneEquipSelection(restored);
-        AudioSE.setVolume(verified.state.settings.soundVolume);
-        AudioSE.setMuted(verified.state.settings.soundMuted);
+        AudioSE.setVolume(restored.settings.soundVolume);
+        AudioSE.setMuted(restored.settings.soundMuted);
         uiState.tamperWarning = null;
         uiState.notice = { type: 'ok', text: '署名検証に成功し、記録を復元しました。' };
       } finally {
@@ -1408,11 +1518,11 @@
     if (action === 'confirm-reset-save' || action === 'reset-save') {
       AudioSE.play('ui_tap');
       const fresh = StateStore.createInitialState();
-      const applied = StateStore.setState(fresh);
+      const applied = setStateSilently(fresh);
       syncExpCandidates(applied);
       pruneEquipSelection(applied);
-      AudioSE.setVolume(fresh.settings.soundVolume);
-      AudioSE.setMuted(fresh.settings.soundMuted);
+      AudioSE.setVolume(applied.settings.soundVolume);
+      AudioSE.setMuted(applied.settings.soundMuted);
       uiState.tamperWarning = null;
       uiState.lastSummonResult = null;
       uiState.confirmResetArmed = false;
@@ -1505,6 +1615,11 @@
         onAction: handleAction,
         onInput: handleInput,
         onChange: handleChange
+      });
+      StateStore.subscribe(function () {
+        if (uiState.booted && uiState.mode === 'hub' && !isRendering && !suppressStateRender) {
+          renderAll();
+        }
       });
       renderAll();
     }

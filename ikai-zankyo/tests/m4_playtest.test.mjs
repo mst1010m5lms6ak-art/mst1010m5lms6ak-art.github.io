@@ -214,6 +214,22 @@ test('M4-02. CombatEngine generates unique battle IDs, tuned gauge pace, balance
     emergLogs.some((l) => l.includes(healer.name) && l.includes(sumikaUnique.name)),
     `Conserve healer should still cast emergency heal when ally HP < 60%; logs=${JSON.stringify(emergLogs)}`
   );
+
+  // Conserve healer also cleanses incapacitated/debuffed ally regardless of remaining shield
+  healer.uniqueSkill.currentCd = 0;
+  healer.gauge = 99;
+  attacker.hp = attacker.maxHp;
+  attacker.shield = 500;
+  attacker.debuffs = [{ stat: 'stun', value: 1, turns: 1, duration: 1 }];
+  attacker.gauge = 0;
+  for (const e of cb.enemies) e.gauge = 0;
+  const logBeforeCleanse = cb.logs.length;
+  CombatEngine.step(cb, 100);
+  const cleanseLogs = cb.logs.slice(logBeforeCleanse);
+  assert.ok(
+    cleanseLogs.some((l) => l.includes(healer.name) && l.includes(sumikaUnique.name)),
+    `Conserve healer should cleanse incapacitated ally even with active shield; logs=${JSON.stringify(cleanseLogs)}`
+  );
 });
 
 test('M4-03. Progression.autoEquipBest & autoFitTrialParty work validly and preserve R5 invariants', () => {
@@ -535,8 +551,33 @@ async function runM4CdpSuite(targetUrl, modeLabel) {
       `
     });
 
+    const loadDone = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`[${modeLabel}] Page.loadEventFired timeout`)), 15000);
+      page.on('Page.loadEventFired', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
     await page.send('Page.navigate', { url: targetUrl });
-    await new Promise((r) => setTimeout(r, 900));
+    await loadDone;
+
+    // Wait until App.boot() completes
+    let booted = false;
+    for (let i = 0; i < 100; i += 1) {
+      const bootRes = await page.send('Runtime.evaluate', {
+        expression: 'Boolean(window.IkaiApp && window.IkaiApp.App && window.IkaiApp.App.getUiState().booted)',
+        returnByValue: true
+      });
+      if (bootRes.exceptionDetails) {
+        throw new Error(`[${modeLabel}] Boot polling failed: ` + JSON.stringify(bootRes.exceptionDetails));
+      }
+      if (bootRes.result && bootRes.result.value) {
+        booted = true;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    assert.equal(booted, true, `[${modeLabel}] App.boot() did not complete within timeout`);
 
     // Apply iPhone 15 Pro SafeArea (59 / 34) via CSS custom properties for strict worst-case verification
     await setViewportAndSafeArea(393, 852, 59, 34);
@@ -550,11 +591,15 @@ async function runM4CdpSuite(targetUrl, modeLabel) {
         return {
           selectedCharId: ui.selectedCharId,
           activeTab: ui.activeTab,
-          hasAppleTouch: !!appleTouch
+          hasAppleTouch: !!appleTouch,
+          booted: ui.booted
         };
       })()`,
       returnByValue: true
     });
+    assert.equal(initAudit.exceptionDetails, undefined, `[${modeLabel}] initAudit threw: ${JSON.stringify(initAudit.exceptionDetails)}`);
+    assert.ok(initAudit.result && initAudit.result.value, `[${modeLabel}] initAudit returned empty value`);
+    assert.equal(initAudit.result.value.booted, true);
     assert.equal(initAudit.result.value.activeTab, 'roster');
     assert.equal(initAudit.result.value.selectedCharId, 'char_todo_seiichi');
     assert.equal(initAudit.result.value.hasAppleTouch, true);
@@ -606,6 +651,81 @@ async function runM4CdpSuite(targetUrl, modeLabel) {
       hasSetSummary: true
     });
     await auditLayout(page, `${modeLabel}-393x852-enhance-equip`);
+
+    // 3b. Verify pruneEquipSelection clears synthMatUid on base qualityIdx >= 4, quality mismatch, or equipId mismatch
+    const pruneSynthCheck = await page.send('Runtime.evaluate', {
+      expression: `(() => {
+        const eqIdA = window.IkaiApp.MasterData.EQUIPS[0].id;
+        const eqIdB = window.IkaiApp.MasterData.EQUIPS[1].id;
+        const st0 = window.IkaiApp.StateStore.getState();
+        const backupEquips = JSON.parse(JSON.stringify(st0.equips));
+        const st1 = JSON.parse(JSON.stringify(st0));
+        st1.equips.push(
+          { uid: 'eq_prune_base', equipId: eqIdA, qualityIdx: 0, locked: false },
+          { uid: 'eq_prune_mat', equipId: eqIdA, qualityIdx: 0, locked: false },
+          { uid: 'eq_prune_dummy', equipId: eqIdB, qualityIdx: 0, locked: false }
+        );
+        window.IkaiApp.StateStore.setState(st1);
+        document.querySelector('[data-action="set-equip-slot-filter"][data-slot="all"]').click();
+        document.querySelector('[data-action="set-synth-base"][data-uid="eq_prune_base"]').click();
+        document.querySelector('[data-action="set-synth-mat"][data-uid="eq_prune_mat"]').click();
+        const selectedBefore = document.getElementById('lower-deck').textContent.includes('素材選択済');
+
+        // Case 1: base qualityIdx >= 4
+        const stMax = JSON.parse(JSON.stringify(window.IkaiApp.StateStore.getState()));
+        stMax.equips.find((e) => e.uid === 'eq_prune_base').qualityIdx = 4;
+        window.IkaiApp.StateStore.setState(stMax);
+        document.querySelector('[data-action="toggle-equip-lock"][data-uid="eq_prune_dummy"]').click();
+        const clearedOnMaxQuality = !document.getElementById('lower-deck').textContent.includes('素材選択済') &&
+          !document.querySelector('[data-action="set-synth-mat"][data-uid="eq_prune_mat"]').textContent.includes('✓');
+
+        // Case 2: base qualityIdx !== mat qualityIdx
+        const stQReset = JSON.parse(JSON.stringify(window.IkaiApp.StateStore.getState()));
+        stQReset.equips.find((e) => e.uid === 'eq_prune_base').qualityIdx = 0;
+        window.IkaiApp.StateStore.setState(stQReset);
+        document.querySelector('[data-action="set-synth-base"][data-uid="eq_prune_base"]').click();
+        document.querySelector('[data-action="set-synth-mat"][data-uid="eq_prune_mat"]').click();
+        const stQMismatch = JSON.parse(JSON.stringify(window.IkaiApp.StateStore.getState()));
+        stQMismatch.equips.find((e) => e.uid === 'eq_prune_base').qualityIdx = 1;
+        window.IkaiApp.StateStore.setState(stQMismatch);
+        document.querySelector('[data-action="toggle-equip-lock"][data-uid="eq_prune_dummy"]').click();
+        const clearedOnQualityMismatch = !document.getElementById('lower-deck').textContent.includes('素材選択済') &&
+          !document.querySelector('[data-action="set-synth-mat"][data-uid="eq_prune_mat"]').textContent.includes('✓');
+
+        // Case 3: base equipId !== mat equipId
+        const stIdReset = JSON.parse(JSON.stringify(window.IkaiApp.StateStore.getState()));
+        stIdReset.equips.find((e) => e.uid === 'eq_prune_base').qualityIdx = 0;
+        window.IkaiApp.StateStore.setState(stIdReset);
+        document.querySelector('[data-action="set-synth-base"][data-uid="eq_prune_base"]').click();
+        document.querySelector('[data-action="set-synth-mat"][data-uid="eq_prune_mat"]').click();
+        const stIdMismatch = JSON.parse(JSON.stringify(window.IkaiApp.StateStore.getState()));
+        stIdMismatch.equips.find((e) => e.uid === 'eq_prune_base').equipId = eqIdB;
+        window.IkaiApp.StateStore.setState(stIdMismatch);
+        document.querySelector('[data-action="toggle-equip-lock"][data-uid="eq_prune_dummy"]').click();
+        const clearedOnEquipMismatch = !document.getElementById('lower-deck').textContent.includes('素材選択済') &&
+          !document.querySelector('[data-action="set-synth-mat"][data-uid="eq_prune_mat"]').textContent.includes('✓');
+
+        // Restore original equips cleanly and prune temporary UIDs
+        const stRestore = JSON.parse(JSON.stringify(window.IkaiApp.StateStore.getState()));
+        stRestore.equips = backupEquips;
+        window.IkaiApp.StateStore.setState(stRestore);
+        if (backupEquips[0]) {
+          const lockBtn1 = document.querySelector('[data-action="toggle-equip-lock"][data-uid="' + backupEquips[0].uid + '"]');
+          if (lockBtn1) lockBtn1.click();
+          const lockBtn2 = document.querySelector('[data-action="toggle-equip-lock"][data-uid="' + backupEquips[0].uid + '"]');
+          if (lockBtn2) lockBtn2.click();
+        }
+        return { selectedBefore, clearedOnMaxQuality, clearedOnQualityMismatch, clearedOnEquipMismatch };
+      })()`,
+      returnByValue: true
+    });
+    assert.equal(pruneSynthCheck.exceptionDetails, undefined, `pruneSynthCheck threw: ${JSON.stringify(pruneSynthCheck.exceptionDetails)}`);
+    assert.deepEqual(pruneSynthCheck.result.value, {
+      selectedBefore: true,
+      clearedOnMaxQuality: true,
+      clearedOnQualityMismatch: true,
+      clearedOnEquipMismatch: true
+    });
 
     // 4. Test Expedition candidate sync when assigning resonance/party (M4-A1) + Party full tactics & resonance (M4-C5)
     const syncAndPartyCheck = await page.send('Runtime.evaluate', {
@@ -759,7 +879,7 @@ async function runM4CdpSuite(targetUrl, modeLabel) {
     await new Promise((r) => setTimeout(r, 100));
     const trialResultCheck = await page.send('Runtime.evaluate', {
       expression: `(() => {
-        const nextBtn = document.querySelector('[data-action="result-next-stage"]');
+        const nextBtn = document.querySelector('[data-action="next-stage"]');
         const logBtn = document.querySelector('[data-action="toggle-result-logs"]');
         const grid2 = document.querySelector('#lower-deck .btn-grid-2');
         return { hasNextStageBtn: !!nextBtn, hasLogBtn: !!logBtn, hasGrid2: !!grid2 };

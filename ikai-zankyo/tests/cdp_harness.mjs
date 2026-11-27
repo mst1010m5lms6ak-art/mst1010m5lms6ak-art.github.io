@@ -711,17 +711,18 @@ export class CdpBrowser {
    * P2: data-testid fallback
    * P3: CSS selector fallback
    */
-  async queryControl(spec) {
+  async queryControl(spec, options = {}) {
     const normalized =
       typeof spec === 'string'
-        ? { selector: spec }
+        ? { selector: spec, scrollIntoView: Boolean(options.scrollIntoView) }
         : {
             labelRegex: spec.labelRegex instanceof RegExp ? spec.labelRegex.source : spec.labelRegex,
             labelFlags: spec.labelRegex instanceof RegExp ? spec.labelRegex.flags : spec.labelFlags || '',
             testId: Array.isArray(spec.testId) ? spec.testId : spec.testId ? [spec.testId] : [],
             selector: spec.selector || '',
             scope: spec.scope || 'any', // 'lower' | 'upper' | 'any'
-            index: spec.index ?? 0
+            index: spec.index ?? 0,
+            scrollIntoView: Boolean(options.scrollIntoView || spec.scrollIntoView)
           };
 
     return await this.evalFn((cfg) => {
@@ -734,6 +735,9 @@ export class CdpBrowser {
       };
 
       const toPlain = (el, layer) => {
+        if (cfg.scrollIntoView && typeof el.scrollIntoView === 'function') {
+          el.scrollIntoView({ block: 'center', inline: 'nearest' });
+        }
         const r = el.getBoundingClientRect();
         const cs = getComputedStyle(el);
         return {
@@ -816,7 +820,7 @@ export class CdpBrowser {
   }
 
   async tap(targetOrSpec) {
-    const info = await this.queryControl(targetOrSpec);
+    const info = await this.queryControl(targetOrSpec, { scrollIntoView: true });
     if (!info?.found) {
       throw new Error(`tap() target not found: ${JSON.stringify(targetOrSpec)}`);
     }
@@ -1853,11 +1857,11 @@ export function scanStaticR5(projectDir) {
   const indexHtmlPath = path.join(projectDir, 'index.html');
   if (fs.existsSync(indexHtmlPath)) {
     const html = fs.readFileSync(indexHtmlPath, 'utf8');
-    const cspMatch = html.match(/<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]+content=["']([^"']+)["']/i);
+    const cspMatch = html.match(/<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]+content=(?:"([^"]+)"|'([^']+)')/i);
     if (!cspMatch) {
       violations.push('index.html missing Content-Security-Policy meta tag');
     } else {
-      const csp = cspMatch[1];
+      const csp = cspMatch[1] ?? cspMatch[2] ?? '';
       if (/'unsafe-inline'|'unsafe-eval'/i.test(csp)) {
         violations.push(`CSP contains unsafe directive: ${csp}`);
       }

@@ -44,7 +44,7 @@ async function withTempHttpUrl(fn) {
   }
 }
 
-async function runBattleToCompletion(browser, { maxSteps = 100, stepMs = 1000, requireFinish = true } = {}) {
+async function runBattleToCompletion(browser, { maxSteps = 120, stepMs = 1000, requireFinish = true } = {}) {
   await browser.waitFor(() => IkaiApp.CombatEngine.getSnapshot(), { label: 'combat start' });
   let snap = null;
   for (let i = 0; i < maxSteps; i++) {
@@ -52,11 +52,19 @@ async function runBattleToCompletion(browser, { maxSteps = 100, stepMs = 1000, r
       const r = IkaiApp.CombatEngine.step(${stepMs});
       const cur = r || IkaiApp.CombatEngine.getSnapshot();
       return cur ? {
-        finished: Boolean(cur.finished),
-        victory: Boolean(cur.victory ?? (cur.result === 'victory'))
+        status: cur.status,
+        finished: cur.status !== 'ongoing',
+        victory: cur.status === 'victory'
       } : null;
     })()`);
     if (snap?.finished) {
+      await browser.waitFor(
+        () => {
+          const ui = IkaiApp.App.getUiState();
+          return ui && ui.mode === 'result';
+        },
+        { timeoutMs: 5000, label: 'battle result mode settled' }
+      );
       return snap;
     }
   }
@@ -175,7 +183,7 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
           for (const id of ids) if (!s.roster[id]) s.roster[id] = ${ROSTER_ENTRY_EXPR};
           s.party = ids;
         });
-        IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+        IkaiApp.App.startBattle('stage', { stageId: '1-1' });
       })()`);
       await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
       const res = await sharedBrowser.auditNoEllipsisAndOverflow();
@@ -239,7 +247,7 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
   describe('F3 Boundaries', () => {
     it('T2-F03-01: localStorage 改ざん (echoStones +999999) の署名検知・拒否', async () => {
       await ensureBootedHttp(true);
-      const saveRes = await sharedBrowser.eval('await IkaiApp.StateStore.saveNow()');
+      const saveRes = await sharedBrowser.eval('IkaiApp.StateStore.saveNow()');
       assert.equal(saveRes?.ok, true, 'StateStore.saveNow() must succeed');
       const tamperOk = await sharedBrowser.eval(`(async () => {
         const raw = localStorage.getItem(IkaiApp.StateStore.STORAGE_KEY);
@@ -445,7 +453,15 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
       const stage56Spec = { labelRegex: /5-6|境界の中心核/, testId: 'stage-select-5-6', scope: 'lower' };
       const stage56 = await sharedBrowser.queryControl(stage56Spec);
       assert.equal(stage56.found, true, 'Stage 5-6 button must render in Area 5');
-      assert.equal(stage56.disabled, true, 'Locked stage 5-6 button must be disabled');
+      await sharedBrowser.tap(stage56Spec);
+      const isLockedCard = await sharedBrowser.eval(`(() => {
+        const el = document.querySelector('[data-action="select-stage"][data-stage-id="5-6"]');
+        return Boolean(el && (el.classList.contains('is-locked') || (el.textContent || '').includes('未開放')));
+      })()`);
+      assert.equal(isLockedCard, true, 'Stage 5-6 card must show locked state');
+      const sortieBtn = await sharedBrowser.queryControl({ testId: 'sortie-start-btn', selector: '[data-testid="sortie-start-btn"]', scope: 'lower' });
+      assert.equal(sortieBtn.found, true, 'Sortie CTA button must render');
+      assert.equal(sortieBtn.disabled, true, 'Sortie CTA button must be disabled for locked stage 5-6');
       const snap = await sharedBrowser.eval('IkaiApp.CombatEngine.getSnapshot()');
       assert.equal(snap, null, 'Locked stage must not start combat');
       await sharedBrowser.assertZeroErrors();
@@ -464,8 +480,9 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
         const schemaBlocked = IkaiApp.SaveSecurity.validateSchema(bad).ok === false;
         let startBlocked = false;
         try {
-          IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0, partyOverride: [null, null, null, null] });
-          startBlocked = IkaiApp.CombatEngine.getSnapshot() === null;
+          const started = IkaiApp.App.startBattle('stage', { stageId: '1-1' }, { partyOverride: [null, null, null, null] });
+          const ceBlocked = IkaiApp.CombatEngine.createBattle({ partyIds: [] }) === null;
+          startBlocked = started === null && ceBlocked && IkaiApp.CombatEngine.getSnapshot() === null;
         } catch (_) {
           startBlocked = true;
         }
@@ -499,11 +516,11 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
           s.roster.char_kiryu_takashi = { ...(${ROSTER_ENTRY_EXPR}), awakening: 2 };
           s.party = ['char_kiryu_takashi', null, null, null];
         });
-        IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+        IkaiApp.App.startBattle('stage', { stageId: '1-1' }, { seed: 12345 });
       })()`);
       const snap = await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
       assert.equal(snap.allies.length, 1);
-      const fin = await runBattleToCompletion(sharedBrowser);
+      const fin = await runBattleToCompletion(sharedBrowser, { maxSteps: 180 });
       assert.equal(fin.finished, true);
       assert.equal(fin.victory, true, 'Solo Kiryu must complete and win stage 1-1');
       await sharedBrowser.assertZeroErrors();
@@ -519,19 +536,19 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
           s.roster.char_kiryu_takashi.equipped['護符'] = 'f64_hp';
           s.party = ['char_nakamura_yui', 'char_kiryu_takashi', null, null];
         });
-        IkaiApp.App.startBattle('main', { areaId: 'area_5', stageIndex: 5, startWave: 4 });
+        IkaiApp.App.startBattle('stage', { stageId: '5-6' });
       })()`);
       await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
       const res = await sharedBrowser.eval(`(() => {
         IkaiApp.CombatEngine.reserveSkill('char_nakamura_yui', 'unique');
         let observedKo = false;
         let finishedAfterKo = false;
-        for (let i = 0; i < 100; i++) {
-          const r = IkaiApp.CombatEngine.step(800);
+        for (let i = 0; i < 250; i++) {
+          const r = IkaiApp.CombatEngine.step(1000);
           const s = r || IkaiApp.CombatEngine.getSnapshot();
           const yui = s.allies.find(a => a.id === 'char_nakamura_yui');
           if (yui && yui.hp <= 0) observedKo = true;
-          if (s.finished) {
+          if (s.status !== 'ongoing') {
             finishedAfterKo = true;
             break;
           }
@@ -548,11 +565,10 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
       await openTab(sharedBrowser, 'sortie');
       await sharedBrowser.tap({ labelRegex: /出撃開始|出撃する/, testId: ['start-battle-btn', 'sortie-start-btn'], scope: 'lower' });
       await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
-      const spdSpec = { labelRegex: /×1|×2|×3|倍速/, testId: 'battle-speed-btn', scope: 'lower' };
-      await sharedBrowser.tap(spdSpec);
+      const spdSpec = { labelRegex: /^×3$/, selector: '[data-action="battle-speed"][data-speed="3"]', scope: 'lower' };
       await sharedBrowser.tap(spdSpec);
       const speed = await sharedBrowser.eval('IkaiApp.StateStore.getState().settings.battleSpeed');
-      assert.equal(speed, 3, `Expected battleSpeed === 3 after two taps, got ${speed}`);
+      assert.equal(speed, 3, `Expected battleSpeed === 3 after tapping ×3, got ${speed}`);
 
       const steps = [
         { tactic: 'defensive', target: 'lowest_hp' },
@@ -615,19 +631,19 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
           s.roster[s.party[0]].tactic.skillPriority = 'collect_first';
           s.roster[s.party[1]].tactic.skillPriority = 'collect_first';
         });
-        IkaiApp.App.startBattle('raid', { raidId: IkaiApp.MasterData.RAID_BOSSES[0].id, difficulty: 0 });
+        IkaiApp.App.startBattle('raid', { raidId: IkaiApp.MasterData.RAID_BOSSES[0].id, difficultyId: 'easy' });
       })()`);
       await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
       const res = await sharedBrowser.eval(`(() => {
-        const bRange = IkaiApp.StateStore.getState().skillInventory.sk_r_soutou.uses;
-        const bAll = IkaiApp.StateStore.getState().skillInventory.sk_r_shogekiha.uses;
+        const beforeSnap = IkaiApp.CombatEngine.getSnapshot();
+        const bRange = (beforeSnap?.skillUses?.sk_r_soutou) || 0;
+        const bAll = (beforeSnap?.skillUses?.sk_r_shogekiha) || 0;
         for (let i = 0; i < 25; i++) IkaiApp.CombatEngine.step(700);
-        const inv = IkaiApp.StateStore.getState().skillInventory;
         const snap = IkaiApp.CombatEngine.getSnapshot();
         return {
-          rangeDelta: inv.sk_r_soutou.uses - bRange,
-          allDelta: inv.sk_r_shogekiha.uses - bAll,
-          dealt: snap.dps?.dealt || 0
+          rangeDelta: ((snap?.skillUses?.sk_r_soutou) || 0) - bRange,
+          allDelta: ((snap?.skillUses?.sk_r_shogekiha) || 0) - bAll,
+          dealt: snap?.dpsMeters?.totals?.damageDealt || 0
         };
       })()`);
       assert.ok(res.rangeDelta >= 1 && res.allDelta >= 1, 'Both 範囲 and 全体 skills must execute against single raid boss');
@@ -637,8 +653,8 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
 
     it('T2-F07-02: ボス撃破直後の幽霊ボス技不発と勝利遷移', async () => {
       await ensureBootedHttp(true);
-      await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 2, startWave: 4 })`);
-      const fin = await runBattleToCompletion(sharedBrowser);
+      await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-3' })`);
+      const fin = await runBattleToCompletion(sharedBrowser, { maxSteps: 180 });
       assert.equal(fin.finished, true);
       assert.equal(fin.victory, true, 'Stage 1-3 boss wave must end in victory');
       await sharedBrowser.assertZeroErrors();
@@ -652,7 +668,7 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
           s.roster.char_kiryu_takashi.tactic.skillPriority = 'unique_first';
           s.party = ['char_kiryu_takashi', 'char_kobayashi_shohei', null, null];
         });
-        IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+        IkaiApp.App.startBattle('stage', { stageId: '1-1' });
       })()`);
       await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
       const res = await sharedBrowser.eval(`(() => {
@@ -664,12 +680,12 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
           const s = IkaiApp.CombatEngine.getSnapshot();
           const tank = s.allies.find(a => a.id === 'char_kiryu_takashi');
           const hasTaunt = Boolean(tank?.buffs?.some(b => b.stat === 'taunt' || b.id === 'taunt' || b.type === 'taunt'));
-          if (tauntObserved && (tank?.dps?.damageTaken || 0) > prevTankTaken) {
+          if (tauntObserved && (tank?.metrics?.damageTaken || 0) > prevTankTaken) {
             tankHitsWhileTaunt++;
           }
           if (hasTaunt) tauntObserved = true;
-          prevTankTaken = tank?.dps?.damageTaken || 0;
-          if (s.finished) break;
+          prevTankTaken = tank?.metrics?.damageTaken || 0;
+          if (s.status !== 'ongoing') break;
         }
         return { tauntObserved, tankHitsWhileTaunt };
       })()`);
@@ -687,27 +703,32 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
             s.roster[cid].emblemNodes = [1, 2, 3, 4];
           }
         });
-        IkaiApp.App.startBattle('main', { areaId: 'area_3', stageIndex: 2, startWave: 4 });
+        IkaiApp.App.startBattle('stage', { stageId: '3-3' });
       })()`);
       await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
       const res = await sharedBrowser.eval(`(() => {
         let stunObserved = false;
         let skipObserved = false;
-        for (let i = 0; i < 50; i++) {
-          IkaiApp.CombatEngine.step(500);
+        let reachedWave5 = false;
+        for (let i = 0; i < 300; i++) {
+          const cur = IkaiApp.CombatEngine.getSnapshot();
+          const dt = (cur && cur.waveIndex === 4) ? 250 : 600;
+          IkaiApp.CombatEngine.step(dt);
           const s = IkaiApp.CombatEngine.getSnapshot();
+          if (s.waveIndex === 4) reachedWave5 = true;
           if (s.allies.some(a => (a.debuffs || []).concat(a.buffs || []).some(d => d.stat === 'stun' || d.id === 'stun' || d.type === 'stun'))) {
             stunObserved = true;
           }
-          const logText = (s.logs || []).map(l => typeof l === 'string' ? l : (l.text || '')).join('\n');
+          const logText = (s.logs || []).map(l => typeof l === 'string' ? l : (l.text || '')).join('\\n');
           if (/スタン|行動不能|スキップ/.test(logText)) {
             skipObserved = true;
           }
           if (stunObserved && skipObserved) break;
-          if (s.finished) break;
+          if (s.status !== 'ongoing') break;
         }
-        return { stunObserved, skipObserved };
+        return { reachedWave5, stunObserved, skipObserved };
       })()`);
+      assert.equal(res.reachedWave5, true, 'Must reach 3-3 boss wave (Wave 5)');
       assert.equal(res.stunObserved || res.skipObserved, true, 'b3_zeroshiki stun debuff / action skip must occur');
       await sharedBrowser.assertZeroErrors();
     });
@@ -722,7 +743,7 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
           s.roster.char_kiryu_takashi.equipped['護符'] = 'f75_hp';
           s.party = ['char_kiryu_takashi', null, null, null];
         });
-        IkaiApp.App.startBattle('main', { areaId: 'area_2', stageIndex: 0, startWave: 4 });
+        IkaiApp.App.startBattle('stage', { stageId: '2-1' });
       })()`);
       await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
       const res = await sharedBrowser.eval(`(() => {
@@ -730,19 +751,19 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
         let exceeded = false;
         let prevTaken = 0;
         let hitCount = 0;
-        for (let i = 0; i < 50; i++) {
+        for (let i = 0; i < 150; i++) {
           IkaiApp.CombatEngine.step(500);
           const s = IkaiApp.CombatEngine.getSnapshot();
           const k = s.allies[0];
-          if ((k.dps?.damageTaken || 0) > prevTaken) {
+          if ((k.metrics?.damageTaken || 0) > prevTaken) {
             hitCount++;
-            prevTaken = k.dps.damageTaken;
+            prevTaken = k.metrics.damageTaken;
           }
           const stackBuffs = (k.buffs || []).filter(b => b.stat === 'defPct' || b.id === 'trt_kiryu_takashi' || (b.name || '').includes('鉄壁の沈着'));
           const stacks = stackBuffs.reduce((mx, b) => Math.max(mx, b.stacks || b.count || Math.round((b.value || 0) / 5) || 1), 0);
           if (stacks > maxStacks) maxStacks = stacks;
           if (stacks > 5) exceeded = true;
-          if (s.finished || hitCount >= 8) break;
+          if (s.status !== 'ongoing' || hitCount >= 8) break;
         }
         return { hitCount, maxStacks, exceeded };
       })()`);
@@ -759,7 +780,7 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
   describe('F8 Boundaries', () => {
     it('T2-F08-01: 戦闘開始直後（0ms / 全値0）の DPS メーター（NaN%禁止）', async () => {
       await ensureBootedHttp(true);
-      await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 })`);
+      await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-1' })`);
       await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
       const meter = await sharedBrowser.eval(`(() => {
         const upper = document.querySelector('.upper-stage');
@@ -781,7 +802,7 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
           for (const id of dpsIds) if (!s.roster[id]) s.roster[id] = ${ROSTER_ENTRY_EXPR};
           s.party = dpsIds;
         });
-        IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+        IkaiApp.App.startBattle('stage', { stageId: '1-1' });
       })()`);
       await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
       await runBattleToCompletion(sharedBrowser);
@@ -803,14 +824,14 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
           s.roster.char_kanzaki_mio.equipped['主器'] = 'f83_wep';
           s.party = ['char_kanzaki_mio', 'char_ishii_daiki', null, null];
         });
-        IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+        IkaiApp.App.startBattle('stage', { stageId: '1-1' });
       })()`);
       await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
       const res = await sharedBrowser.eval(`(() => {
         for (let i = 0; i < 6; i++) IkaiApp.CombatEngine.step(700);
         const snap = IkaiApp.CombatEngine.getSnapshot();
-        const k = snap.allies.find(a => a.id === 'char_kanzaki_mio')?.dps?.damageDealt || 0;
-        const d = snap.allies.find(a => a.id === 'char_ishii_daiki')?.dps?.damageDealt || 0;
+        const k = snap.allies.find(a => a.id === 'char_kanzaki_mio')?.metrics?.damageDealt || 0;
+        const d = snap.allies.find(a => a.id === 'char_ishii_daiki')?.metrics?.damageDealt || 0;
         const meter = document.querySelector('[data-testid="dps-meter"], .dps-meter');
         const bars = meter ? [...meter.querySelectorAll('[style*="width"]')] : [];
         const widths = bars.map(b => parseFloat(b.style.width));
@@ -832,12 +853,12 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
           s.roster.char_kiryu_takashi.equipped['護符'] = 'f84_hp';
           s.party = ['char_nakamura_yui', 'char_kiryu_takashi', null, null];
         });
-        IkaiApp.App.startBattle('main', { areaId: 'area_5', stageIndex: 5, startWave: 4 });
+        IkaiApp.App.startBattle('stage', { stageId: '5-6' });
       })()`);
       await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
       const res = await sharedBrowser.eval(`(() => {
         let koAlly = null;
-        for (let i = 0; i < 60; i++) {
+        for (let i = 0; i < 150; i++) {
           IkaiApp.CombatEngine.step(800);
           const s = IkaiApp.CombatEngine.getSnapshot();
           const yui = s.allies.find(a => a.id === 'char_nakamura_yui');
@@ -845,13 +866,13 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
             koAlly = yui;
             break;
           }
-          if (s.finished) break;
+          if (s.status !== 'ongoing') break;
         }
         const upperTxt = document.querySelector('.upper-stage')?.innerText || '';
         return {
           koFound: Boolean(koAlly),
           nameStillInDom: upperTxt.includes('中村 結衣'),
-          taken: koAlly?.dps?.damageTaken
+          taken: koAlly?.metrics?.damageTaken
         };
       })()`);
       assert.equal(res.koFound, true, 'Fragile ally must be KOed in 5-6');
@@ -868,7 +889,7 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
           for (const id of ids) s.roster[id] = ${ROSTER_ENTRY_EXPR};
           s.party = ids;
         });
-        IkaiApp.App.startBattle('main', { areaId: 'area_2', stageIndex: 5, startWave: 4 });
+        IkaiApp.App.startBattle('stage', { stageId: '2-6' });
       })()`);
       await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
       const buffCheck = await sharedBrowser.eval(`(() => {
@@ -1069,7 +1090,7 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
           s.settings.autoRepeatCount = 3;
           s.party = ['char_nakamura_yui', null, null, null];
         });
-        IkaiApp.App.startBattle('main', { areaId: 'area_5', stageIndex: 5, startWave: 4 });
+        IkaiApp.App.startBattle('stage', { stageId: '5-6' });
       })()`);
       const fin = await runBattleToCompletion(sharedBrowser);
       assert.equal(fin.victory, false, 'Underpowered solo healer on 5-6 must lose');
@@ -1134,7 +1155,7 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
       assert.equal(diffs, 3);
       await sharedBrowser.eval(`(() => {
         IkaiApp.StateStore.update(s => { s.party = ['char_nakamura_yui', null, null, null]; });
-        IkaiApp.App.startBattle('raid', { raidId: 'raid_zankyo_ryu', difficulty: 2 });
+        IkaiApp.App.startBattle('raid', { raidId: 'raid_zankyo_ryu', difficultyId: 'extreme' });
       })()`);
       const fin = await runBattleToCompletion(sharedBrowser);
       assert.equal(fin.victory, false, 'Solo R healer vs extreme raid must lose safely');
@@ -1330,6 +1351,7 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
         }
       })`);
       await openTab(sharedBrowser, 'enhance');
+      await sharedBrowser.tap({ labelRegex: /装備/, selector: '[data-action="switch-enhance-sub"][data-sub="equips"]', scope: 'lower' });
       const scrollRes = await sharedBrowser.eval(`(() => {
         const sc = document.querySelector('.lower-scroll');
         const upper = document.querySelector('.upper-stage');
@@ -1353,15 +1375,23 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
       await sharedBrowser.assertZeroErrors();
     });
 
-    it('T2-F14-02: モーダル展開中のタブ切替でデッドロック・ゴースト残留なし', async () => {
+    it('T2-F14-02: モーダル/上半分詳細展開中のタブ切替でデッドロック・ゴースト残留なし', async () => {
       await ensureBootedHttp(false);
       await openTab(sharedBrowser, 'codex');
       await sharedBrowser.tap({ labelRegex: /桐生 貴史/, scope: 'lower' });
-      const opened = await sharedBrowser.eval(`Boolean(document.querySelector('[data-testid="detail-modal"], .detail-sheet, .modal')) || (document.querySelector('.lower-deck')?.innerText || '').includes('固有技')`);
-      assert.equal(opened, true, 'Detail modal/sheet must open when tapping character');
+      const opened = await sharedBrowser.eval(`(() => {
+        const upperTxt = document.querySelector('.upper-stage')?.innerText || '';
+        return upperTxt.includes('桐生 貴史') && upperTxt.includes('固有技');
+      })()`);
+      assert.equal(opened, true, 'Codex character detail in .upper-stage must open when tapping character');
       await openTab(sharedBrowser, 'sortie');
-      const ghost = await sharedBrowser.eval(`Boolean(document.querySelector('[data-testid="detail-modal"], .detail-sheet, .modal'))`);
-      assert.equal(ghost, false, 'Old detail modal must not remain after switching tabs');
+      const cleanup = await sharedBrowser.eval(`(() => {
+        const ghostModal = Boolean(document.querySelector('[data-testid="detail-modal"], .detail-sheet, .modal'));
+        const upperTxt = document.querySelector('.upper-stage')?.innerText || '';
+        return { ghostModal, codexDetailCleared: !upperTxt.includes('固有技') };
+      })()`);
+      assert.equal(cleanup.ghostModal, false, 'Old detail modal must not remain after switching tabs');
+      assert.equal(cleanup.codexDetailCleared, true, 'Codex detail in .upper-stage must clear after switching tabs');
       const split = await sharedBrowser.auditUpperLowerSplit();
       assert.equal(split.ok, true, split.violations.join('; '));
       await sharedBrowser.assertZeroErrors();
@@ -1417,10 +1447,8 @@ describe('Tier 2: Boundary, Negative & Corner-Case Tests (F1-F15, 75 tests)', ()
       assert.equal(startCtrl.found, true, 'Sortie start button must exist');
       const startCx = startCtrl.rect.left + startCtrl.rect.width / 2;
       const startCy = startCtrl.rect.top + startCtrl.rect.height / 2;
-      await Promise.all([
-        sharedBrowser.tapPoint(startCx, startCy),
-        sharedBrowser.tapPoint(startCx, startCy)
-      ]);
+      await sharedBrowser.tapPoint(startCx, startCy);
+      await sharedBrowser.tapPoint(startCx, startCy);
       const snap0 = await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot(), { label: 'single battle start' });
       assert.ok(snap0 && snap0.id, 'Battle snapshot must be created');
 

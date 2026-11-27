@@ -55,11 +55,21 @@ async function runBattleToCompletion(browser, maxSteps = 100) {
       const r = IkaiApp.CombatEngine.step(1000);
       const cur = r || IkaiApp.CombatEngine.getSnapshot();
       return cur ? {
-        finished: Boolean(cur.finished),
-        victory: Boolean(cur.victory ?? (cur.result === 'victory'))
+        status: cur.status,
+        finished: cur.status !== 'ongoing',
+        victory: cur.status === 'victory'
       } : null;
     })()`);
-    if (snap?.finished) return snap;
+    if (snap?.finished) {
+      await browser.waitFor(
+        () => {
+          const ui = IkaiApp.App.getUiState();
+          return ui && ui.mode === 'result';
+        },
+        { timeoutMs: 5000, label: 'battle result mode settled' }
+      );
+      return snap;
+    }
   }
   assert.fail(`Battle did not finish within ${maxSteps} steps`);
 }
@@ -97,20 +107,32 @@ describe('Tier 4: Real-World Journeys, R5 Full Compliance Sweep & SW Offline Ver
       }
 
       await bootIkaiApp(sharedBrowser, getAppUrl(), { clearStorage: true });
-      await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 })`);
+      await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-1' })`);
       const b1 = await runBattleToCompletion(sharedBrowser);
       assert.equal(b1.finished, true);
       assert.equal(b1.victory, true);
 
-      await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 2, startWave: 4 })`);
-      await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
+      await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-3' })`);
+      await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot(), { label: 'stage 1-3 start' });
+      const reachedBossWave = await sharedBrowser.eval(`(() => {
+        for (let i = 0; i < 60; i++) {
+          const s = IkaiApp.CombatEngine.step(800);
+          if (!s) break;
+          if (s.waveIndex === 4) return { ok: true, waveIndex: s.waveIndex, isBossWave: s.isBossWave, status: s.status };
+          if (s.status !== 'ongoing') return { ok: false, waveIndex: s.waveIndex, status: s.status };
+        }
+        const cur = IkaiApp.CombatEngine.getSnapshot();
+        return { ok: Boolean(cur && cur.waveIndex === 4), waveIndex: cur?.waveIndex, status: cur?.status };
+      })()`);
+      assert.equal(reachedBossWave.ok, true, `Expected stage 1-3 to reach boss wave 5 (idx 4), got ${JSON.stringify(reachedBossWave)}`);
+      await sharedBrowser.waitFor(() => document.querySelector('[data-testid="boss-plate"]'), { label: 'stage 1-3 boss plate DOM' });
       const midBossTxt = await sharedBrowser.eval(`document.querySelector('.upper-stage')?.innerText || ''`);
       assert.ok(midBossTxt.includes('九十九') || midBossTxt.includes('ボス'));
       const b2 = await runBattleToCompletion(sharedBrowser);
       assert.equal(b2.finished, true);
       assert.equal(b2.victory, true);
 
-      await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 5, startWave: 4 })`);
+      await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-6' })`);
       const b3 = await runBattleToCompletion(sharedBrowser);
       assert.equal(b3.finished, true);
       assert.equal(b3.victory, true);
@@ -137,7 +159,7 @@ describe('Tier 4: Real-World Journeys, R5 Full Compliance Sweep & SW Offline Ver
           s.roster[dealer.id].tactic = { policy: 'aggressive', target: 'boss_first', skillPriority: 'unique_first' };
           s.party = ids;
         });
-        IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+        IkaiApp.App.startBattle('stage', { stageId: '1-1' });
         return dealer.id;
       })()`);
 
@@ -157,22 +179,28 @@ describe('Tier 4: Real-World Journeys, R5 Full Compliance Sweep & SW Offline Ver
       assert.equal(inBattleTactic.policy, 'defensive');
       assert.equal(inBattleTactic.target, 'debuffed_first');
 
-      await sharedBrowser.tap({ labelRegex: /×1|×2|×3|倍速/, testId: 'battle-speed-btn', scope: 'lower' });
-      const targetCtrl = await sharedBrowser.queryControl({ testId: 'battle-target-select', selector: 'select[data-testid="battle-target-select"], [data-testid="battle-target-btn"]', scope: 'lower' });
+      await sharedBrowser.tap({ labelRegex: /^×2$/, selector: '[data-action="battle-speed"][data-speed="2"]', scope: 'lower' });
+      const speedAfterTap = await sharedBrowser.eval('IkaiApp.CombatEngine.getSnapshot()?.speed');
+      assert.equal(speedAfterTap, 2, 'Tapping ×2 speed button must set battle speed to 2');
+
+      const targetSpec = {
+        labelRegex: /^HP最低$|^ボス優先$/,
+        selector: 'button[data-action="battle-global-target"][data-target="lowest_hp"], button[data-action="battle-global-target"][data-target="boss_first"]',
+        scope: 'lower'
+      };
+      const targetCtrl = await sharedBrowser.queryControl(targetSpec);
       assert.equal(targetCtrl.found, true, 'Target policy control must exist in lower deck');
-      if (targetCtrl.tagName === 'select') {
-        await sharedBrowser.selectValue({ testId: 'battle-target-select', scope: 'lower' }, /HP|lowest_hp/);
-      } else {
-        await sharedBrowser.tap({ testId: 'battle-target-btn', scope: 'lower' });
-      }
+      await sharedBrowser.tap(targetSpec);
       const fin = await runBattleToCompletion(sharedBrowser);
       assert.equal(fin.finished, true);
       assert.equal(fin.victory, true);
 
       const dps = await sharedBrowser.eval(`({
-        text: (document.querySelector('[data-testid="dps-meter-result"], .upper-stage, .lower-deck')?.innerText || ''),
-        dealt: IkaiApp.CombatEngine.getSnapshot()?.dps?.dealt || 0
+        hasResultDps: Boolean(document.querySelector('.dps-meter-panel.is-result')),
+        text: (document.querySelector('.dps-meter-panel.is-result')?.innerText || ''),
+        dealt: IkaiApp.CombatEngine.getSnapshot()?.dpsMeters?.totals?.damageDealt || 0
       })`);
+      assert.equal(dps.hasResultDps, true, 'Result screen must render .dps-meter-panel.is-result');
       for (const lbl of ['与ダメージ', '被ダメージ', '回復量', '被回復量']) {
         assert.ok(dps.text.includes(lbl), `DPS result missing ${lbl}`);
       }
@@ -198,7 +226,7 @@ describe('Tier 4: Real-World Journeys, R5 Full Compliance Sweep & SW Offline Ver
       })()`);
 
       for (let i = 0; i < before.required; i++) {
-        await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 })`);
+        await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-1' })`);
         const fin = await runBattleToCompletion(sharedBrowser);
         assert.equal(fin.victory, true);
       }
@@ -267,7 +295,7 @@ describe('Tier 4: Real-World Journeys, R5 Full Compliance Sweep & SW Offline Ver
         const mOut = IkaiApp.Progression.upgradeSkillMastery(st, sid, cid);
         st = mOut.state || mOut;
         IkaiApp.StateStore.setState(st);
-        IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+        IkaiApp.App.startBattle('stage', { stageId: '1-1' });
         const ally = IkaiApp.CombatEngine.getSnapshot().allies[0];
         return {
           awakening: st.roster[cid].awakening,
@@ -283,6 +311,10 @@ describe('Tier 4: Real-World Journeys, R5 Full Compliance Sweep & SW Offline Ver
       assert.ok(res.promotedQ >= 1);
       assert.equal(res.masteryRank, 2);
       assert.ok(res.crit >= 23 && res.critDmg >= 180, '4-set crit & critDmg bonuses must apply in battle');
+      await sharedBrowser.tap({ labelRegex: /^撤退$/, selector: '[data-action="retreat-battle"]', scope: 'lower' });
+      await sharedBrowser.waitFor(() => IkaiApp.App.getUiState()?.mode === 'result', { label: 'T4-SC-04 retreat result' });
+      await sharedBrowser.tap({ labelRegex: /^拠点へ戻る$/, selector: '[data-action="return-hub"]', scope: 'lower' });
+      await sharedBrowser.waitFor(() => IkaiApp.App.getUiState()?.mode === 'hub', { label: 'T4-SC-04 return hub' });
       await sharedBrowser.assertZeroErrors();
     });
 
@@ -325,13 +357,20 @@ describe('Tier 4: Real-World Journeys, R5 Full Compliance Sweep & SW Offline Ver
     it('T4-SC-06: PvE 4本柱横断（本編・無限深淵・異界討伐・制約試練）', async () => {
       await bootIkaiApp(sharedBrowser, getAppUrl(), { clearStorage: true });
       await openTab(sharedBrowser, 'sortie');
-      for (const tid of ['pve-pillar-main', 'pve-pillar-abyss', 'pve-pillar-raid', 'pve-pillar-trial']) {
-        const ctrl = await sharedBrowser.queryControl({ testId: tid, scope: 'lower' });
-        assert.equal(ctrl.found, true, `Missing PvE pillar control: ${tid}`);
+      const pillarSpecs = [
+        { labelRegex: /^本編異界$/, selector: '[data-action="switch-areas-pillar"][data-pillar="story"]', scope: 'lower' },
+        { labelRegex: /^無限深淵$/, selector: '[data-action="switch-areas-pillar"][data-pillar="abyss"]', scope: 'lower' },
+        { labelRegex: /^異界討伐$/, selector: '[data-action="switch-areas-pillar"][data-pillar="raid"]', scope: 'lower' },
+        { labelRegex: /^制約試練$/, selector: '[data-action="switch-areas-pillar"][data-pillar="trial"]', scope: 'lower' }
+      ];
+      for (const spec of pillarSpecs) {
+        const ctrl = await sharedBrowser.queryControl(spec);
+        assert.equal(ctrl.found, true, `Missing PvE pillar control: ${spec.selector}`);
+        await sharedBrowser.tap(spec);
       }
 
       // 1. 本編 1-1 クリア
-      await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 })`);
+      await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-1' })`);
       assert.equal((await runBattleToCompletion(sharedBrowser)).victory, true);
 
       // 2. 無限深淵 1F クリア
@@ -346,7 +385,7 @@ describe('Tier 4: Real-World Journeys, R5 Full Compliance Sweep & SW Offline Ver
             s.roster[cid].emblemNodes = [1, 2, 3, 4, 5, 6];
           }
         });
-        IkaiApp.App.startBattle('raid', { raidId: 'raid_zerogo', difficulty: 0 });
+        IkaiApp.App.startBattle('raid', { raidId: 'raid_zerogo', difficultyId: 'easy' });
       })()`);
       assert.equal((await runBattleToCompletion(sharedBrowser, 120)).victory, true);
 
@@ -441,12 +480,28 @@ describe('Tier 4: Real-World Journeys, R5 Full Compliance Sweep & SW Offline Ver
         const r5 = await sharedBrowser.auditProhibitedContent();
         assert.equal(r5.ok, true, `R5 runtime violation on ${tabKey}: ${JSON.stringify(r5)}`);
       }
-      await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 2, startWave: 4 })`);
-      await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
+      await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-3' })`);
+      await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot(), { label: 'R5 stage 1-3 start' });
+      const reachedBossWave = await sharedBrowser.eval(`(() => {
+        for (let i = 0; i < 60; i++) {
+          const s = IkaiApp.CombatEngine.step(800);
+          if (!s) break;
+          if (s.waveIndex === 4) return { ok: true, waveIndex: s.waveIndex, isBossWave: s.isBossWave, status: s.status };
+          if (s.status !== 'ongoing') return { ok: false, waveIndex: s.waveIndex, status: s.status };
+        }
+        const cur = IkaiApp.CombatEngine.getSnapshot();
+        return { ok: Boolean(cur && cur.waveIndex === 4), waveIndex: cur?.waveIndex, status: cur?.status };
+      })()`);
+      assert.equal(reachedBossWave.ok, true, `Expected stage 1-3 to reach boss wave 5 (idx 4), got ${JSON.stringify(reachedBossWave)}`);
+      await sharedBrowser.waitFor(() => document.querySelector('[data-testid="boss-plate"]'), { label: 'R5 stage 1-3 boss plate DOM' });
+      const r5BossTxt = await sharedBrowser.eval(`document.querySelector('.upper-stage')?.innerText || ''`);
+      assert.ok(r5BossTxt.includes('九十九') || r5BossTxt.includes('ボス'));
       const r5Battle = await sharedBrowser.auditProhibitedContent();
       assert.equal(r5Battle.ok, true, `R5 runtime violation in battle: ${JSON.stringify(r5Battle)}`);
       const splitBattle = await sharedBrowser.auditUpperLowerSplit();
       assert.equal(splitBattle.ok, true, splitBattle.violations.join('; '));
+      const ellBattle = await sharedBrowser.auditNoEllipsisAndOverflow();
+      assert.equal(ellBattle.ok, true, `Ellipsis/overflow in boss battle: ${JSON.stringify(ellBattle)}`);
 
       const fin = await runBattleToCompletion(sharedBrowser);
       assert.equal(fin.finished, true);
@@ -491,7 +546,7 @@ describe('Tier 4: Real-World Journeys, R5 Full Compliance Sweep & SW Offline Ver
         ])`);
         assert.deepEqual(offlineAssets, [true, true]);
 
-        await offBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 })`);
+        await offBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-1' })`);
         await offBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
 
         assert.equal(

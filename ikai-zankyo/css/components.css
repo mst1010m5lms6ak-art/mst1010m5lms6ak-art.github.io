@@ -687,9 +687,10 @@
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
+  padding: 0 4px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   overflow: hidden;
 }
 
@@ -699,7 +700,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  padding: 2px 7px;
+  padding: 1px 6px;
   border-radius: 6px;
   background-color: var(--bg-glass);
   border: 1px solid var(--border-subtle);
@@ -711,22 +712,21 @@
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  height: 15px;
-  padding: 0 6px;
+  min-height: 13px;
+  padding: 1px 6px;
   border-radius: 4px;
   background-color: rgba(16, 22, 34, 0.78);
   border: 1px solid rgba(148, 163, 184, 0.14);
   font-size: 10px;
-  line-height: 1.2;
+  line-height: 1.1;
   color: var(--text-secondary);
-  overflow: hidden;
 }
 
 .battle-ticker-text {
   flex: 1 1 auto;
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
+  white-space: normal;
+  overflow-wrap: anywhere;
   color: var(--text-primary);
 }
 
@@ -774,7 +774,7 @@
 }
 
 .timeline-chip {
-  height: 19px;
+  height: 17px;
   border-radius: 5px;
   border: 1px solid var(--border-subtle);
   background-color: var(--bg-plate);
@@ -822,7 +822,7 @@
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .enemy-grid {
@@ -836,7 +836,7 @@
   background-color: var(--bg-plate);
   border: 1px solid var(--border-subtle);
   border-radius: 7px;
-  padding: 2px 5px;
+  padding: 1.5px 5px;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -870,17 +870,17 @@
 .boss-zone {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .boss-frame.is-boss {
   background-color: var(--bg-elevated);
   border: 1.5px solid var(--c-crimson);
   border-radius: 8px;
-  padding: 3px 6px;
+  padding: 2px 6px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   box-shadow: inset 0 0 10px rgba(251, 113, 133, 0.16);
 }
 
@@ -929,7 +929,7 @@
 }
 
 .boss-frame .hp-track {
-  height: 8px;
+  height: 7px;
 }
 
 .hp-track {
@@ -948,7 +948,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 1px 6px;
+  padding: 1px 5px;
   border-radius: 5px;
   border: 1px solid var(--border-subtle);
   background-color: var(--bg-surface);
@@ -968,7 +968,7 @@
   font-weight: 700;
   white-space: normal;
   overflow-wrap: anywhere;
-  line-height: 1.15;
+  line-height: 1.1;
 }
 
 .telegraph-turns {
@@ -988,7 +988,7 @@
   background-color: var(--bg-plate);
   border: 1px solid rgba(251, 113, 133, 0.35);
   border-radius: 6px;
-  padding: 2px 5px;
+  padding: 1.5px 5px;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -1021,7 +1021,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 2px;
-  min-height: 12px;
+  min-height: 11px;
 }
 
 .buff-badge {
@@ -1080,8 +1080,8 @@
   flex: 0 0 auto;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 2px 6px;
-  padding: 3px 6px;
+  gap: 1px 6px;
+  padding: 2px 6px;
   border-radius: 7px;
   background-color: var(--bg-surface);
   border: 1px solid var(--border-subtle);
@@ -1091,7 +1091,7 @@
 .dps-cell {
   display: flex;
   flex-direction: column;
-  gap: 1.5px;
+  gap: 1px;
   min-width: 0;
 }
 
@@ -1142,7 +1142,7 @@
 }
 
 .dps-track {
-  height: 6px;
+  height: 5px;
 }
 
 /* VFX Float Layer */
@@ -1245,6 +1245,12 @@
   flex-direction: column;
   gap: 4px;
   box-shadow: var(--shadow-card);
+}
+
+.dps-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .dps-table-row {

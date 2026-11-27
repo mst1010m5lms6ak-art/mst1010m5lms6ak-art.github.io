@@ -510,7 +510,7 @@
     };
   }
 
-  function upgradeSkillMastery(state, skillId) {
+  function upgradeSkillMastery(state, skillId, charId) {
     const MasterData = IkaiApp.MasterData;
     if (!state || !state.skillInventory || !hasOwn(MasterData.SKILL_MAP, skillId)) {
       return { ok: false, reason: '指定された収集技が存在しません', state };
@@ -520,6 +520,18 @@
     }
     const draft = cloneState(state);
     const inv = draft.skillInventory[skillId];
+    if (charId && draft.roster && hasOwn(draft.roster, charId)) {
+      const entry = draft.roster[charId];
+      const tierDef = MasterData.AWAKENING_TIERS[entry.awakening] || MasterData.AWAKENING_TIERS[0];
+      const maxAllowedRank = tierDef ? tierDef.maxMasteryRank : 3;
+      if (inv.rank >= maxAllowedRank) {
+        return {
+          ok: false,
+          reason: '覚醒段階が不足しているため、熟練ランク' + maxAllowedRank + 'までしか鍛錬できません',
+          state
+        };
+      }
+    }
     if (inv.rank >= 5) {
       return { ok: false, reason: '既に熟練度ランク伍（最大）に達しています', state };
     }

@@ -52,11 +52,19 @@ async function runBattleToCompletion(browser, { maxSteps = 100, stepMs = 1000, r
       const r = IkaiApp.CombatEngine.step(${stepMs});
       const cur = r || IkaiApp.CombatEngine.getSnapshot();
       return cur ? {
-        finished: Boolean(cur.finished),
-        victory: Boolean(cur.victory ?? (cur.result === 'victory'))
+        status: cur.status,
+        finished: cur.status !== 'ongoing',
+        victory: cur.status === 'victory'
       } : null;
     })()`);
     if (snap?.finished) {
+      await browser.waitFor(
+        () => {
+          const ui = IkaiApp.App.getUiState();
+          return ui && ui.mode === 'result';
+        },
+        { timeoutMs: 5000, label: 'battle result mode settled' }
+      );
       return snap;
     }
   }
@@ -264,7 +272,7 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
     it('T1-F03-01: HMAC-SHA256 署名付き自動保存（HTTP）', async () => {
       await ensureBootedHttp(true);
       await sharedBrowser.eval('IkaiApp.StateStore.update(s => { s.currencies.echoStones += 150; })');
-      const saveRes = await sharedBrowser.eval('await IkaiApp.StateStore.saveNow()');
+      const saveRes = await sharedBrowser.eval('IkaiApp.StateStore.saveNow()');
       assert.equal(saveRes?.ok, true, 'StateStore.saveNow() must succeed');
       const verified = await sharedBrowser.eval(`(async () => {
         const raw = localStorage.getItem(IkaiApp.StateStore.STORAGE_KEY);
@@ -302,9 +310,9 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
 
     it('T1-F03-03: 厳格 CSP メタタグ検証', async () => {
       const html = fs.readFileSync(ctx.indexHtmlPath, 'utf8');
-      const m = html.match(/<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]+content=["']([^"']+)["']/i);
+      const m = html.match(/<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]+content=(?:"([^"]+)"|'([^']+)')/i);
       assert.ok(m, 'CSP meta tag must exist');
-      const csp = m[1];
+      const csp = m[1] ?? m[2] ?? '';
       assert.ok(csp.includes("default-src 'self'"));
       assert.equal(csp.includes("'unsafe-inline'"), false);
       assert.equal(csp.includes("'unsafe-eval'"), false);
@@ -352,6 +360,7 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
         return s === 4321 ? s : false;
       }, { label: 'restored echoStones === 4321' });
       assert.equal(stonesAfter, 4321);
+      await sharedBrowser.eval('IkaiApp.StateStore.saveNow()');
       await sharedBrowser.reload();
       await waitForIkaiBooted(sharedBrowser);
       const stonesReloaded = await sharedBrowser.eval('IkaiApp.StateStore.getState().currencies.echoStones');
@@ -445,7 +454,7 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
       await ensureBootedHttp(true);
       await openTab(sharedBrowser, 'settings');
       await sharedBrowser.tap({ labelRegex: /消音|ミュート/, testId: 'se-mute-toggle', scope: 'lower' });
-      const saveRes = await sharedBrowser.eval('await IkaiApp.StateStore.saveNow()');
+      const saveRes = await sharedBrowser.eval('IkaiApp.StateStore.saveNow()');
       assert.equal(saveRes?.ok, true, 'StateStore.saveNow() must succeed after mute toggle');
       const mutedBefore = await sharedBrowser.eval('IkaiApp.AudioSE.getSettings().muted');
       assert.equal(mutedBefore, true);
@@ -467,7 +476,7 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
       const slider = await sharedBrowser.queryControl(spec);
       assert.equal(slider.found, true, 'SE volume slider must exist in settings');
       await sharedBrowser.setInputValue(spec, '30');
-      const saveRes = await sharedBrowser.eval('await IkaiApp.StateStore.saveNow()');
+      const saveRes = await sharedBrowser.eval('IkaiApp.StateStore.saveNow()');
       assert.equal(saveRes?.ok, true, 'StateStore.saveNow() must succeed after volume change');
       const volBefore = await sharedBrowser.eval('IkaiApp.AudioSE.getSettings().volume');
       assert.ok(Math.abs(volBefore - 0.3) < 0.05);
@@ -571,7 +580,7 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
           s.party = ids;
         });
         const schemaOk = IkaiApp.SaveSecurity.validateSchema(IkaiApp.StateStore.getState()).ok;
-        IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+        IkaiApp.App.startBattle('stage', { stageId: '1-1' });
         return { len: IkaiApp.StateStore.getState().party.length, schemaOk, names: chars.map(c => c.name) };
       })()`);
       assert.equal(res.len, 4);
@@ -607,24 +616,31 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
       await ensureBootedHttp(true);
       await openTab(sharedBrowser, 'party');
       const policySpec = {
-        labelRegex: /作戦方針|作戦/,
-        testId: 'tactic-policy-select',
-        selector: 'select[data-testid="tactic-policy-select"], select[data-tactic="policy"]',
+        labelRegex: /^方針：/,
+        selector: '[data-action="cycle-roster-policy"][data-char-id="char_todo_seiichi"]',
         scope: 'lower'
       };
-      const policySel = await sharedBrowser.queryControl(policySpec);
-      assert.equal(policySel.found, true, 'Tactic policy <select> must exist in party tab');
-      await sharedBrowser.selectValue(policySpec, /防御|defensive/);
+      const policyBtn = await sharedBrowser.queryControl(policySpec);
+      assert.equal(policyBtn.found, true, 'Tactic policy cycle button must exist in party tab');
+      await sharedBrowser.tap(policySpec);
 
       const targetSpec = {
-        labelRegex: /目標方針|ターゲット/,
-        testId: 'tactic-target-select',
-        selector: 'select[data-testid="tactic-target-select"], select[data-tactic="target"]',
+        labelRegex: /^標的：/,
+        selector: '[data-action="cycle-roster-target"][data-char-id="char_todo_seiichi"]',
         scope: 'lower'
       };
-      const targetSel = await sharedBrowser.queryControl(targetSpec);
-      assert.equal(targetSel.found, true, 'Tactic target <select> must exist in party tab');
-      await sharedBrowser.selectValue(targetSpec, /ボス|boss_first/);
+      const targetBtn = await sharedBrowser.queryControl(targetSpec);
+      assert.equal(targetBtn.found, true, 'Tactic target cycle button must exist in party tab');
+      await sharedBrowser.tap(targetSpec);
+
+      const prioSpec = {
+        labelRegex: /^技順：/,
+        selector: '[data-action="cycle-roster-priority"][data-char-id="char_todo_seiichi"]',
+        scope: 'lower'
+      };
+      const prioBtn = await sharedBrowser.queryControl(prioSpec);
+      assert.equal(prioBtn.found, true, 'Tactic skillPriority cycle button must exist in party tab');
+      await sharedBrowser.tap(prioSpec);
 
       const savedTactic = await sharedBrowser.eval(`(() => {
         const st = IkaiApp.StateStore.getState();
@@ -632,6 +648,7 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
       })()`);
       assert.equal(savedTactic.policy, 'defensive');
       assert.equal(savedTactic.target, 'boss_first');
+      assert.equal(savedTactic.skillPriority, 'collect_first');
       await sharedBrowser.assertZeroErrors();
     });
 
@@ -640,9 +657,9 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
       await openTab(sharedBrowser, 'sortie');
       await sharedBrowser.tap({ labelRegex: /出撃開始|出撃する/, testId: ['start-battle-btn', 'sortie-start-btn'], scope: 'lower' });
       await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot(), { label: 'battle active' });
-      const spdSpec = { labelRegex: /×1|×2|×3|倍速/, testId: 'battle-speed-btn', scope: 'lower' };
+      const spdSpec = { labelRegex: /^×2$/, testId: 'battle-speed-btn', scope: 'lower' };
       const spdBtn = await sharedBrowser.queryControl(spdSpec);
-      assert.equal(spdBtn.found, true, 'Speed button must be in lower deck');
+      assert.equal(spdBtn.found, true, 'Speed ×2 button must be in lower deck');
       assert.ok(spdBtn.rect.top >= 421, 'Speed button must be in lower 50%');
       const speedBefore = await sharedBrowser.eval('IkaiApp.StateStore.getState().settings.battleSpeed');
       await sharedBrowser.tap(spdSpec);
@@ -652,6 +669,7 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
         speedAfter !== speedBefore || spdBtnAfter.text !== spdBtn.text,
         `Battle speed must change on tap (${speedBefore} -> ${speedAfter})`
       );
+      assert.equal(speedAfter, 2);
       const split = await sharedBrowser.auditUpperLowerSplit();
       assert.equal(split.ok, true, split.violations.join('; '));
       await sharedBrowser.assertZeroErrors();
@@ -686,66 +704,96 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
   describe('F7: ボス明示・敵固有技・ハイブリッド技実行', () => {
     it('T1-F07-01: Stage 3 中ボス大型枠＆技予告バー表示', async () => {
       await ensureBootedHttp(true);
-      await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 2, startWave: 4 })`);
-      await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot(), { label: 'stage 1-3 boss wave' });
+      await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-3' })`);
+      await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot(), { label: 'stage 1-3 start' });
+      const reachedBossWave = await sharedBrowser.eval(`(() => {
+        for (let i = 0; i < 60; i++) {
+          const s = IkaiApp.CombatEngine.step(800);
+          if (!s) break;
+          if (s.waveIndex === 4) return { ok: true, waveIndex: s.waveIndex, isBossWave: s.isBossWave, status: s.status };
+          if (s.status !== 'ongoing') return { ok: false, waveIndex: s.waveIndex, status: s.status };
+        }
+        const cur = IkaiApp.CombatEngine.getSnapshot();
+        return { ok: Boolean(cur && cur.waveIndex === 4), waveIndex: cur?.waveIndex, status: cur?.status };
+      })()`);
+      assert.equal(reachedBossWave.ok, true, `Expected stage 1-3 to reach boss wave 5 (idx 4), got ${JSON.stringify(reachedBossWave)}`);
+      await sharedBrowser.waitFor(() => document.querySelector('[data-testid="boss-plate"]'), { label: 'stage 1-3 boss plate DOM' });
       const bossUi = await sharedBrowser.eval(`(() => {
         const upper = document.querySelector('.upper-stage')?.innerText || '';
-        const hasBossPlate = Boolean(document.querySelector('[data-testid="boss-plate"], .boss-plate'));
-        const hasTelegraph = Boolean(document.querySelector('[data-testid="boss-telegraph"], .boss-telegraph'));
+        const hasBossPlate = Boolean(document.querySelector('[data-testid="boss-plate"], .boss-frame'));
+        const hasTelegraph = Boolean(document.querySelector('[data-testid="boss-telegraph"], .boss-telegraph-bar'));
         return { upper, hasBossPlate, hasTelegraph };
       })()`);
-      assert.ok(bossUi.hasBossPlate || bossUi.upper.includes('九十九') || bossUi.upper.includes('ボス'));
-      assert.ok(bossUi.hasTelegraph || bossUi.upper.includes('予告') || bossUi.upper.includes('遮断'));
+      assert.equal(bossUi.hasBossPlate, true);
+      assert.equal(bossUi.hasTelegraph, true);
+      assert.ok(bossUi.upper.includes('九十九') || bossUi.upper.includes('ボス'));
     });
 
     it('T1-F07-02: Stage 6 エリアボス大型枠＆技予告バー表示', async () => {
       await ensureBootedHttp(true);
-      await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 5, startWave: 4 })`);
-      await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot(), { label: 'stage 1-6 boss wave' });
+      await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-6' })`);
+      await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot(), { label: 'stage 1-6 start' });
+      const reachedBossWave = await sharedBrowser.eval(`(() => {
+        for (let i = 0; i < 60; i++) {
+          const s = IkaiApp.CombatEngine.step(800);
+          if (!s) break;
+          if (s.waveIndex === 4) return { ok: true, waveIndex: s.waveIndex, isBossWave: s.isBossWave, status: s.status };
+          if (s.status !== 'ongoing') return { ok: false, waveIndex: s.waveIndex, status: s.status };
+        }
+        const cur = IkaiApp.CombatEngine.getSnapshot();
+        return { ok: Boolean(cur && cur.waveIndex === 4), waveIndex: cur?.waveIndex, status: cur?.status };
+      })()`);
+      assert.equal(reachedBossWave.ok, true, `Expected stage 1-6 to reach boss wave 5 (idx 4), got ${JSON.stringify(reachedBossWave)}`);
+      await sharedBrowser.waitFor(() => document.querySelector('[data-testid="boss-plate"]'), { label: 'stage 1-6 boss plate DOM' });
       const bossUi = await sharedBrowser.eval(`(() => {
         const upper = document.querySelector('.upper-stage')?.innerText || '';
-        const hasBossPlate = Boolean(document.querySelector('[data-testid="boss-plate"], .boss-plate'));
-        const hasTelegraph = Boolean(document.querySelector('[data-testid="boss-telegraph"], .boss-telegraph'));
+        const hasBossPlate = Boolean(document.querySelector('[data-testid="boss-plate"], .boss-frame'));
+        const hasTelegraph = Boolean(document.querySelector('[data-testid="boss-telegraph"], .boss-telegraph-bar'));
         return { upper, hasBossPlate, hasTelegraph };
       })()`);
-      assert.ok(bossUi.hasBossPlate || bossUi.upper.includes('白無垢') || bossUi.upper.includes('ボス'));
-      assert.ok(bossUi.hasTelegraph || bossUi.upper.includes('予告') || bossUi.upper.includes('終電'));
+      assert.equal(bossUi.hasBossPlate, true);
+      assert.equal(bossUi.hasTelegraph, true);
+      assert.ok(bossUi.upper.includes('白無垢') || bossUi.upper.includes('ボス'));
       await sharedBrowser.assertZeroErrors();
     });
 
     it('T1-F07-03: 通常敵およびボスの固有技発動', async () => {
       await ensureBootedHttp(true);
-      await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 })`);
+      await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-1' })`);
       await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot(), { label: 'normal enemy battle' });
       const normalRes = await sharedBrowser.eval(`(() => {
         for (let i = 0; i < 20; i++) {
           IkaiApp.CombatEngine.step(600);
           const s = IkaiApp.CombatEngine.getSnapshot();
-          const taken = s.dps?.taken || (s.allies || []).reduce((acc, a) => acc + (a.dps?.damageTaken || 0), 0);
+          const taken = s.dpsMeters?.totals?.damageTaken ?? (s.allies || []).reduce((acc, a) => acc + (a.metrics?.damageTaken || 0), 0);
           if (taken > 0) return { taken };
         }
         const s = IkaiApp.CombatEngine.getSnapshot();
-        return { taken: s.dps?.taken || 0 };
+        return { taken: s.dpsMeters?.totals?.damageTaken || 0 };
       })()`);
       assert.ok(normalRes.taken > 0, `Normal enemy battle must deal damage > 0, got ${normalRes.taken}`);
 
-      await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 2, startWave: 4 })`);
+      await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-3' })`);
       await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot(), { label: 'boss battle' });
       const bossRes = await sharedBrowser.eval(`(() => {
-        for (let i = 0; i < 25; i++) {
+        for (let i = 0; i < 60; i++) {
+          const cur = IkaiApp.CombatEngine.step(800);
+          if (!cur || cur.waveIndex === 4 || cur.status !== 'ongoing') break;
+        }
+        for (let i = 0; i < 30; i++) {
           IkaiApp.CombatEngine.step(600);
           const s = IkaiApp.CombatEngine.getSnapshot();
-          const taken = s.dps?.taken || (s.allies || []).reduce((acc, a) => acc + (a.dps?.damageTaken || 0), 0);
+          const taken = s.dpsMeters?.totals?.damageTaken ?? (s.allies || []).reduce((acc, a) => acc + (a.metrics?.damageTaken || 0), 0);
           const logText = (s.logs || []).map(l => typeof l === 'string' ? l : (l.text || l.skillName || '')).join(' ');
           if (taken > 0 && (logText.includes('遮断の赤鐘') || logText.includes('無音の警報') || logText.includes('九十九'))) {
-            return { taken, matchedSkill: true };
+            return { taken, matchedSkill: true, waveIndex: s.waveIndex };
           }
         }
         const s = IkaiApp.CombatEngine.getSnapshot();
-        return { taken: s.dps?.taken || 0, matchedSkill: false };
+        return { taken: s.dpsMeters?.totals?.damageTaken || 0, matchedSkill: false, waveIndex: s.waveIndex };
       })()`);
       assert.ok(bossRes.taken > 0, `Boss battle damageTaken must be > 0, got ${bossRes.taken}`);
-      assert.equal(bossRes.matchedSkill, true, 'Boss unique skill must appear in combat logs');
+      assert.equal(bossRes.matchedSkill, true, `Boss unique skill must appear in combat logs (waveIndex=${bossRes.waveIndex})`);
       await sharedBrowser.assertZeroErrors();
     });
 
@@ -756,7 +804,7 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
           s.roster.char_minase_shiori = ${ROSTER_ENTRY_EXPR};
           s.party = ['char_minase_shiori', ...s.party.filter(id => id && id !== 'char_minase_shiori').slice(0, 3)];
         });
-        IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+        IkaiApp.App.startBattle('stage', { stageId: '1-1' });
       })()`);
       const snap0 = await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot(), { label: 'trait battle' });
       assert.equal(snap0.allies.length, 4);
@@ -787,28 +835,29 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
           s.roster[s.party[2]].skills = ['sk_r_shogekiha', null];
           for (let i = 0; i < 3; i++) s.roster[s.party[i]].tactic.skillPriority = 'collect_first';
         });
-        IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+        IkaiApp.App.startBattle('stage', { stageId: '1-1' });
       })()`);
       await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
-      const res = await sharedBrowser.eval(`(() => {
-        const before = {
-          single: IkaiApp.StateStore.getState().skillInventory.sk_r_kiriharai.uses,
-          range: IkaiApp.StateStore.getState().skillInventory.sk_r_soutou.uses,
-          all: IkaiApp.StateStore.getState().skillInventory.sk_r_shogekiha.uses
-        };
+      const before = await sharedBrowser.eval(`(() => {
+        const inv = IkaiApp.StateStore.getState().skillInventory;
         for (let i = 0; i < 60; i++) {
           const r = IkaiApp.CombatEngine.step(1000);
-          if (r?.finished || IkaiApp.CombatEngine.getSnapshot()?.finished) break;
+          const cur = r || IkaiApp.CombatEngine.getSnapshot();
+          if (cur && cur.status !== 'ongoing') break;
         }
-        const inv = IkaiApp.StateStore.getState().skillInventory;
-        return {
-          before,
-          after: { single: inv.sk_r_kiriharai.uses, range: inv.sk_r_soutou.uses, all: inv.sk_r_shogekiha.uses }
-        };
+        return { single: inv.sk_r_kiriharai.uses, range: inv.sk_r_soutou.uses, all: inv.sk_r_shogekiha.uses };
       })()`);
-      assert.ok(res.after.single > res.before.single, '単体 collectible skill must execute and increment uses');
-      assert.ok(res.after.range > res.before.range, '範囲 collectible skill must execute and increment uses');
-      assert.ok(res.after.all > res.before.all, '全体 collectible skill must execute and increment uses');
+      await sharedBrowser.waitFor(() => {
+        const ui = IkaiApp.App.getUiState();
+        return ui && ui.mode === 'result';
+      }, { timeoutMs: 5000, label: 'T1-F07-05 result settled' });
+      const after = await sharedBrowser.eval(`(() => {
+        const inv = IkaiApp.StateStore.getState().skillInventory;
+        return { single: inv.sk_r_kiriharai.uses, range: inv.sk_r_soutou.uses, all: inv.sk_r_shogekiha.uses };
+      })()`);
+      assert.ok(after.single > before.single, '単体 collectible skill must execute and increment uses');
+      assert.ok(after.range > before.range, '範囲 collectible skill must execute and increment uses');
+      assert.ok(after.all > before.all, '全体 collectible skill must execute and increment uses');
       await sharedBrowser.assertZeroErrors();
     });
   });
@@ -819,17 +868,17 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
   describe('F8: タクティカル戦場＆4項目DPSメーター', () => {
     it('T1-F08-01: 行動順バーの表示と動的更新', async () => {
       await ensureBootedHttp(true);
-      await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 })`);
-      await sharedBrowser.waitFor(() => document.querySelector('[data-testid="battle-timeline"], .battle-timeline'));
+      await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-1' })`);
+      await sharedBrowser.waitFor(() => document.querySelector('[data-testid="battle-timeline"], .turn-timeline'));
       const before = await sharedBrowser.eval(`({
-        txt: document.querySelector('[data-testid="battle-timeline"], .battle-timeline')?.innerText || '',
+        txt: document.querySelector('[data-testid="battle-timeline"], .turn-timeline')?.innerText || '',
         snap: IkaiApp.CombatEngine.getSnapshot()
       })`);
       assert.ok(before.txt.length > 0);
-      const stepped = await sharedBrowser.eval('Boolean(IkaiApp.CombatEngine.step(1200))');
+      const stepped = await sharedBrowser.eval('Boolean(IkaiApp.CombatEngine.step(900) && IkaiApp.CombatEngine.step(900))');
       assert.equal(stepped, true);
       const after = await sharedBrowser.eval(`({
-        txt: document.querySelector('[data-testid="battle-timeline"], .battle-timeline')?.innerText || '',
+        txt: document.querySelector('[data-testid="battle-timeline"], .turn-timeline')?.innerText || '',
         snap: IkaiApp.CombatEngine.getSnapshot()
       })`);
       assert.ok(
@@ -841,7 +890,7 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
 
     it('T1-F08-02: 味方4人プレート必須構成要素の検証', async () => {
       await ensureBootedHttp(true);
-      await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 })`);
+      await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-1' })`);
       const snap = await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
       for (let i = 0; i < 5; i++) {
         const ok = await sharedBrowser.eval('Boolean(IkaiApp.CombatEngine.step(600))');
@@ -866,7 +915,7 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
 
     it('T1-F08-03: 戦闘中4項目同時表示 DPS メーター', async () => {
       await ensureBootedHttp(true);
-      await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 })`);
+      await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-1' })`);
       await sharedBrowser.waitFor(() => IkaiApp.CombatEngine.getSnapshot());
       for (let i = 0; i < 5; i++) {
         const ok = await sharedBrowser.eval('Boolean(IkaiApp.CombatEngine.step(600))');
@@ -875,7 +924,7 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
       const res = await sharedBrowser.eval(`(() => {
         const upperText = document.querySelector('.upper-stage')?.innerText || '';
         const snap = IkaiApp.CombatEngine.getSnapshot();
-        return { upperText, dealt: snap.dps?.dealt || 0 };
+        return { upperText, dealt: snap.dpsMeters?.totals?.damageDealt || 0 };
       })()`);
       for (const label of ['与ダメージ', '被ダメージ', '回復量', '被回復量']) {
         assert.ok(res.upperText.includes(label), `Combat DPS meter missing label: ${label}`);
@@ -886,10 +935,10 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
 
     it('T1-F08-04: DPS メーターのぬるぬるアニメーション CSS', async () => {
       await ensureBootedHttp(true);
-      await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 })`);
-      await sharedBrowser.waitFor(() => document.querySelector('[data-testid="dps-meter"], .dps-meter'));
+      await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-1' })`);
+      await sharedBrowser.waitFor(() => document.querySelector('[data-testid="dps-meter"], .dps-meter-panel'));
       const anim = await sharedBrowser.eval(`(() => {
-        const meter = document.querySelector('[data-testid="dps-meter"], .dps-meter');
+        const meter = document.querySelector('[data-testid="dps-meter"], .dps-meter-panel');
         const bars = meter ? [...meter.querySelectorAll('[class*="bar"], [class*="fill"], .meter-fill, [data-dps-bar]')] : [];
         return bars.map(el => {
           const cs = getComputedStyle(el);
@@ -904,12 +953,12 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
 
     it('T1-F08-05: リザルト画面での4項目 DPS メーター表示', async () => {
       await ensureBootedHttp(true);
-      await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 })`);
+      await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-1' })`);
       const fin = await runBattleToCompletion(sharedBrowser);
       assert.equal(fin.finished, true);
       const res = await sharedBrowser.eval(`({
         text: document.querySelector('[data-testid="dps-meter-result"], .upper-stage, .lower-deck')?.innerText || '',
-        dealt: IkaiApp.CombatEngine.getSnapshot()?.dps?.dealt || 0
+        dealt: IkaiApp.CombatEngine.getSnapshot()?.dpsMeters?.totals?.damageDealt || 0
       })`);
       for (const label of ['与ダメージ', '被ダメージ', '回復量', '被回復量']) {
         assert.ok(res.text.includes(label), `Result DPS missing label: ${label}`);
@@ -936,12 +985,12 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
           );
           s.roster[s.party[0]].equipped[tpl.slot] = 'f9_q0';
         });
-        IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+        IkaiApp.App.startBattle('stage', { stageId: '1-1' });
         const atk0 = IkaiApp.CombatEngine.getSnapshot().allies[0].atk;
         IkaiApp.StateStore.update(s => {
           s.roster[s.party[0]].equipped[tpl.slot] = 'f9_q4';
         });
-        IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+        IkaiApp.App.startBattle('stage', { stageId: '1-1' });
         const atk4 = IkaiApp.CombatEngine.getSnapshot().allies[0].atk;
         return { qLen: qRanks.length, mults, atk0, atk4 };
       })()`);
@@ -964,21 +1013,21 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
             s.equips.push({ uid: 'f9s_' + i, equipId: tpl.id, qualityIdx: 0, locked: false });
           });
         });
-        IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+        IkaiApp.App.startBattle('stage', { stageId: '1-1' });
         const s0 = IkaiApp.CombatEngine.getSnapshot().allies[0];
         IkaiApp.StateStore.update(s => {
           const cid = s.party[0];
           s.roster[cid].equipped['護符'] = 'f9s_1';
           s.roster[cid].equipped['装具'] = 'f9s_2';
         });
-        IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+        IkaiApp.App.startBattle('stage', { stageId: '1-1' });
         const s2 = IkaiApp.CombatEngine.getSnapshot().allies[0];
         IkaiApp.StateStore.update(s => {
           const cid = s.party[0];
           s.roster[cid].equipped['主器'] = 'f9s_0';
           s.roster[cid].equipped['印章'] = 'f9s_3';
         });
-        IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+        IkaiApp.App.startBattle('stage', { stageId: '1-1' });
         const s4 = IkaiApp.CombatEngine.getSnapshot().allies[0];
         return {
           setsLen: sets.length,
@@ -1043,18 +1092,17 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
       await ensureBootedHttp(true);
       await openTab(sharedBrowser, 'settings');
       const autoSellSpec = {
-        labelRegex: /自動売却/,
-        testId: 'equip-auto-sell',
-        selector: 'select[data-testid="equip-auto-sell"], select[data-action="auto-sell"]',
+        labelRegex: /^並のみ$/,
+        selector: '[data-action="set-auto-sell"][data-max-quality="0"]',
         scope: 'lower'
       };
       const autoSellCtrl = await sharedBrowser.queryControl(autoSellSpec);
-      assert.equal(autoSellCtrl.found, true, 'Auto-sell <select> must exist in settings');
-      await sharedBrowser.selectValue(autoSellSpec, /並/);
+      assert.equal(autoSellCtrl.found, true, 'Auto-sell 並のみ button must exist in settings');
+      await sharedBrowser.tap(autoSellSpec);
       const settingVal = await sharedBrowser.eval('IkaiApp.StateStore.getState().settings.autoSellMaxQualityIdx');
       assert.equal(settingVal, 0);
       const before = await sharedBrowser.eval('({ eq: IkaiApp.StateStore.getState().equips.filter(e => e.qualityIdx === 0).length, coins: IkaiApp.StateStore.getState().currencies.starCoins })');
-      await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 })`);
+      await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-1' })`);
       const fin = await runBattleToCompletion(sharedBrowser);
       assert.equal(fin.victory, true);
       const after = await sharedBrowser.eval('({ eq: IkaiApp.StateStore.getState().equips.filter(e => e.qualityIdx === 0).length, coins: IkaiApp.StateStore.getState().currencies.starCoins })');
@@ -1087,15 +1135,22 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
       const res = await sharedBrowser.eval(`(() => {
         let st = IkaiApp.StateStore.createInitialState();
         const cid = st.party[0];
+        const crystalsBefore = st.currencies.exchangeCrystals;
         st.roster[cid].shards = 99;
         for (let i = 0; i < 3; i++) {
           const out = IkaiApp.Progression.awakenCharacter(st, cid);
           st = out.state || out;
         }
-        return { awakening: st.roster[cid].awakening, shards: st.roster[cid].shards };
+        return {
+          awakening: st.roster[cid].awakening,
+          shards: st.roster[cid].shards,
+          crystalsBefore,
+          crystalsAfter: st.currencies.exchangeCrystals
+        };
       })()`);
       assert.equal(res.awakening, 3);
-      assert.equal(res.shards, 93);
+      assert.equal(res.shards, 0);
+      assert.ok(res.crystalsAfter > res.crystalsBefore, 'Surplus shards at max awakening 3 must convert to exchangeCrystals');
     });
 
     it('T1-F10-03: 技熟練度（Rank 1〜5）の昇格（熟練の書）', async () => {
@@ -1124,7 +1179,7 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
         });
         return IkaiApp.StateStore.getState().skillInventory[sid].uses;
       })()`);
-      await sharedBrowser.eval(`IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 })`);
+      await sharedBrowser.eval(`IkaiApp.App.startBattle('stage', { stageId: '1-1' })`);
       await runBattleToCompletion(sharedBrowser);
       const after = await sharedBrowser.eval(`IkaiApp.StateStore.getState().skillInventory.sk_r_kiriharai.uses`);
       assert.ok(after > before, `Expected skill uses to increase after battle (${before} -> ${after})`);
@@ -1134,16 +1189,19 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
     it('T1-F10-05: 自動周回トグル（回数指定・連続周回）', async () => {
       await ensureBootedHttp(true);
       await openTab(sharedBrowser, 'sortie');
-      const spec = { labelRegex: /自動周回/, testId: 'auto-repeat-toggle', scope: 'lower' };
-      const toggle = await sharedBrowser.queryControl(spec);
-      assert.equal(toggle.found, true, 'Auto-repeat toggle must exist in lower deck');
+      const onSpec = { labelRegex: /^3回$/, selector: '[data-action="set-auto-repeat"][data-count="3"]', scope: 'lower' };
+      const offSpec = { labelRegex: /^単発$/, selector: '[data-action="set-auto-repeat"][data-count="0"]', scope: 'lower' };
+      const onBtn = await sharedBrowser.queryControl(onSpec);
+      const offBtn = await sharedBrowser.queryControl(offSpec);
+      assert.equal(onBtn.found, true, 'Auto-repeat 3回 button must exist in lower deck');
+      assert.equal(offBtn.found, true, 'Auto-repeat 単発 button must exist in lower deck');
       const beforeCount = await sharedBrowser.eval('IkaiApp.StateStore.getState().settings.autoRepeatCount');
-      await sharedBrowser.tap(spec);
+      await sharedBrowser.tap(onSpec);
       const afterOn = await sharedBrowser.eval('IkaiApp.StateStore.getState().settings.autoRepeatCount');
-      assert.ok(afterOn > beforeCount && afterOn > 0, `Expected autoRepeatCount > 0 after toggle, got ${afterOn}`);
-      await sharedBrowser.tap(spec);
+      assert.ok(afterOn > beforeCount && afterOn === 3, `Expected autoRepeatCount === 3 after tapping 3回, got ${afterOn}`);
+      await sharedBrowser.tap(offSpec);
       const afterOff = await sharedBrowser.eval('IkaiApp.StateStore.getState().settings.autoRepeatCount');
-      assert.equal(afterOff, 0, `Expected autoRepeatCount === 0 on second toggle, got ${afterOff}`);
+      assert.equal(afterOff, 0, `Expected autoRepeatCount === 0 after tapping 単発, got ${afterOff}`);
       await sharedBrowser.assertZeroErrors();
     });
   });
@@ -1165,6 +1223,7 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
       assert.equal(fin.victory, true);
       const cleared = await sharedBrowser.eval(`IkaiApp.StateStore.getState().progress.clearedStages`);
       assert.equal(cleared.includes('1-1'), true);
+      await sharedBrowser.tap({ labelRegex: /拠点へ戻る/, scope: 'lower' });
       await openTab(sharedBrowser, 'sortie');
       const stage12 = await sharedBrowser.queryControl({ labelRegex: /1-2|霧に沈む/, testId: 'stage-select-1-2', scope: 'lower' });
       assert.equal(stage12.found, true);
@@ -1179,7 +1238,7 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
       const abyssBtn = await sharedBrowser.queryControl(abyssSpec);
       assert.equal(abyssBtn.found, true);
       await sharedBrowser.tap(abyssSpec);
-      await sharedBrowser.tap({ labelRegex: /出撃開始|挑む|深淵/, testId: ['start-battle-btn', 'sortie-start-btn', 'abyss-start-btn'], scope: 'lower' });
+      await sharedBrowser.tap({ labelRegex: /深淵へ出撃|出撃開始|挑む/, testId: ['abyss-start-btn', 'start-battle-btn', 'sortie-start-btn'], scope: 'lower' });
       const fin = await runBattleToCompletion(sharedBrowser);
       assert.equal(fin.victory, true);
       const maxFloor = await sharedBrowser.eval('IkaiApp.StateStore.getState().progress.abyssMaxFloor');
@@ -1202,7 +1261,7 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
       const raidBtn = await sharedBrowser.queryControl(raidSpec);
       assert.equal(raidBtn.found, true);
       await sharedBrowser.tap(raidSpec);
-      await sharedBrowser.tap({ labelRegex: /出撃開始|討伐開始|挑む/, testId: ['start-battle-btn', 'sortie-start-btn', 'raid-start-btn'], scope: 'lower' });
+      await sharedBrowser.tap({ labelRegex: /討伐出撃|出撃開始|討伐開始|挑む/, testId: ['raid-start-btn', 'start-battle-btn', 'sortie-start-btn'], scope: 'lower' });
       const fin = await runBattleToCompletion(sharedBrowser, { maxSteps: 120 });
       assert.equal(fin.victory, true);
       const raidRes = await sharedBrowser.eval(`({
@@ -1221,7 +1280,7 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
       const trialBtn = await sharedBrowser.queryControl(trialSpec);
       assert.equal(trialBtn.found, true);
       await sharedBrowser.tap(trialSpec);
-      await sharedBrowser.tap({ labelRegex: /出撃開始|試練開始|挑む/, testId: ['start-battle-btn', 'sortie-start-btn', 'trial-start-btn'], scope: 'lower' });
+      await sharedBrowser.tap({ labelRegex: /試練へ挑戦|出撃開始|試練開始|挑む/, testId: ['trial-start-btn', 'start-battle-btn', 'sortie-start-btn'], scope: 'lower' });
       const fin = await runBattleToCompletion(sharedBrowser);
       assert.equal(fin.victory, true);
       const trialsCleared = await sharedBrowser.eval('IkaiApp.StateStore.getState().progress.trialsCleared');
@@ -1259,14 +1318,13 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
       await ensureBootedHttp(true);
       await openTab(sharedBrowser, 'summon');
       const bannerSpec = {
-        labelRegex: /バナー|召喚切替|ピックアップ/,
-        testId: 'summon-banner-select',
-        selector: 'select[data-testid="summon-banner-select"], select[data-action="select-banner"]',
+        labelRegex: /紫電と星夜の調律|紫電/,
+        selector: '[data-action="select-banner"][data-banner-id="banner_pu_2"]',
         scope: 'lower'
       };
-      const bannerSel = await sharedBrowser.queryControl(bannerSpec);
-      assert.equal(bannerSel.found, true);
-      await sharedBrowser.selectValue(bannerSpec, /紫電|banner_pu_2/);
+      const bannerBtn = await sharedBrowser.queryControl(bannerSpec);
+      assert.equal(bannerBtn.found, true, 'Summon banner card button must exist');
+      await sharedBrowser.tap(bannerSpec);
       const res = await sharedBrowser.eval(`({
         selected: IkaiApp.StateStore.getState().summon.selectedBannerId,
         count: IkaiApp.MasterData.BANNERS.length,
@@ -1297,7 +1355,7 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
     it('T1-F12-04: 余剰系統② 共鳴支援4枠の編成とステータス反映', async () => {
       await ensureBootedHttp(true);
       const res = await sharedBrowser.eval(`(() => {
-        IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+        IkaiApp.App.startBattle('stage', { stageId: '1-1' });
         const defBefore = IkaiApp.CombatEngine.getSnapshot().allies[0].def;
         let st = IkaiApp.StateStore.getState();
         st = JSON.parse(JSON.stringify(st));
@@ -1305,7 +1363,7 @@ describe('Tier 1: Feature Coverage (F1-F15, 75 tests)', () => {
         const out = IkaiApp.Progression.setResonance(st, 0, 'char_kiryu_takashi');
         const next = out.state || out;
         IkaiApp.StateStore.setState(next);
-        IkaiApp.App.startBattle('main', { areaId: 'area_1', stageIndex: 0 });
+        IkaiApp.App.startBattle('stage', { stageId: '1-1' });
         const defAfter = IkaiApp.CombatEngine.getSnapshot().allies[0].def;
         return { resonance: next.resonanceSlots, defBefore, defAfter };
       })()`);

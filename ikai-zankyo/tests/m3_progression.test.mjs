@@ -638,22 +638,55 @@ async function launchHeadlessChrome(profileDir) {
 }
 
 async function createCdpClient(browserWsUrl) {
-  const browserWs = new WebSocket(browserWsUrl);
-  await new Promise((resolve, reject) => {
-    browserWs.addEventListener('open', resolve, { once: true });
-    browserWs.addEventListener('error', reject, { once: true });
-  });
+  function waitForWsOpen(ws, label, timeoutMs = 10000) {
+    if (ws.readyState === WebSocket.OPEN) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error(`CDP WebSocket open timeout (${label})`));
+      }, timeoutMs);
+      const onOpen = () => { cleanup(); resolve(); };
+      const onError = (err) => { cleanup(); reject(err instanceof Error ? err : new Error(`CDP WebSocket error (${label})`)); };
+      const onClose = (ev) => { cleanup(); reject(new Error(`CDP WebSocket closed before open (${label}): ${ev.code || ''}`)); };
+      function cleanup() {
+        clearTimeout(timer);
+        ws.removeEventListener('open', onOpen);
+        ws.removeEventListener('error', onError);
+        ws.removeEventListener('close', onClose);
+      }
+      ws.addEventListener('open', onOpen);
+      ws.addEventListener('error', onError);
+      ws.addEventListener('close', onClose);
+    });
+  }
 
   function makeSender(ws) {
     let nextId = 1;
+    let closed = false;
     const pending = new Map();
     const listeners = new Map();
+    const closeListeners = new Set();
+
+    function rejectAllPending(reason) {
+      if (closed) return;
+      closed = true;
+      for (const [id, entry] of pending.entries()) {
+        clearTimeout(entry.timer);
+        entry.reject(new Error(reason));
+        pending.delete(id);
+      }
+      for (const fn of closeListeners) {
+        try { fn(new Error(reason)); } catch (_) {}
+      }
+    }
+
     ws.addEventListener('message', (ev) => {
       const msg = JSON.parse(ev.data);
       if (msg.id) {
         const entry = pending.get(msg.id);
         if (entry) {
           pending.delete(msg.id);
+          clearTimeout(entry.timer);
           if (msg.error) entry.reject(new Error(msg.error.message || JSON.stringify(msg.error)));
           else entry.resolve(msg.result);
         }
@@ -662,22 +695,51 @@ async function createCdpClient(browserWsUrl) {
         if (set) for (const fn of set) fn(msg.params);
       }
     });
+    ws.addEventListener('close', () => rejectAllPending('CDP WebSocket closed'));
+    ws.addEventListener('error', () => rejectAllPending('CDP WebSocket error'));
+
     return {
-      send(method, params = {}) {
+      send(method, params = {}, timeoutMs = 15000) {
+        if (closed || ws.readyState !== WebSocket.OPEN) {
+          return Promise.reject(new Error(`CDP WebSocket not open for ${method}`));
+        }
         const id = nextId++;
         return new Promise((resolve, reject) => {
-          pending.set(id, { resolve, reject });
-          ws.send(JSON.stringify({ id, method, params }));
+          const timer = setTimeout(() => {
+            if (pending.has(id)) {
+              pending.delete(id);
+              reject(new Error(`CDP command timeout (${method}, ${timeoutMs}ms)`));
+            }
+          }, timeoutMs);
+          pending.set(id, { resolve, reject, timer });
+          try {
+            ws.send(JSON.stringify({ id, method, params }));
+          } catch (err) {
+            pending.delete(id);
+            clearTimeout(timer);
+            reject(err);
+          }
         });
       },
       on(method, fn) {
         if (!listeners.has(method)) listeners.set(method, new Set());
         listeners.get(method).add(fn);
       },
-      close() { try { ws.close(); } catch (_) {} }
+      off(method, fn) {
+        const set = listeners.get(method);
+        if (set) set.delete(fn);
+      },
+      onClose(fn) { closeListeners.add(fn); },
+      offClose(fn) { closeListeners.delete(fn); },
+      close() {
+        rejectAllPending('CDP WebSocket closed by client');
+        try { ws.close(); } catch (_) {}
+      }
     };
   }
 
+  const browserWs = new WebSocket(browserWsUrl);
+  await waitForWsOpen(browserWs, 'browser');
   const browser = makeSender(browserWs);
   const { targetInfos } = await browser.send('Target.getTargets');
   let pageTarget = targetInfos.find((t) => t.type === 'page');
@@ -688,10 +750,7 @@ async function createCdpClient(browserWsUrl) {
   const browserUrlObj = new URL(browserWsUrl);
   const pageWsUrl = `ws://${browserUrlObj.host}/devtools/page/${pageTarget.targetId}`;
   const pageWs = new WebSocket(pageWsUrl);
-  await new Promise((resolve, reject) => {
-    pageWs.addEventListener('open', resolve, { once: true });
-    pageWs.addEventListener('error', reject, { once: true });
-  });
+  await waitForWsOpen(pageWs, 'page');
   return { browser, page: makeSender(pageWs) };
 }
 
@@ -739,8 +798,33 @@ async function runM3CdpE2E(targetUrl, modeLabel) {
       `
     });
 
-    const loadDone = new Promise((resolve) => page.on('Page.loadEventFired', resolve));
-    await page.send('Page.navigate', { url: targetUrl });
+    let loaded = false;
+    const loadDone = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error(`Page.loadEventFired timeout for ${targetUrl}`));
+      }, 15000);
+      const onLoad = () => {
+        loaded = true;
+        cleanup();
+        resolve();
+      };
+      const onClose = (err) => {
+        cleanup();
+        reject(err || new Error('CDP page WebSocket closed during navigation'));
+      };
+      function cleanup() {
+        clearTimeout(timer);
+        page.off('Page.loadEventFired', onLoad);
+        page.offClose(onClose);
+      }
+      page.on('Page.loadEventFired', onLoad);
+      page.onClose(onClose);
+    });
+    const navRes = await page.send('Page.navigate', { url: targetUrl });
+    if (navRes && navRes.errorText && !loaded) {
+      throw new Error(`Page.navigate failed: ${navRes.errorText}`);
+    }
     await loadDone;
 
     const evalJson = async (expr) => {

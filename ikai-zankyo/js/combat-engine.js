@@ -735,6 +735,7 @@
 
     if (target.hp <= 0) {
       target.activeTelegraph = null;
+      target.reservedSkillId = null;
       target.shield = 0;
       target.buffs = [];
       target.debuffs = [];
@@ -1293,6 +1294,12 @@
         const healSk = allReady.find(isHealSkill);
         if (healSk) return healSk;
       }
+      if (friends.some(function (f) { return f.debuffs.length >= 2 || isIncapacitated(f); })) {
+        const cleanseSk = allReady.find(function (sk) {
+          return isNonOffensiveSupportSkill(sk) && isCleanseSkill(sk);
+        });
+        if (cleanseSk) return cleanseSk;
+      }
       if (minFriendHpPct < 65 || friends.some(function (f) { return f.shield <= 0 && (f.debuffs.length >= 2 || isIncapacitated(f)); })) {
         const supportSk = allReady.find(isNonOffensiveSupportSkill);
         if (supportSk && (minFriendHpPct < 60 || isCleanseSkill(supportSk) || (Array.isArray(supportSk.effects) && supportSk.effects.some(function (e) { return e.type === 'shield' || e.type === 'selfShield' || e.type === 'buff'; })))) {
@@ -1685,13 +1692,27 @@
     const state = cfg.state || (IkaiApp.StateStore ? IkaiApp.StateStore.getState() : null);
     const MasterData = IkaiApp.MasterData;
 
-    let partyIds = Array.isArray(cfg.partyIds) && cfg.partyIds.length > 0
+    const hasExplicitPartyIds = Array.isArray(cfg.partyIds);
+    const hasStateParty = Boolean(cfg.state && Array.isArray(cfg.state.party));
+    const rawPartyIds = hasExplicitPartyIds
       ? cfg.partyIds.filter(Boolean)
       : (state && Array.isArray(state.party) ? state.party.filter(Boolean) : []);
+    const seenParty = new Set();
+    let partyIds = [];
+    for (let i = 0; i < rawPartyIds.length; i += 1) {
+      const cid = rawPartyIds[i];
+      if (hasOwn(MasterData.CHARACTER_MAP, cid) && !seenParty.has(cid)) {
+        seenParty.add(cid);
+        partyIds.push(cid);
+        if (partyIds.length >= 4) break;
+      }
+    }
     if (partyIds.length === 0) {
+      if (hasExplicitPartyIds || hasStateParty) {
+        return null;
+      }
       partyIds = ['char_todo_seiichi', 'char_kobayashi_shohei', 'char_saito_riko', 'char_nakamura_yui'];
     }
-    partyIds = partyIds.filter(function (cid) { return hasOwn(MasterData.CHARACTER_MAP, cid); }).slice(0, 4);
 
     const resBonus = computeResonanceBonuses(state);
     const partyAuras = computePartyAuras(state, partyIds);
@@ -1892,6 +1913,29 @@
   }
 
   function mapUnitSnapshot(battle, u) {
+    const traitMult = u.passiveModifiers ? safeNum(u.passiveModifiers.traitMult, 1) : 1;
+    const defStacks = u.stacks ? safeNum(u.stacks.defPct, 0) : 0;
+    const dmgStacks = u.stacks ? safeNum(u.stacks.dmgDealtPct, 0) : 0;
+    const buffsSnap = u.buffs.map(function (b) { return { stat: b.stat, value: b.value, duration: b.duration }; });
+    if (u.hp > 0 && defStacks > 0) {
+      buffsSnap.push({
+        stat: 'defPct',
+        value: Math.round(defStacks * 5 * traitMult),
+        duration: defStacks,
+        stacks: defStacks,
+        isTraitStack: true
+      });
+    }
+    if (u.hp > 0 && dmgStacks > 0) {
+      buffsSnap.push({
+        stat: 'dmgDealtPct',
+        value: Math.round(dmgStacks * 6 * traitMult),
+        duration: dmgStacks,
+        stacks: dmgStacks,
+        isTraitStack: true
+      });
+    }
+
     return {
       id: u.id,
       name: u.name,
@@ -1905,9 +1949,15 @@
       maxHp: u.maxHp,
       hpPct: u.maxHp > 0 ? clamp((u.hp / u.maxHp) * 100, 0, 100) : 0,
       shield: u.shield,
+      atk: u.atk,
+      def: u.def,
+      spd: u.spd,
+      crit: u.crit,
+      critDmg: u.critDmg,
       gauge: clamp(u.gauge, 0, 100),
       effSpd: Math.round(getEffectiveSpd(battle, u)),
-      buffs: u.buffs.map(function (b) { return { stat: b.stat, value: b.value, duration: b.duration }; }),
+      stacks: { defPct: defStacks, dmgDealtPct: dmgStacks },
+      buffs: buffsSnap,
       debuffs: u.debuffs.map(function (d) { return { stat: d.stat, value: d.value, duration: d.duration }; }),
       uniqueSkill: u.uniqueSkill ? {
         id: u.uniqueSkill.id,

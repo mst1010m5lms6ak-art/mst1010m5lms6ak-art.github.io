@@ -244,6 +244,7 @@
     const v = Math.floor(Number(n) || 0);
     const abs = Math.abs(v);
     if (abs >= 100000000) return (v / 100000000).toFixed(1) + '億';
+    if (abs >= 10000000) return Math.floor(v / 10000) + '万';
     if (abs >= 100000) return (v / 10000).toFixed(1) + '万';
     return v.toLocaleString('ja-JP');
   }

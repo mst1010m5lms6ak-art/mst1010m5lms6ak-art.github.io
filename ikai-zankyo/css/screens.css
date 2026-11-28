@@ -148,10 +148,11 @@
 }
 
 .result-stat-val {
-  font-size: 10.2px;
+  font-size: 10px;
   font-weight: 900;
   color: var(--text-main);
   white-space: nowrap;
+  letter-spacing: -0.02em;
 }
 
 .result-sub-strip {
@@ -175,7 +176,109 @@
   border-color: #ffd67a;
 }
 
-/* 召喚通常UR6体コンパクトグリッド */
+/* 出撃画面・現在パーティ4人ミニ帯 */
+.party-mini-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: auto;
+}
+
+.party-mini-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 3px 4px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 9.2px;
+  font-weight: 800;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* 育成上半分・装着装備＆共鳴ミニサマリー帯 */
+.char-gear-strip {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.char-gear-chips {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.char-gear-mini {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 2px 3px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  font-size: 8.5px;
+  font-weight: 800;
+  color: var(--text-sub);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.char-gear-mini.equipped {
+  color: var(--gold-bright);
+  border-color: rgba(216, 181, 100, 0.35);
+}
+
+/* 覚醒1〜5段階ロードマップ */
+.awake-roadmap {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.awake-step {
+  padding: 5px 3px;
+  border-radius: 6px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.awake-step.done {
+  border-color: rgba(94, 234, 160, 0.6);
+  background: rgba(94, 234, 160, 0.12);
+}
+
+.awake-step.next {
+  border-color: var(--gold-bright);
+  background: rgba(216, 181, 100, 0.18);
+}
+
+.awake-step-num {
+  font-size: 9px;
+  font-weight: 900;
+  color: var(--gold-bright);
+}
+
+.awake-step-desc {
+  font-size: 8px;
+  font-weight: 800;
+  color: var(--text-sub);
+  line-height: 1.2;
+}
+
+/* 召喚通常UR6体コンパクトグリッド（タップで図鑑詳細へジャンプ） */
 .summon-ur-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -183,15 +286,47 @@
 }
 
 .summon-ur-chip {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 3px;
-  padding: 3px 6px;
+  padding: 4px 6px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.042);
+  background: rgba(255, 255, 255, 0.045);
   border: 1px solid rgba(255, 148, 230, 0.34);
   border-left: 2.5px solid #ff94e6;
+  text-align: left;
+}
+
+/* 編成コンパクト行・引き継ぎコード折り返しtextarea・危険操作分離 */
+.subtab-row.compact .subtab-btn {
+  min-height: 23px;
+  padding: 2px 3px;
+  font-size: 10px;
+}
+
+.transfer-area {
+  width: 100%;
+  margin-top: 5px;
+  resize: none;
+  font-size: 12px;
+  line-height: 1.3;
+  word-break: break-all;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.transfer-area::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.danger-zone-box {
+  margin-top: 10px;
+  border-color: rgba(255, 118, 134, 0.38);
+  background: linear-gradient(180deg, rgba(48, 16, 24, 0.85), rgba(22, 9, 14, 0.92));
 }
 
 .stat-diff-up   { color: #6ef7ad; font-weight: 900; }
@@ -279,23 +414,23 @@
   box-shadow: 0 0 12px rgba(247, 225, 160, 0.3);
 }
 
-/* トースト通知 */
+/* トースト通知（上半分最下部へ配置しヘッダー・ロール・通貨への衝突を完全防止） */
 .toast-banner {
   position: absolute;
   left: 50%;
-  top: 5px;
+  bottom: 8px;
   transform: translateX(-50%);
-  max-width: calc(100% - 14px);
+  max-width: calc(100% - 16px);
   padding: 4px 12px;
   border-radius: 999px;
-  background: rgba(10, 14, 26, 0.97);
+  background: rgba(10, 14, 26, 0.96);
   border: 1px solid var(--gold-bright);
   color: var(--gold-bright);
   font-size: 10.5px;
   font-weight: 800;
   text-align: center;
   white-space: nowrap;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.88);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.85);
   z-index: 35;
 }
 
@@ -630,7 +765,7 @@
   box-shadow: 0 0 10px rgba(247, 225, 160, 0.16);
 }
 
-/* 共鳴盤ノードボタン（6枚すべて均一高さ） */
+/* 刻印ノードボタン（12種均一高さ） */
 .node-card {
   min-height: 48px;
   padding: 6px 8px;

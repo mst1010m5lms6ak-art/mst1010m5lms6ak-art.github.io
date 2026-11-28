@@ -529,6 +529,14 @@
       case 'previewExchangeChar':
         ui.selectedExchangeCharId = val;
         break;
+      case 'inspectCodexChar':
+        clearToast();
+        finishSummonAnim(true);
+        ui.lastSummonResults = [];
+        ui.tab = 'codex';
+        ui.codexSub = 'char';
+        ui.codexCharId = val;
+        break;
       case 'exchangeRaidChar': {
         ui.selectedExchangeCharId = val;
         const res = STATE.exchangeRaidChar(val);

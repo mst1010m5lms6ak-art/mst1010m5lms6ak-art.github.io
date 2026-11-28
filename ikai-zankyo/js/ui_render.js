@@ -195,7 +195,8 @@
   /* =========================================================
    * 戦闘画面（行動順キュー・HP数値削除・余剰枠解消・DPS＆至宝サマリー・完全キャッシュ低発熱）
    * ========================================================= */
-  let battleDomKey = '';
+  let upperDomKey = '';
+  let lowerDomKey = '';
   let lastRenderedFxSeq = 0;
   let battleCache = null;
 
@@ -294,8 +295,8 @@
     return '戦闘中';
   }
 
-  function mountBattleDom(sess, upperEl, lowerEl) {
-    const speed = STATE.getBattleSpeed();
+  /* 戦闘上半分のみ再構築（波切替時は下半分ボタンを再生成せずタップ抜けを完全防止） */
+  function mountBattleUpperDom(sess, upperEl) {
     const enemyGridCls = sess.enemies.length === 1 ? 'grid-1' : (sess.enemies.length === 2 ? 'grid-2' : 'grid-2x2');
     const allyGridCls = sess.allies.length <= 2 ? 'grid-2' : 'grid-2x2';
 
@@ -329,6 +330,54 @@
         <div data-b="treasureFlash"></div>
       </div>`;
 
+    const units = {};
+    sess.allies.concat(sess.enemies).forEach((u) => {
+      const card = upperEl.querySelector(`[data-uid="${u.uid}"]`);
+      if (!card) return;
+      units[u.uid] = {
+        card,
+        fill: card.querySelector('[data-role="hpfill"]'),
+        trail: card.querySelector('[data-role="trail"]'),
+        atb: card.querySelector('[data-role="atb"]'),
+        status: card.querySelector('[data-role="status"]'),
+        cts: card.querySelector('[data-role="cts"]'),
+        pop: card.querySelector('[data-role="pop"]'),
+        prevStatus: '',
+        prevCts: '',
+        prevPopSeq: '',
+        prevHpScale: -1,
+        prevTrailScale: -1,
+        prevAtbScale: -1
+      };
+    });
+
+    if (!battleCache) battleCache = {};
+    Object.assign(battleCache, {
+      stage: upperEl.querySelector('[data-b="stage"]'),
+      fxSvg: upperEl.querySelector('[data-b="fxSvg"]'),
+      waveEl: upperEl.querySelector('[data-b="wave"]'),
+      autoPill: upperEl.querySelector('[data-b="auto"]'),
+      queueList: upperEl.querySelector('[data-b="queueList"]'),
+      bannerEl: upperEl.querySelector('[data-b="banner"]'),
+      flashEl: upperEl.querySelector('[data-b="flash"]'),
+      treasureFlashEl: upperEl.querySelector('[data-b="treasureFlash"]'),
+      units,
+      cardCenters: null,
+      stageW: 0,
+      stageH: 0,
+      prevWave: '',
+      prevAutoText: '',
+      prevAutoCls: '',
+      prevBannerKey: '',
+      prevQueueKey: '',
+      prevFlashKey: '',
+      prevTreasureFlashSeq: 0
+    });
+  }
+
+  /* 戦闘下半分のみ再構築（パーティ構成変化時のみ・周回中ボタン不変） */
+  function mountBattleLowerDom(sess, lowerEl) {
+    const speed = STATE.getBattleSpeed();
     const dpsRows = [];
     for (let i = 0; i < 4; i++) {
       const a = sess.allies[i];
@@ -388,28 +437,6 @@
         </div>
       </div>`;
 
-    /* 全DOMノード参照を1回だけキャッシュ（毎フレーム querySelector 0回・発熱激減） */
-    const units = {};
-    sess.allies.concat(sess.enemies).forEach((u) => {
-      const card = upperEl.querySelector(`[data-uid="${u.uid}"]`);
-      if (!card) return;
-      units[u.uid] = {
-        card,
-        fill: card.querySelector('[data-role="hpfill"]'),
-        trail: card.querySelector('[data-role="trail"]'),
-        atb: card.querySelector('[data-role="atb"]'),
-        status: card.querySelector('[data-role="status"]'),
-        cts: card.querySelector('[data-role="cts"]'),
-        pop: card.querySelector('[data-role="pop"]'),
-        prevStatus: '',
-        prevCts: '',
-        prevPopSeq: '',
-        prevHpScale: -1,
-        prevTrailScale: -1,
-        prevAtbScale: -1
-      };
-    });
-
     const dpsRowCache = {};
     sess.allies.forEach((a) => {
       const row = lowerEl.querySelector(`[data-dps-row="${a.charId}"]`);
@@ -429,35 +456,17 @@
       };
     });
 
-    battleCache = {
-      stage: upperEl.querySelector('[data-b="stage"]'),
-      fxSvg: upperEl.querySelector('[data-b="fxSvg"]'),
-      waveEl: upperEl.querySelector('[data-b="wave"]'),
-      autoPill: upperEl.querySelector('[data-b="auto"]'),
-      queueList: upperEl.querySelector('[data-b="queueList"]'),
-      bannerEl: upperEl.querySelector('[data-b="banner"]'),
-      flashEl: upperEl.querySelector('[data-b="flash"]'),
-      treasureFlashEl: upperEl.querySelector('[data-b="treasureFlash"]'),
+    if (!battleCache) battleCache = {};
+    Object.assign(battleCache, {
       dpsTotal: lowerEl.querySelector('[data-b="dpsTotal"]'),
       dpsTime: lowerEl.querySelector('[data-b="dpsTime"]'),
       treasurePill: lowerEl.querySelector('[data-b="treasurePill"]'),
       speedBtn: lowerEl.querySelector('[data-b="speedBtn"]'),
       autoBtn: lowerEl.querySelector('[data-b="autoBtn"]'),
-      units,
       dpsRows: dpsRowCache,
-      cardCenters: null,
-      stageW: 0,
-      stageH: 0,
-      prevWave: '',
-      prevAutoText: '',
-      prevAutoCls: '',
-      prevBannerKey: '',
-      prevQueueKey: '',
-      prevFlashKey: '',
-      prevTreasureFlashSeq: 0,
       prevSpeed: -1,
       prevAutoBtnKey: ''
-    };
+    });
   }
 
   /* カード中心座標を波ごとに1回だけ計測キャッシュ（毎攻撃の同期レイアウト強制ゼロ） */
@@ -529,11 +538,16 @@
   }
 
   function renderBattle(sess, upperEl, lowerEl) {
-    const key = `${sess.aggregate.runs}_${sess.wave}_${sess.enemies.map((e) => e.uid).join(',')}_${sess.allies.map((a) => a.uid).join(',')}`;
-    if (battleDomKey !== key || !battleCache) {
-      battleDomKey = key;
+    const uKey = `${sess.aggregate.runs}_${sess.wave}_${sess.enemies.map((e) => e.uid).join(',')}_${sess.allies.map((a) => a.uid).join(',')}`;
+    const lKey = sess.allies.map((a) => a.charId).join(',');
+    if (upperDomKey !== uKey || !battleCache) {
+      upperDomKey = uKey;
       lastRenderedFxSeq = 0;
-      mountBattleDom(sess, upperEl, lowerEl);
+      mountBattleUpperDom(sess, upperEl);
+    }
+    if (lowerDomKey !== lKey || !battleCache.dpsRows) {
+      lowerDomKey = lKey;
+      mountBattleLowerDom(sess, lowerEl);
     }
 
     const c = battleCache;
@@ -757,7 +771,8 @@
   }
 
   function resetBattleDomCache() {
-    battleDomKey = '';
+    upperDomKey = '';
+    lowerDomKey = '';
     lastRenderedFxSeq = 0;
     battleCache = null;
   }
@@ -802,6 +817,13 @@
     });
 
     const topEquips = agg.equips.slice().sort((a, b) => b.quality - a.quality).slice(0, 6);
+    const qualCounts = [4, 3, 2, 1, 0].map((q) => ({
+      q,
+      cnt: agg.equips.filter((e) => e.quality === q).length
+    })).filter((x) => x.cnt > 0);
+    const qualSummaryHtml = qualCounts.length > 0
+      ? `<div class="synergy-list" style="margin-top:auto">${qualCounts.map((x) => `<span class="qual-tag qual-${x.q} num">${esc(EDATA.QUALITIES[x.q].name)} ×${x.cnt}</span>`).join('')}</div>`
+      : '';
     const shortStatMap = { atk: '攻', def: '防', hp: 'HP', spd: '速' };
     const equipCardsHtml = topEquips.length > 0
       ? `<div class="loot-grid">
@@ -811,7 +833,7 @@
             const val = STATE.getEquipStatValue(eq);
             return `<div class="loot-chip">${qualTag(eq.quality)}<span class="loot-chip-name">${esc(ser ? ser.partNames[eq.slotId] : '')}</span><span class="loot-chip-val num">${shortStatMap[sl.baseStat]}+${fnum(val)}</span></div>`;
           }).join('')}
-        </div>${agg.equips.length > 6 ? `<div class="item-sub">ほか獲得装備 +${agg.equips.length - 6}個</div>` : ''}`
+        </div>${agg.equips.length > 6 ? `<div class="item-sub">ほか獲得装備 +${agg.equips.length - 6}個</div>` : ''}${qualSummaryHtml}`
       : (isWin
         ? `<div class="item-sub">獲得した報酬は所持品へ反映されました</div>`
         : `<div class="skill-preview-row"><div class="skill-name">次戦への戦力強化ヒント</div><div class="skill-desc">刻印解放・装備更新・共鳴設定・有利属性への編成変更で大きく戦力が伸びます。</div></div>`);
@@ -997,6 +1019,13 @@
               <div class="prog-wrap">
                 <div class="prog-head"><span>エリア踏破率</span><span class="num">${clearedCnt}/${world.stages.length} (${Math.round((clearedCnt / world.stages.length) * 100)}%)</span></div>
                 <div class="prog-bar-bg"><div class="prog-bar-fill" style="width:${(clearedCnt / world.stages.length) * 100}%"></div></div>
+              </div>
+              <div class="party-mini-strip">
+                ${snap.party.map((pid, idx) => {
+                  if (!pid || !CDATA.CHAR_MAP[pid]) return `<span class="party-mini-pill" style="opacity:0.4">枠${idx + 1}:空</span>`;
+                  const ch = CDATA.CHAR_MAP[pid];
+                  return `<span class="party-mini-pill"><span class="el-${ch.el}" style="color:var(--el-color)">${ICON.svg(ch.el, 9)}</span><span>${esc(ch.name)}</span></span>`;
+                }).join('')}
               </div>
             </div>
             ${toastHtml(ui)}
@@ -1293,7 +1322,7 @@
                   <div class="skill-name">4部位セット効果</div>
                   <div class="skill-desc">${esc(ser.set4.desc)}</div>
                 </div>
-                <div class="item-sub">獲得先：${esc(ser.sourceText)}</div>
+                <div class="item-sub">素材入手：異界討伐（${esc(raid ? raid.name : ser.sourceText)}）</div>
               </div>
               ${toastHtml(ui)}
             </div>`;
@@ -1314,7 +1343,7 @@
                   <div class="stat-cell"><div class="stat-lbl">所持金貨</div><div class="stat-val">${fnum(snap.gold)}</div></div>
                   <div class="stat-cell"><div class="stat-lbl">結晶</div><div class="stat-val">${fnum(snap.crystal)}</div></div>
                   <div class="stat-cell"><div class="stat-lbl">残響石</div><div class="stat-val">${fnum(snap.stone)}</div></div>
-                  <div class="stat-cell"><div class="stat-lbl">交換可能</div><div class="stat-val">${fnum(cryTimes)}回</div></div>
+                  <div class="stat-cell"><div class="stat-lbl">所持装備</div><div class="stat-val">${fnum(snap.equips.length)}個</div></div>
                 </div>
               </div>
               <div class="info-box grow">
@@ -1323,7 +1352,7 @@
                     <span class="skill-name">${ICON.svg('crystal', 11)} 結晶交換</span>
                     <span class="qual-tag qual-2 num">交換可 ${fnum(cryTimes)}回</span>
                   </div>
-                  <div class="skill-desc">金貨 400 で 結晶 +160（キャラの刻印解放に使用）</div>
+                  <div class="skill-desc">金貨 400 で 結晶 +160（キャラの刻印12種解放に使用）</div>
                 </div>
                 <div class="skill-preview-row">
                   <div class="skill-preview-head">
@@ -1430,18 +1459,32 @@
                   ? comp.activeSets.map((s) => `<span class="synergy-pill">${esc(s.name)}(${s.count})：${esc(s.desc)}</span>`).join('')
                   : '<span class="item-sub">同シリーズ2部位・4部位の装着でセット効果が発動します</span>'}
               </div>
+              <div class="stat-grid-5" style="margin-top:auto">
+                <div class="stat-cell"><div class="stat-lbl">総合HP</div><div class="stat-val">${fnum(comp.hp)}</div></div>
+                <div class="stat-cell"><div class="stat-lbl">総合攻撃</div><div class="stat-val">${fnum(comp.atk)}</div></div>
+                <div class="stat-cell"><div class="stat-lbl">総合防御</div><div class="stat-val">${fnum(comp.defStat)}</div></div>
+                <div class="stat-cell"><div class="stat-lbl">総合速度</div><div class="stat-val">${comp.spd}</div></div>
+                <div class="stat-cell"><div class="stat-lbl">総合会心</div><div class="stat-val">${Math.round(comp.crit * 100)}%</div></div>
+              </div>
             </div>
             ${toastHtml(ui)}
           </div>`;
       }
 
-      /* 刻印・覚醒・アビリティ・共鳴 上半分プレビュー（倍率付き技＆結晶・魂晶常時表示） */
+      /* 刻印・覚醒・アビリティ・共鳴 上半分プレビュー（倍率付き技＆装備/共鳴ミニ帯常時表示） */
       const cid = ui.selectedCharId && snap.roster[ui.selectedCharId] ? ui.selectedCharId : Object.keys(snap.roster)[0];
       const comp = STATE.getCharComputed(cid, snap.party);
       const r = snap.roster[cid];
       const maxAbSlots = STATE.getAbilitySlotCount(r.awake);
       const eqAbNames = r.abilities.map((aid) => EDATA.ABILITY_MAP[aid]?.name).filter(Boolean).join(' / ') || '未装着';
       const totalBoards = CDATA.BOARD_TEMPLATES.length;
+      const gearMiniHtml = EDATA.SLOTS.map((sl) => {
+        const eq = STATE.getEquipById(r.equips[sl.id]);
+        if (!eq) return `<span class="char-gear-mini">${ICON.svg(sl.id, 9)}<span>${esc(sl.name)}:未</span></span>`;
+        const q = EDATA.QUALITIES[eq.quality];
+        return `<span class="char-gear-mini equipped">${ICON.svg(sl.id, 9)}<span>${esc(q.name)}</span></span>`;
+      }).join('');
+      const setNames = comp.activeSets.map((s) => `${s.name}(${s.count})`).join(' / ') || 'セットなし';
 
       return `
         <div class="upper-bg-ornament"></div>
@@ -1482,7 +1525,13 @@
                   <div class="skill-desc">${esc(sk.desc)}</div>
                 </div>`).join('')}
             </div>
-            ${ui.charSub === 'ability' ? `<div class="item-sub">装着中：${esc(eqAbNames)}</div>` : ''}
+            <div class="char-gear-strip">
+              <div class="row-between">
+                <span class="item-sub">装備：${esc(setNames)}</span>
+                <span class="item-sub">${comp.linkInfo ? `共鳴：${esc(comp.linkInfo.name)}` : `アビ：${esc(eqAbNames)}`}</span>
+              </div>
+              <div class="char-gear-chips">${gearMiniHtml}</div>
+            </div>
           </div>
           ${toastHtml(ui)}
         </div>`;
@@ -1777,6 +1826,7 @@
       const equipSeen = EDATA.EQUIP_PARTS.filter((p) => snap.codexEquips[p.partKey]).length;
       const totalStages = WDATA.WORLDS.reduce((s, w) => s + w.stages.length, 0);
       const clearedStages = Object.keys(snap.clearedStages).length;
+      const treasureOwned = snap.equips.filter((e) => e.quality === 4).length;
       return `
         <div class="upper-bg-ornament"></div>
         <div class="upper-panel">
@@ -1811,7 +1861,13 @@
               <div class="prog-head"><span>装備発見率</span><span class="num">${equipSeen}/${equipTotal} (${Math.round((equipSeen / equipTotal) * 100)}%)</span></div>
               <div class="prog-bar-bg"><div class="prog-bar-fill" style="width:${(equipSeen / equipTotal) * 100}%"></div></div>
             </div>
-            ${ui.exportedCode ? `<div class="item-sub" style="color:var(--gold-bright)">引き継ぎコードを発行しました（下段の入力欄にセット済み）</div>` : ''}
+            <div class="stat-grid-4" style="margin-top:auto">
+              <div class="stat-cell"><div class="stat-lbl">乱入撃破</div><div class="stat-val">${fnum(snap.stats.totalIntruders)}体</div></div>
+              <div class="stat-cell"><div class="stat-lbl">所持装備</div><div class="stat-val">${fnum(snap.equips.length)}個</div></div>
+              <div class="stat-cell"><div class="stat-lbl">至宝装備</div><div class="stat-val" style="color:#ffd866">${fnum(treasureOwned)}個</div></div>
+              <div class="stat-cell"><div class="stat-lbl">自由アビ</div><div class="stat-val">${snap.unlockedAbilities.length}/${EDATA.FREE_ABILITIES.length}</div></div>
+            </div>
+            ${ui.exportedCode ? `<div class="item-sub" style="color:var(--gold-bright)">引き継ぎコードを発行しました（下段の入力欄へ反映済）</div>` : ''}
           </div>
           ${toastHtml(ui)}
         </div>`;
@@ -2057,13 +2113,13 @@
         }).join('');
 
         content = `
-          <div class="subtab-row">
+          <div class="subtab-row compact">
             <button class="subtab-btn ${ui.partySub === 'main' ? 'active' : ''}" data-act="setPartySub" data-val="main">主力編成</button>
             <button class="subtab-btn ${ui.partySub === 'gauntlet' && ui.gauntletTeamIdx === 0 ? 'active' : ''}" data-act="setGauntletTeam" data-val="0">総力第1</button>
             <button class="subtab-btn ${ui.partySub === 'gauntlet' && ui.gauntletTeamIdx === 1 ? 'active' : ''}" data-act="setGauntletTeam" data-val="1">総力第2</button>
             <button class="subtab-btn ${ui.partySub === 'gauntlet' && ui.gauntletTeamIdx === 2 ? 'active' : ''}" data-act="setGauntletTeam" data-val="2">総力第3</button>
           </div>
-          <div class="subtab-row">
+          <div class="subtab-row compact">
             ${slotBtns}
             <button class="subtab-btn" data-act="clearPartySlot">外す</button>
             ${ui.partySub === 'gauntlet' ? `<button class="subtab-btn active" data-act="autoFillGauntlet">自動3部隊</button>` : ''}
@@ -2090,14 +2146,27 @@
         const costMap = { N: 40, R: 70, SR: 120, SSR: 200, UR: 320 };
         const nextCost = costMap[def.rarity] + r.awake * 35;
         const nextBonus = r.awake < 5 ? `全基礎性能 +${(r.awake + 1) * 14}%${r.awake + 1 === 2 ? ' ＋ 自由枠2解放' : (r.awake + 1 === 4 ? ' ＋ 自由枠3解放' : '')}` : '最大段階に到達済み';
+        const steps = [
+          { rank: 1, lbl: '+14%' },
+          { rank: 2, lbl: '+28%\n枠2' },
+          { rank: 3, lbl: '+42%' },
+          { rank: 4, lbl: '+56%\n枠3' },
+          { rank: 5, lbl: '+70%' }
+        ];
         content = `
           ${charStrip}
-          <div class="info-box grow" style="justify-content:space-between">
+          <div class="info-box grow" style="justify-content:space-between;gap:6px">
             <div class="stat-grid-4">
               <div class="stat-cell"><div class="stat-lbl">現在覚醒</div><div class="stat-val">${r.awake}/5</div></div>
               <div class="stat-cell"><div class="stat-lbl">基礎補正</div><div class="stat-val">+${r.awake * 14}%</div></div>
               <div class="stat-cell"><div class="stat-lbl">自由枠</div><div class="stat-val">${STATE.getAbilitySlotCount(r.awake)}枠</div></div>
               <div class="stat-cell"><div class="stat-lbl">所持魂晶</div><div class="stat-val">${fnum(snap.soul)}</div></div>
+            </div>
+            <div class="awake-roadmap">
+              ${steps.map((st) => {
+                const cls = r.awake >= st.rank ? 'done' : (r.awake + 1 === st.rank ? 'next' : '');
+                return `<div class="awake-step ${cls}"><span class="awake-step-num">覚醒${st.rank}</span><span class="awake-step-desc">${st.lbl.replace('\n', '<br>')}</span></div>`;
+              }).join('')}
             </div>
             <div class="skill-preview-row">
               <div class="skill-name">次の覚醒効果</div>
@@ -2255,17 +2324,19 @@
         } else if (ui.equipSub === 'shop') {
           content = `
             ${eqSubRow}
-            <div class="info-box grow" style="justify-content:space-between;gap:6px">
+            <div class="info-box" style="gap:6px">
               <div class="row-between">
-                <span class="item-title">結晶へ還元</span>
+                <span class="item-title">${ICON.svg('crystal', 11)} 結晶へ還元</span>
                 <span class="item-sub num">1回：金貨 400 → 結晶 +160</span>
               </div>
               <div class="action-bar">
                 <button class="btn-primary" data-act="buyGold" data-val="crystal" data-times="1" ${snap.gold < 400 ? 'disabled' : ''}>1回交換（400金貨）</button>
                 <button class="btn-secondary" data-act="buyGold" data-val="crystal" data-times="5" ${snap.gold < 2000 ? 'disabled' : ''}>5回交換（2,000金貨）</button>
               </div>
-              <div class="row-between" style="margin-top:2px">
-                <span class="item-title">残響石へ還元</span>
+            </div>
+            <div class="info-box" style="gap:6px">
+              <div class="row-between">
+                <span class="item-title">${ICON.svg('stone', 11)} 残響石へ還元</span>
                 <span class="item-sub num">1回：金貨 600 → 石 +120</span>
               </div>
               <div class="action-bar">
@@ -2303,10 +2374,10 @@
             </div>
             <div class="summon-ur-grid">
               ${urSummons.map((u) => `
-                <div class="summon-ur-chip">
+                <button class="summon-ur-chip" data-act="inspectCodexChar" data-val="${u.id}">
                   <div class="row-left" style="gap:3px">${elBadge(u.el)}<span class="item-title" style="font-size:10.5px">${esc(u.name)}</span></div>
-                  <span class="item-sub" style="font-size:9px">${esc(WDATA.ROLES[u.role].name)}</span>
-                </div>`).join('')}
+                  <span class="item-sub" style="font-size:8.8px">${esc(WDATA.ROLES[u.role].name)} ▶</span>
+                </button>`).join('')}
             </div>
             <div class="item-sub" style="line-height:1.3">10連召喚は10枠目SR以上確定。所持済みの再獲得は覚醒せず魂晶と結晶へ即時変換されます。</div>
             ${isAnimating
@@ -2495,11 +2566,11 @@
                 <button class="btn-secondary" data-act="exportCode">コード発行＆コピー</button>
                 <button class="btn-secondary" data-act="importCode">入力コードから復元</button>
               </div>
-              <input id="transfer-input" type="text" value="${esc(ui.exportedCode)}" placeholder="引き継ぎコードを貼り付け" style="margin-top:5px;width:100%">
+              <textarea id="transfer-input" class="transfer-area" rows="2" placeholder="引き継ぎコードを貼り付け">${esc(ui.exportedCode)}</textarea>
             </div>
-            <div class="item-row-btn">
+            <div class="item-row-btn danger-zone-box">
               <div class="row-between">
-                <span class="item-title">セーブデータ初期化</span>
+                <span class="item-title" style="color:#ffb4be">セーブデータ初期化</span>
                 <button class="btn-danger" data-act="resetSave">${ui.confirmReset ? '本当に初期化実行' : '初期化する'}</button>
               </div>
             </div>
